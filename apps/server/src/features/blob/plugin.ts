@@ -1,12 +1,14 @@
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerBlobRoutes } from "../../http/blobs.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createLocalFsBlobStore } from "./providers/local-fs.js";
+import { ensureBlobSigningKey } from "./signing-key.js";
 import type { BlobStore } from "./types.js";
 
 /**
  * blob 插件（M3.1）：对象存储缝的 Provider 选择。
  *
- * **当前只有本地 FS 形态**（桌面 / 本地开发 / 自托管单机）：目录 `<LOOMIC_BLOB_DIR>`，
+ * **当前只有本地 FS 形态**（桌面 / 本地开发 / 自托管单机）：目录 `<KENFUTWORK_BLOB_DIR>`，
  * 对外 URL 走 server 自己的 `/api/blobs` 读取路由。原 Supabase Storage Provider 已随
  * M1.5 删除——它在过渡期承担了「不改业务代码先切缝」的角色，现在使命完成。
  *
@@ -23,28 +25,29 @@ export function createBlobPlugin(
 ): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
   let blob: BlobStore | undefined;
+  let signingSecret: string;
 
   return {
     name: "blob",
     inject: ["persistence"],
     apply(ctx) {
       const rootDir = ctx.env.blobDir;
-      const signingSecret = ctx.env.credentialSecret;
+      signingSecret = ensureBlobSigningKey(
+        resolveDesktopDataDir({
+          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+        }),
+      );
 
       if (!rootDir) {
         throw new Error(
-          "[blob] 缺少 LOOMIC_BLOB_DIR（本地对象根目录）——对象存储是必需能力，配置缺失即失败。",
-        );
-      }
-      if (!signingSecret) {
-        throw new Error(
-          "[blob] 缺少 LOOMIC_CREDENTIAL_SECRET（blob 签名密钥）。",
+          "[blob] 缺少 KENFUTWORK_BLOB_DIR（本地对象根目录）——对象存储是必需能力，配置缺失即失败。",
         );
       }
 
       blob = createLocalFsBlobStore({
         publicBaseUrl:
-          ctx.env.blobPublicBaseUrl ?? "http://127.0.0.1:3001/api/blobs",
+          ctx.env.blobPublicBaseUrl ??
+          `http://${ctx.env.serverHost === "::1" ? "[::1]" : (ctx.env.serverHost ?? "127.0.0.1")}:${ctx.env.port}/api/blobs`,
         rootDir,
         signingSecret,
       });
@@ -58,14 +61,11 @@ export function createBlobPlugin(
         return;
       }
       const rootDir = ctx.env.blobDir;
-      const signingSecret = ctx.env.credentialSecret;
-      if (!rootDir || !signingSecret) {
+      if (!rootDir || !signingSecret || !blob) {
         // apply 已 fail loud；此处只是类型收窄（同一次启动不会走到这里）
-        throw new Error(
-          "[blob] 缺少 LOOMIC_BLOB_DIR / LOOMIC_CREDENTIAL_SECRET。",
-        );
+        throw new Error("[blob] 本地对象根目录或签名密钥未初始化。");
       }
-      void registerBlobRoutes(ctx.app, { rootDir, signingSecret });
+      void registerBlobRoutes(ctx.app, { rootDir, signingSecret, blob });
     },
   };
 }

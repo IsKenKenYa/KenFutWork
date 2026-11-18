@@ -1,0 +1,1148 @@
+import type { StreamEvent } from "@kenfutwork/shared";
+import { describe, expect, it } from "vitest";
+import { createCodeUiConversation } from "./conversation.js";
+
+it("共同Harness的真实run.compacted投影为自动压缩标记，不伪造用户行或实际token数", () => {
+  const host = createCodeUiConversation({
+    sessionId: "root",
+    workspacePath: "/project",
+    config: {
+      provider: "zcode",
+      model: "test",
+      thought: "",
+      followupMode: "queue",
+    },
+  });
+  host.startTurn({ runId: "run", commandId: "send", text: "研究" });
+  host.recordEvent({
+    type: "run.compacted",
+    runId: "run",
+    triggerTokens: 4096,
+    triggerSource: "reserved-output",
+    keepMessages: 20,
+    timestamp: "2026-10-03T00:00:00Z",
+  });
+  const snapshot = host.getSnapshot();
+  expect(
+    snapshot.rows.window.filter((row) => row.kind === "userInput"),
+  ).toHaveLength(1);
+  const marker = snapshot.rows.window.find(
+    (row) => row.kind === "timelineMarker",
+  );
+  expect(marker).toMatchObject({
+    lane: "assistantWork",
+    marker: { type: "compact", origin: "auto", status: "success" },
+  });
+  expect(
+    marker?.kind === "timelineMarker" ? marker.marker : {},
+  ).not.toHaveProperty("tokensBefore");
+});
+
+describe("Code 会话用量的公共投影与恢复", () => {
+  const timestamp = "2026-10-05T00:00:00.000Z";
+  const input: Parameters<typeof createCodeUiConversation>[0] = {
+    sessionId: "usage-root",
+    workspacePath: "/workspace/project",
+    clock: () => Date.parse(timestamp),
+    config: {
+      provider: "zcode",
+      model: "stop-model",
+      thought: "",
+      followupMode: "queue",
+      mode: "build",
+    },
+  };
+  const usageA = {
+    type: "run.usage",
+    runId: "run-a",
+    modelCallId: "call-a-last",
+    inputTokens: 10,
+    outputTokens: 7,
+    cachedInputTokens: 4,
+    runInputTokens: 20,
+    runOutputTokens: 10,
+    runCachedInputTokens: 4,
+    timestamp,
+  } satisfies StreamEvent;
+  const usageB = {
+    type: "run.usage",
+    runId: "run-b",
+    modelCallId: "call-b",
+    inputTokens: 7,
+    outputTokens: 2,
+    cachedInputTokens: 3,
+    runInputTokens: 7,
+    runOutputTokens: 2,
+    runCachedInputTokens: 3,
+    timestamp,
+  } satisfies StreamEvent;
+
+  it("同 Run 的绝对 totals 重放不翻倍，向下终值修正覆盖旧值", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent(usageA);
+    host.recordEvent(usageA);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+
+    const corrected = {
+      ...usageA,
+      outputTokens: 6,
+      cachedInputTokens: 3,
+      runOutputTokens: 9,
+      runCachedInputTokens: 3,
+    };
+    host.recordEvent(corrected);
+    host.recordEvent(corrected);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 9, cachedInputTokens: 3 }],
+    ]);
+  });
+
+  it("A 完成后 B 的 Run totals 与会话历史 A 相加", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "继续" });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    host.recordEvent(usageB);
+    host.recordEvent(usageB);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 10, cachedInputTokens: 4 }],
+      ["run-b", { inputTokens: 7, outputTokens: 2, cachedInputTokens: 3 }],
+    ]);
+  });
+
+  it("G6 派生圆环同Run实时更新，下一Run窗口未知时不沿用旧容量", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent({
+      ...usageA,
+      inputTokens: 45_000,
+      runInputTokens: 60_000,
+      contextWindowTokens: 1_000_000,
+    });
+    expect(host.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 45_000,
+      maxTokens: 1_000_000,
+      autoCompactThresholdTokens: null,
+      cache: {
+        inputTokens: 45_000,
+        cacheReadTokens: 4,
+        cacheWriteTokens: 0,
+        totalInputTokens: 60_000,
+        totalCacheReadTokens: 4,
+        totalCacheWriteTokens: 0,
+        hitRate: 4 / 60_000,
+      },
+    });
+
+    host.recordEvent({
+      ...usageA,
+      inputTokens: 46_000,
+      runInputTokens: 106_000,
+    });
+    expect(host.getSnapshot().usage.contextWindow).toMatchObject({
+      usedTokens: 46_000,
+      maxTokens: 1_000_000,
+      cache: { totalInputTokens: 106_000 },
+    });
+    expect(host.exportState().contextWindowProjections).toEqual([
+      [input.sessionId, "run-a"],
+    ]);
+    // A different model/run cannot inherit capacity from this consumer's old projection.
+    host.startTurn({ runId: "run-c", commandId: "send-c", text: "第三轮" });
+    host.recordEvent({ ...usageB, runId: "run-c" });
+    expect(host.getSnapshot().usage.contextWindow).toBeNull();
+    expect(host.exportState()).not.toHaveProperty("contextWindowProjections");
+  });
+
+  it("冷恢复仍更新同Run派生圆环，实际Runtime上下文不被事件metadata覆盖", () => {
+    const original = createCodeUiConversation(input);
+    original.startTurn({ runId: "run-a", commandId: "send-a", text: "读取" });
+    original.recordEvent({ ...usageA, contextWindowTokens: 4096 });
+    const restored = createCodeUiConversation({
+      ...input,
+      state: original.exportState(),
+    });
+    restored.recordEvent({
+      ...usageA,
+      inputTokens: 30,
+      runInputTokens: 50,
+      contextWindowTokens: 8192,
+    });
+    expect(restored.getSnapshot().usage.contextWindow).toMatchObject({
+      usedTokens: 30,
+      maxTokens: 8192,
+    });
+    const state = restored.exportState();
+    delete state.contextWindowProjections;
+    const snapshot = state.snapshots.find(
+      (value) => value.sessionId === input.sessionId,
+    );
+    if (!snapshot) throw new Error("Missing root snapshot");
+    snapshot.usage.contextWindow = {
+      usedTokens: 87,
+      maxTokens: 4096,
+      autoCompactThresholdTokens: 3000,
+    };
+    const runtime = createCodeUiConversation({ ...input, state });
+    runtime.recordEvent({
+      ...usageA,
+      inputTokens: 20,
+      contextWindowTokens: 1_000_000,
+    });
+    expect(runtime.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 87,
+      maxTokens: 4096,
+      autoCompactThresholdTokens: 3000,
+    });
+    expect(runtime.exportState()).not.toHaveProperty(
+      "contextWindowProjections",
+    );
+    snapshot.usage.contextWindow.maxTokens = 0;
+    const missingCapacity = createCodeUiConversation({ ...input, state });
+    missingCapacity.recordEvent({ ...usageA, contextWindowTokens: 8192 });
+    expect(missingCapacity.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 87,
+      maxTokens: 8192,
+      autoCompactThresholdTokens: 3000,
+    });
+    expect(missingCapacity.exportState()).not.toHaveProperty(
+      "contextWindowProjections",
+    );
+  });
+
+  it("exportState 重建后，B 的绝对修正仍保留 A 的已结算总量", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "第二轮" });
+    host.recordEvent(usageB);
+    const state = host.exportState();
+    const restored = createCodeUiConversation({ ...input, state });
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+
+    const corrected = {
+      ...usageB,
+      outputTokens: 1,
+      cachedInputTokens: 1,
+      runOutputTokens: 1,
+      runCachedInputTokens: 1,
+    };
+    restored.recordEvent(corrected);
+    restored.recordEvent(corrected);
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 11,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 0,
+    });
+    expect(restored.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 10, cachedInputTokens: 4 }],
+      ["run-b", { inputTokens: 7, outputTokens: 1, cachedInputTokens: 1 }],
+    ]);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("关闭 A 后迟到 usage 和无完整 totals 的旧事件不影响新 B", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    const lateA = {
+      ...usageA,
+      inputTokens: 1000,
+      outputTokens: 1000,
+      runInputTokens: 1000,
+      runOutputTokens: 1000,
+      runCachedInputTokens: 900,
+    };
+    const completed = host.getSnapshot();
+    host.recordEvent(lateA);
+    expect(host.getSnapshot()).toEqual(completed);
+
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "第二轮" });
+    host.recordEvent(usageB);
+    const before = host.getSnapshot();
+    host.recordEvent(lateA);
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      cachedInputTokens: 999,
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      runInputTokens: 999,
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      runOutputTokens: 999,
+      timestamp,
+    });
+    expect(host.getSnapshot()).toEqual(before);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("缓存未知不登记新的已知零，后续缺失保留已知值，显式零才修正", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-first",
+      inputTokens: 10,
+      outputTokens: 3,
+      runInputTokens: 10,
+      runOutputTokens: 3,
+      timestamp,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 10, outputTokens: 3 }],
+    ]);
+    host.recordEvent(usageA);
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-last",
+      inputTokens: 10,
+      outputTokens: 6,
+      runInputTokens: 20,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 9, cachedInputTokens: 4 }],
+    ]);
+
+    host.recordEvent({
+      ...usageA,
+      outputTokens: 5,
+      cachedInputTokens: 0,
+      runOutputTokens: 8,
+      runCachedInputTokens: 0,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-last",
+      inputTokens: 10,
+      outputTokens: 4,
+      runInputTokens: 20,
+      runOutputTokens: 7,
+      timestamp,
+    });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 7,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 7, cachedInputTokens: 0 }],
+    ]);
+  });
+
+  it("真实 Task 子会话连续两 call 累计，重建后修正仍保留子用量与缓存", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "派发检查" });
+    host.recordEvent(usageA);
+    const childId = host.registerChildDispatch({
+      parentSessionId: "usage-root",
+      parentRunId: "run-a",
+      toolCallId: "task-usage",
+      childSessionId: "usage-child",
+      role: "explore",
+      title: "检查子任务",
+      at: Date.parse(timestamp),
+      detached: false,
+    });
+    expect(
+      host.getSnapshot().rows.window.find((row) => row.kind === "subagent"),
+    ).toMatchObject({
+      childSessionId: childId,
+      parentToolCallId: "run-a/task-usage",
+      status: "running",
+    });
+    const firstCall = {
+      type: "run.usage",
+      runId: "child-run",
+      modelCallId: "child-call-a",
+      contextWindowTokens: 1000,
+      inputTokens: 10,
+      outputTokens: 3,
+      cachedInputTokens: 4,
+      runInputTokens: 10,
+      runOutputTokens: 3,
+      runCachedInputTokens: 4,
+      timestamp,
+    } satisfies StreamEvent;
+    host.recordEvent(firstCall);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    host.recordChildRunEvent(childId, firstCall);
+    expect(host.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    const secondCall = {
+      ...firstCall,
+      modelCallId: "child-call-b",
+      inputTokens: 12,
+      outputTokens: 7,
+      cachedInputTokens: 0,
+      runInputTokens: 20,
+      runOutputTokens: 10,
+    };
+    host.recordChildRunEvent(childId, secondCall);
+    host.recordChildRunEvent(childId, secondCall);
+    expect(host.getSnapshot(childId).usage.contextWindow).toMatchObject({
+      usedTokens: 12,
+      maxTokens: 1000,
+    });
+    expect(host.exportState().contextWindowProjections).toEqual([
+      [childId, "child-run"],
+    ]);
+    expect(host.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+
+    const restored = createCodeUiConversation({
+      ...input,
+      state: host.exportState(),
+    });
+    expect(restored.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    restored.recordChildRunEvent(childId, {
+      type: "run.usage",
+      runId: "child-run",
+      modelCallId: "child-call-b",
+      inputTokens: 14,
+      outputTokens: 6,
+      runInputTokens: 20,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(restored.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    expect(restored.getSnapshot(childId).usage.contextWindow).toMatchObject({
+      usedTokens: 14,
+      maxTokens: 1000,
+    });
+    expect(restored.exportState().contextWindowProjections).toEqual([
+      [childId, "child-run"],
+    ]);
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("子代理用量按 agentCallId 写入父会话子代理行，缺缓存字段不伪造 0", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "派发检查" });
+    host.registerChildDispatch({
+      parentSessionId: "usage-root",
+      parentRunId: "run-a",
+      toolCallId: "task-usage",
+      childSessionId: "usage-child",
+      role: "explore",
+      title: "检查子任务",
+      at: Date.parse(timestamp),
+      detached: false,
+    });
+    const subagentRow = () =>
+      host
+        .getSnapshot()
+        .rows.window.find(
+          (row) =>
+            row.kind === "subagent" &&
+            row.parentToolCallId === "run-a/task-usage",
+        );
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-a",
+      agentCallId: "task-usage",
+      agentInputTokens: 30,
+      agentOutputTokens: 9,
+      inputTokens: 30,
+      outputTokens: 9,
+      runInputTokens: 30,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 30, outputTokens: 9 },
+    });
+    expect(subagentRow()).not.toHaveProperty("usage.cachedInputTokens");
+
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-b",
+      agentCallId: "task-usage",
+      agentInputTokens: 50,
+      agentOutputTokens: 12,
+      agentCachedInputTokens: 8,
+      inputTokens: 50,
+      outputTokens: 12,
+      runInputTokens: 50,
+      runOutputTokens: 12,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 50, outputTokens: 12, cachedInputTokens: 8 },
+    });
+  });
+});
+
+describe("Code 宿主会话快照", () => {
+  it("原sendText的完整模型选项持久到Task快照，恢复后追问沿用同一选择", () => {
+    const selection = {
+      providerId: "provider",
+      modelId: "model",
+      options: { reasoningLevel: "low" },
+    };
+    const host = createCodeUiConversation({
+      sessionId: "selected-task",
+      workspacePath: "/work",
+      config: {
+        provider: "zcode",
+        model: "model",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    host.startTurn({
+      runId: "run",
+      commandId: "command",
+      text: "执行",
+      modelSelection: selection,
+    });
+    const restored = createCodeUiConversation({
+      sessionId: "selected-task",
+      workspacePath: "/work",
+      config: host.getSnapshot().config,
+      state: host.exportState(),
+    });
+    expect(restored.getSnapshot().config.modelSelection).toEqual(selection);
+    selection.options.reasoningLevel = "high";
+    expect(
+      restored.getSnapshot().config.modelSelection?.options?.reasoningLevel,
+    ).toBe("low");
+  });
+  it("真实文件工具的chip保留实际绝对路径，运行事实原参数保持完整", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-file-path",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    host.startTurn({
+      runId: "run-file-path",
+      commandId: "command-file-path",
+      text: "读取",
+    });
+    const event = {
+      type: "tool.started" as const,
+      runId: "run-file-path",
+      toolCallId: "read",
+      toolName: "Read",
+      input: { file_path: "/workspace/project/例子.ts", offset: 0 },
+      timestamp: "2026-10-02T12:00:00.000Z",
+    };
+    host.recordEvent(event);
+    expect(
+      host.getSnapshot().rows.window.find((row) => row.kind === "toolCall"),
+    ).toMatchObject({
+      input: { file_path: "/workspace/project/例子.ts", offset: 0 },
+    });
+    expect(event.input).toEqual({
+      file_path: "/workspace/project/例子.ts",
+      offset: 0,
+    });
+  });
+  it("运行失败保留可读原因，停止工具与正文并拒绝迟到结果", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-error",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-error",
+      commandId: "command-error",
+      text: "检查",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-error",
+      toolCallId: "read",
+      toolName: "read_file",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.failed",
+      runId: "run-error",
+      error: { code: "run_failed", message: "模型网关拒绝请求" },
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-error",
+      toolCallId: "read",
+      toolName: "read_file",
+      outputText: "迟到结果",
+      timestamp,
+    });
+    expect(host.getSnapshot().control).toMatchObject({
+      phase: "error",
+      canStop: false,
+      lastError: { message: "模型网关拒绝请求" },
+    });
+    expect(
+      host.getSnapshot().rows.window.find((row) => row.kind === "toolCall"),
+    ).toMatchObject({ status: "cancelled" });
+  });
+  it("真实运行的思考与正文各自结束，完成后的迟到正文不能续写", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-complete",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-complete",
+      commandId: "command-complete",
+      text: "检查",
+    });
+    host.recordEvent({
+      type: "thinking.delta",
+      runId: "run-complete",
+      messageId: "response",
+      delta: "先读取。",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-complete",
+      messageId: "response",
+      delta: "完成。",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.completed",
+      runId: "run-complete",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-complete",
+      messageId: "response",
+      delta: "迟到。",
+      timestamp,
+    });
+    const snapshot = host.getSnapshot();
+    expect(snapshot.control).toMatchObject({
+      phase: "completedSuccess",
+      canStop: false,
+      sessionEnded: true,
+    });
+    expect(
+      snapshot.rows.window
+        .filter(
+          (row) => row.kind === "reasoning" || row.kind === "assistantText",
+        )
+        .map((row) => ({ kind: row.kind, text: row.text, state: row.state })),
+    ).toEqual([
+      { kind: "reasoning", text: "先读取。", state: "complete" },
+      { kind: "assistantText", text: "完成。", state: "complete" },
+    ]);
+  });
+  it("父 Agent 行关联独立子会话，子正文不进入主会话", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-session",
+      workspacePath: "/workspace/code-project",
+      clock: () => Date.parse("2026-10-02T12:00:00.000Z"),
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    host.startTurn({
+      runId: "run-1",
+      commandId: "command-1",
+      text: "调研代码",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-1",
+      toolCallId: "dispatch-1",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "分析目录" },
+      timestamp: "2026-10-02T12:00:00.000Z",
+    });
+    const subagent = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "subagent");
+    if (subagent?.kind !== "subagent" || !subagent.childSessionId)
+      throw new Error("缺少原子会话身份");
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-1",
+      messageId: "child-message-1",
+      delta: "仅属于子代理。",
+      agentCallId: "dispatch-1",
+      agentName: "explore",
+      timestamp: "2026-10-02T12:00:01.000Z",
+    });
+
+    expect({
+      parentText: host
+        .getSnapshot()
+        .rows.window.filter((row) => row.kind === "assistantText")
+        .map((row) => row.text),
+      childText: host
+        .getSnapshot(subagent.childSessionId)
+        .rows.window.filter((row) => row.kind === "assistantText")
+        .map((row) => row.text),
+    }).toEqual({ parentText: [], childText: ["仅属于子代理。"] });
+  });
+
+  it("重放同一次派发不会生成第二个子会话或目录条目", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-replay",
+      workspacePath: "/workspace/code-project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    host.startTurn({
+      runId: "run-replay",
+      commandId: "command-replay",
+      text: "调研",
+    });
+    const event = {
+      type: "tool.started" as const,
+      runId: "run-replay",
+      toolCallId: "call-replay",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "读取" },
+      timestamp: "2026-10-02T12:00:00.000Z",
+    };
+    host.recordEvent(event);
+    host.recordEvent(event);
+
+    expect(host.getSnapshot().subagents?.childSessionIds).toHaveLength(1);
+  });
+
+  it("子会话工具终态保留完整正文和失败状态，供主/子同一 renderer 读取", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-tool",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-tool",
+      commandId: "command-tool",
+      text: "调研",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-tool",
+      toolCallId: "dispatch-tool",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "检查" },
+      timestamp,
+    });
+    const childId = host.getSnapshot().subagents?.childSessionIds[0];
+    if (!childId) throw new Error("缺少子会话");
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-tool",
+      toolCallId: "read-child",
+      toolName: "read_file",
+      input: { path: "/a.ts" },
+      agentCallId: "dispatch-tool",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-tool",
+      toolCallId: "read-child",
+      toolName: "read_file",
+      outputText: "读取失败：文件不存在",
+      status: "error",
+      agentCallId: "dispatch-tool",
+      timestamp,
+    });
+    const row = host
+      .getSnapshot(childId)
+      .rows.window.find((row) => row.kind === "toolCall");
+
+    expect(row).toMatchObject({
+      status: "error",
+      output: { text: "读取失败：文件不存在" },
+      error: { message: "读取失败：文件不存在" },
+    });
+  });
+
+  it("前台派发结束后关闭子会话运行态，保留其正文并更新目录终态", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-end",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-end",
+      commandId: "command-end",
+      text: "检查",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-end",
+      toolCallId: "dispatch-end",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "检查目录" },
+      timestamp,
+    });
+    const childId = host.getSnapshot().subagents?.childSessionIds[0];
+    if (!childId) throw new Error("缺少子会话");
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-end",
+      messageId: "child-end",
+      delta: "检查完成。",
+      agentCallId: "dispatch-end",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-end",
+      toolCallId: "dispatch-end",
+      toolName: "subagent_task",
+      outputText: "检查完成。",
+      status: "success",
+      timestamp,
+    });
+
+    expect({
+      phase: host.getSnapshot(childId).control.phase,
+      running: host.getSnapshot().subagents?.running.length,
+      ended: host.getSnapshot().subagents?.endedTotal,
+    }).toEqual({ phase: "completedSuccess", running: 0, ended: 1 });
+  });
+
+  it("宿主恢复后沿用子会话身份与转录，不重新生成目录或展示投影", () => {
+    const input = {
+      sessionId: "root-restore",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue" as const,
+        mode: "build",
+      },
+    };
+    const host = createCodeUiConversation(input);
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-restore",
+      commandId: "command-restore",
+      text: "检查",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-restore",
+      toolCallId: "dispatch-restore",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "检查目录" },
+      timestamp,
+    });
+    const childId = host.getSnapshot().subagents?.childSessionIds[0];
+    if (!childId) throw new Error("缺少子会话");
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-restore",
+      messageId: "child-restore",
+      delta: "恢复后仍可读取。",
+      agentCallId: "dispatch-restore",
+      timestamp,
+    });
+    const restored = createCodeUiConversation({
+      ...input,
+      state: host.exportState(),
+    });
+
+    expect(restored.getSnapshot(childId)).toEqual(host.getSnapshot(childId));
+  });
+
+  it("取消关闭主/子运行态，迟到的子正文不能复活或续写已结束转录", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-cancel",
+      workspacePath: "/workspace/project",
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-cancel",
+      commandId: "command-cancel",
+      text: "检查",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-cancel",
+      toolCallId: "dispatch-cancel",
+      toolName: "subagent_task",
+      input: { subagent_type: "explore", description: "检查目录" },
+      timestamp,
+    });
+    const childId = host.getSnapshot().subagents?.childSessionIds[0];
+    if (!childId) throw new Error("缺少子会话");
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-cancel",
+      messageId: "child-cancel",
+      delta: "已有进度。",
+      agentCallId: "dispatch-cancel",
+      timestamp,
+    });
+    host.recordEvent({ type: "run.canceled", runId: "run-cancel", timestamp });
+    host.recordEvent({
+      type: "message.delta",
+      runId: "run-cancel",
+      messageId: "child-cancel",
+      delta: "迟到正文。",
+      agentCallId: "dispatch-cancel",
+      timestamp,
+    });
+
+    expect({
+      root: host.getSnapshot().control.phase,
+      child: host.getSnapshot(childId).control.phase,
+      text: host
+        .getSnapshot(childId)
+        .rows.window.filter((row) => row.kind === "assistantText")
+        .map((row) => row.text),
+    }).toEqual({
+      root: "completedInterrupted",
+      child: "completedInterrupted",
+      text: ["已有进度。"],
+    });
+  });
+
+  it("工具输出超预览预算保留头尾并登记 truncated.ref，事件原文不受影响", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-preview",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-preview",
+      commandId: "command-preview",
+      text: "读取大文件",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      timestamp,
+    });
+    const full = `${"头".repeat(2_000)}${"尾".repeat(2_000)}`;
+    const event = {
+      type: "tool.completed" as const,
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      outputText: full,
+      timestamp,
+    };
+    host.recordEvent(event);
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    const preview = row.output.text;
+    expect(preview.startsWith("头")).toBe(true);
+    expect(preview.endsWith("尾")).toBe(true);
+    expect(preview).toContain("\n…\n");
+    expect(Buffer.byteLength(preview, "utf8")).toBeLessThanOrEqual(1_024);
+    expect(row.output.truncated).toEqual({
+      totalBytes: Buffer.byteLength(full, "utf8"),
+      ref: "run-preview/read-big",
+    });
+    // 消费方只拿到投影，原始事件文本保持完整。
+    expect(event.outputText).toBe(full);
+  });
+
+  it("工具输出未超预算时不登记截断引用，多字节字符不切断", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-short",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-short",
+      commandId: "command-short",
+      text: "读取",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      outputText: "短结果".repeat(20),
+      timestamp,
+    });
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    expect(row.output).toEqual({ text: "短结果".repeat(20) });
+    expect(row.output).not.toHaveProperty("truncated");
+  });
+});

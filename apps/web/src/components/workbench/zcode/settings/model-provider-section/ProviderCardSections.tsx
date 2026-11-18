@@ -1,0 +1,643 @@
+/* eslint-disable max-lines -- 模型供应商卡片仍在迁移期集中维护多个紧耦合区块，后续拆分时再移除。 */
+import {
+  useCallback,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+  type ReactNode,
+} from "react";
+import type {
+  ProviderSettingsFormProvider,
+  ProviderSettingsFormModel,
+} from "@zui/lib/providerSettingsFormTypes.js";
+import type { ModelConnectivityResult } from "@zcode/shared";
+import type { ProviderApiType } from "@zcode/provider";
+import { type ProviderInstanceResponse, type ProviderInstanceModel, type ProviderProtocol } from "@kenfutwork/shared";
+import { MODEL_KIND_LABELS, modelKind, type ModelKind } from "@zui/host/ModelSettingsSummary.js";
+import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
+import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
+import {
+  TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
+  TID_MODEL_PROVIDER_BASE_URL_INPUT,
+  TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
+  TID_MODEL_PROVIDER_MODEL_INPUT,
+  TID_MODEL_PROVIDER_NAME_EDIT_BUTTON,
+  TID_MODEL_PROVIDER_NAME_INPUT,
+  testId,
+} from "@zcode/shared";
+import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Button } from "@zui/components/ui/button.js";
+import { Input } from "@zui/components/ui/input.js";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@zui/components/ui/select.js";
+import { modelCapabilitySchema } from "@kenfutwork/shared";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@zui/components/ui/dropdown-menu.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { TECHNICAL_INPUT_ATTRIBUTES } from "@zui/lib/technicalInputAttributes.js";
+import { ApiKeyInput } from "./ApiKeyInput.js";
+import { ModelRowInput } from "./ProviderFormControls.js";
+import { PresetProviderApiKeyBanner } from "./PresetProviderApiKeyBanner.js";
+import { type ProviderModelDraftValues } from "@zui/settings/model-provider-section/ProviderModelMetadata.js";
+import { ProviderModelMetadataDialog } from "@zui/settings/model-provider-section/ProviderModelMetadataDialog.js";
+import {
+  ProviderApiFormatSelect,
+  resolveProviderConnectionApiFormatDisplayLabel,
+} from "@zui/settings/model-provider-section/ProviderApiFormatSelect.js";
+import { SortableProviderModelList } from "@zui/settings/model-provider-section/SortableProviderModelList.js";
+import { useProviderModelDraft } from "@zui/settings/model-provider-section/useProviderModelDraft.js";
+import { ProviderLogo } from "@zui/settings/model-provider-section/ProviderLogo.js";
+import type { ProviderConfigObject } from "@zcode/provider";
+
+export { formatModelContextWindowLabel } from "@zui/lib/tokenNumberFormat.js";
+export {
+  resolveProviderConnectionApiFormatDisplayLabel,
+  resolveProviderConnectionApiFormatOptions,
+} from "@zui/settings/model-provider-section/ProviderApiFormatSelect.js";
+
+function shouldShowProviderApiFormat(
+  _provider: Pick<ProviderSettingsFormProvider, "providerId">,
+): boolean {
+  return true;
+}
+
+export function ProviderCardHeader({
+  providerName,
+  logo,
+  editingName,
+  nameValue,
+  nameInputRef,
+  nameEditable = true,
+  onNameChange,
+  onNameBlur,
+  onNameKeyDown,
+  onNameCompositionEnd,
+  onNameCompositionStart,
+  onStartEditName,
+  onDelete,
+  actionsVisible = true,
+  providerToggle,
+}: {
+  providerName: string;
+  logo?: ProviderConfigObject["logo"];
+  editingName: boolean;
+  nameValue: string;
+  nameInputRef: RefObject<HTMLInputElement | null>;
+  nameEditable?: boolean;
+  onNameChange: (value: string) => void;
+  onNameBlur: () => void;
+  onNameKeyDown: (event: ReactKeyboardEvent) => void;
+  onNameCompositionEnd?: () => void;
+  onNameCompositionStart?: () => void;
+  onStartEditName: () => void;
+  onDelete?: () => void;
+  actionsVisible?: boolean;
+  providerToggle?: ReactNode;
+}) {
+  const { intl } = useZCodeIntl();
+  const renameRequestedRef = useRef(false);
+  const secondaryActionsVisible = actionsVisible && (nameEditable || Boolean(onDelete));
+
+  return (
+    <div className="flex items-center justify-between gap-3" data-testid="model-provider-header">
+      <div className="flex min-w-0 items-center gap-2">
+        <ProviderLogo logo={logo} className="size-5" />
+        {editingName ? (
+          <Input
+            {...TECHNICAL_INPUT_ATTRIBUTES}
+            ref={nameInputRef}
+            data-testid={TID_MODEL_PROVIDER_NAME_INPUT}
+            type="text"
+            size="lg"
+            className="w-auto min-w-0 text-ui-lg font-semibold"
+            value={nameValue}
+            onChange={(event) => onNameChange(event.target.value)}
+            onCompositionEnd={onNameCompositionEnd}
+            onCompositionStart={onNameCompositionStart}
+            onBlur={onNameBlur}
+            onKeyDown={onNameKeyDown}
+          />
+        ) : (
+          <>
+            <div className="min-w-0 truncate text-ui-lg font-semibold text-foreground">
+              {providerName}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {providerToggle}
+        {secondaryActionsVisible ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                data-testid="model-provider-actions-button"
+                aria-label={intl.formatMessage({ id: "common.more" })}
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              onCloseAutoFocus={(event) => {
+                // 重命名后的焦点交给输入框，不能被菜单关闭时重新抢回触发按钮。
+                if (renameRequestedRef.current) {
+                  event.preventDefault();
+                  renameRequestedRef.current = false;
+                }
+              }}
+            >
+              {nameEditable ? (
+                <DropdownMenuItem
+                  data-testid={TID_MODEL_PROVIDER_NAME_EDIT_BUTTON}
+                  onSelect={() => {
+                    renameRequestedRef.current = true;
+                    onStartEditName();
+                  }}
+                >
+                  <Pencil className="size-3.5" />
+                  {intl.formatMessage({ id: "settings.modelProvider.renameProvider" })}
+                </DropdownMenuItem>
+              ) : null}
+              {nameEditable && onDelete ? <DropdownMenuSeparator /> : null}
+              {onDelete ? (
+                <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                  <Trash2 className="size-3.5" />
+                  {intl.formatMessage({ id: "common.delete" })}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function ProviderConnectionSection({
+  provider,
+  readOnly,
+  apiFormat,
+  baseUrlValue,
+  onApiFormatChange,
+  onNativeProtocolChange,
+  onBaseUrlChange,
+  onBaseUrlBlur,
+  onBaseUrlKeyDown,
+  onBaseUrlCompositionStart,
+  onBaseUrlCompositionEnd,
+}: {
+  provider: ProviderSettingsFormProvider;
+  readOnly?: boolean;
+  apiFormat: ProviderApiType;
+  baseUrlValue: string;
+  onApiFormatChange: (value: ProviderApiType) => void;
+  onNativeProtocolChange?: ((value: ProviderProtocol) => void) | undefined;
+  onBaseUrlChange: (value: string) => void;
+  onBaseUrlBlur: () => void;
+  onBaseUrlKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onBaseUrlCompositionStart?: () => void;
+  onBaseUrlCompositionEnd?: () => void;
+}) {
+  const { intl } = useZCodeIntl();
+  const showApiFormat = shouldShowProviderApiFormat(provider);
+  const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
+  const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+  const nativeProtocol = provider.native && !["openai-compatible", "anthropic", "gemini"].includes(provider.native.protocol) ? provider.native.protocol : undefined;
+
+  const renderReadOnlyField = (label: string, value: string) => (
+    <div>
+      <label className="mb-1 block text-ui-base text-foreground-subtle">{label}</label>
+      <div className="flex min-h-8 items-center gap-2 rounded-lg border border-input-border bg-input px-3 py-1.5 text-ui-base text-foreground">
+        <span className="min-w-0 flex-1 break-all">{value || "-"}</span>
+        <span
+          role="img"
+          aria-label={intl.formatMessage(
+            { id: "settings.modelProvider.readOnlyField" },
+            { field: label },
+          )}
+          className="shrink-0 text-foreground-subtle"
+        >
+          <LockKeyholeIcon className="size-3.5" aria-hidden="true" />
+        </span>
+      </div>
+    </div>
+  );
+
+  if (readOnly) {
+    return (
+      <>
+        {renderReadOnlyField(
+          intl.formatMessage({ id: "settings.modelProvider.baseUrl" }),
+          readOnlyBaseUrl,
+        )}
+        {showApiFormat
+          ? renderReadOnlyField(
+              intl.formatMessage({ id: "settings.modelProvider.apiFormat" }),
+              resolveProviderConnectionApiFormatDisplayLabel(intl, nativeProtocol ?? resolvedApiFormat),
+            )
+          : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div>
+        <label className="mb-1 block text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.modelProvider.baseUrl" })}
+        </label>
+        <Input
+          {...TECHNICAL_INPUT_ATTRIBUTES}
+          type="text"
+          size="lg"
+          data-testid={TID_MODEL_PROVIDER_BASE_URL_INPUT}
+          value={baseUrlValue}
+          placeholder={intl.formatMessage({
+            id: "settings.modelProvider.baseUrlPlaceholder",
+          })}
+          onChange={(event) => onBaseUrlChange(event.target.value)}
+          onBlur={onBaseUrlBlur}
+          onKeyDown={onBaseUrlKeyDown}
+          onCompositionStart={onBaseUrlCompositionStart}
+          onCompositionEnd={onBaseUrlCompositionEnd}
+        />
+      </div>
+      {showApiFormat ? (
+        <div>
+          <label className="mb-1 block text-ui-base text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
+          </label>
+          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={provider.native ? onNativeProtocolChange : undefined} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function ProviderApiKeySection({
+  apiKeyValue,
+  apiKeyVisible,
+  credentialConfigured,
+  onClearApiKey,
+  readOnly,
+  presetApiKeyUrl,
+  onOpenPresetApiKey,
+  onApiKeyChange,
+  onApiKeyBlur,
+  onApiKeyKeyDown,
+  onApiKeyCompositionStart,
+  onApiKeyCompositionEnd,
+  onToggleApiKeyVisibility,
+}: {
+  apiKeyValue: string;
+  apiKeyVisible: boolean;
+  credentialConfigured?: boolean;
+  onClearApiKey?: () => void;
+  readOnly?: boolean;
+  presetApiKeyUrl?: string;
+  onOpenPresetApiKey?: () => void;
+  onApiKeyChange: (value: string) => void;
+  onApiKeyBlur: () => void;
+  onApiKeyKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onApiKeyCompositionStart?: () => void;
+  onApiKeyCompositionEnd?: () => void;
+  onToggleApiKeyVisibility: () => void;
+}) {
+  const { intl } = useZCodeIntl();
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <label className="block text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.modelProvider.apiKey" })}
+        </label>
+        {presetApiKeyUrl && onOpenPresetApiKey ? (
+          <PresetProviderApiKeyBanner onOpenApiKey={onOpenPresetApiKey} />
+        ) : null}
+      </div>
+      <ApiKeyInput
+        value={apiKeyValue}
+        visible={apiKeyVisible}
+        readOnly={readOnly}
+        credentialConfigured={credentialConfigured}
+        onClear={onClearApiKey}
+        onChange={onApiKeyChange}
+        onBlur={onApiKeyBlur}
+        onKeyDown={onApiKeyKeyDown}
+        onCompositionStart={onApiKeyCompositionStart}
+        onCompositionEnd={onApiKeyCompositionEnd}
+        onToggleVisibility={onToggleApiKeyVisibility}
+      />
+    </div>
+  );
+}
+
+function createEmptyModel(): ProviderSettingsFormModel {
+  return {
+    kind: "candidate",
+    modelId: "",
+    builtin: false,
+    personalConfig: {},
+    // 空 ID 尚未解析模型配置，硬编码档位会被误认为智能推荐。
+    config: {
+      properties: { supportsToolCall: true },
+    },
+    hasPersonalConfig: false,
+    executable: false,
+    selectable: false,
+  };
+}
+
+export function ProviderModelsSection({
+  providerId,
+  providerName,
+  providerEnabled = true,
+  providerAccess,
+  models,
+  onTestModel,
+  onModelCommit,
+  onModelEnabledChange,
+  onDeleteModel,
+  onAddModel,
+  onReorderModelIds,
+  settingsRevision = 0,
+  providerRevision,
+  nativeProvider,
+}: {
+  providerId: string;
+  providerName?: string;
+  providerEnabled?: boolean;
+  providerAccess?: ProviderConfigObject["access"];
+  models: ProviderSettingsFormModel[];
+  onTestModel?: (model: string) => Promise<ModelConnectivityResult>;
+  onModelCommit: (
+    originalModelId: string,
+    model: ProviderSettingsFormModel,
+    basedOnRevision: number,
+  ) => void | Promise<void>;
+  onDeleteModel: (modelId: string) => void;
+  onModelEnabledChange?: (modelId: string, enabled: boolean) => void | Promise<void>;
+  onAddModel: (model: ProviderSettingsFormModel) => void | Promise<void>;
+  onReorderModelIds?: (modelIds: string[]) => void;
+  settingsRevision?: number;
+  providerRevision?: number | undefined;
+  nativeProvider?: ProviderInstanceResponse | undefined;
+}) {
+  const { intl } = useZCodeIntl();
+  const [kind, setKind] = useState<ModelKind | "all">("all");
+  const [query, setQuery] = useState("");
+  const visibleModels = models.filter(model =>
+    (kind === "all" || modelKind(model) === kind) &&
+    `${model.modelId} ${model.native?.name ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
+  const { providerSettingsService } = useServices();
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const addSavingRef = useRef(false);
+  const [addCommitError, setAddCommitError] = useState<string | null>(null);
+  const [addModel] = useState(createEmptyModel);
+  const defaultCapability = nativeProvider && !["openai-compatible", "anthropic", "gemini"].includes(nativeProvider.protocol) ? "image" : "chat";
+  const [nativeDraft, setNativeDraft] = useState<ProviderInstanceModel>({ id: "", name: "", capability: defaultCapability });
+  const generation = Boolean(nativeProvider && nativeDraft.capability !== "chat");
+  const nativeDraftRef = useRef(nativeDraft);
+  const changeNativeDraft = (model: ProviderInstanceModel) => { nativeDraftRef.current = model; setNativeDraft(model); };
+  const addRevisionRef = useRef(providerRevision);
+  const [addDraftErrorField, setAddDraftErrorField] = useState<
+    | "id"
+    | "contextWindow"
+    | "maxOutputTokens"
+    | "inputFormat"
+    | "reasoningLevelValues"
+    | "reasoningLevelMap"
+    | null
+  >(null);
+  const resolveAddModelConfig = useCallback(
+    (modelId: string) => providerSettingsService.resolveModelConfig({ providerId, modelId }),
+    [providerId, providerSettingsService],
+  );
+  const editor = useProviderModelDraft({
+    model: addModel,
+    open: addDialogOpen && !generation,
+    scopeKey: providerId,
+    resolve: resolveAddModelConfig,
+  });
+  const { draft: addDraft } = editor;
+
+  const openAddDialog = useCallback(() => {
+    changeNativeDraft({ id: "", name: "", capability: kind === "all" ? defaultCapability : kind });
+    addRevisionRef.current = providerRevision;
+    editor.reset(createEmptyModel());
+    setAddDraftErrorField(null);
+    setAddCommitError(null);
+    setAddDialogOpen(true);
+  }, [editor.reset, providerRevision, kind, defaultCapability]);
+
+  const updateAddDraft = (patch: Partial<ProviderModelDraftValues>) => {
+    editor.change(patch);
+    setAddDraftErrorField(null);
+  };
+
+  const cancelAddDialog = () => {
+    setAddDialogOpen(false);
+    editor.reset(createEmptyModel());
+    setAddDraftErrorField(null);
+    editor.cancel();
+  };
+
+  const handleAddDialogOpenChange = useCallback(
+    (open: boolean) => {
+      // 保存中的关闭/再打开会让旧请求结束掉新草稿，等待本次提交完成再结束编辑。
+      if (addSavingRef.current) return;
+      if (!open) {
+        cancelAddDialog();
+        return;
+      }
+      setAddDialogOpen(true);
+    },
+    [cancelAddDialog],
+  );
+
+  const commitAddDraft = useCallback(async (): Promise<boolean> => {
+    if (addSavingRef.current) return false;
+    addSavingRef.current = true;
+    setAddSaving(true);
+    setAddCommitError(null);
+    try {
+      if (generation) {
+        const native = parseGenerationModelDraft(nativeDraftRef.current);
+        await onAddModel({ ...createEmptyModel(), modelId: native.id, native, providerRevision: addRevisionRef.current });
+        setAddDialogOpen(false);
+        return true;
+      }
+      const result = await editor.commit();
+      if (result.status === "invalid") {
+        setAddDraftErrorField(result.field);
+        return false;
+      }
+      // 过去只发起异步添加就关闭弹窗，失败后输入也丢了；以实际保存完成作为结束边界。
+      await onAddModel(result.model);
+      setAddDialogOpen(false);
+      editor.reset(createEmptyModel());
+      return true;
+    } catch (error) {
+      setAddCommitError(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      addSavingRef.current = false;
+      setAddSaving(false);
+    }
+  }, [editor, onAddModel, generation]);
+  const addDraftErrorMessage = addDraftErrorField
+    ? intl.formatMessage({
+        id: `settings.modelProvider.modelMetadata.invalid.${addDraftErrorField}`,
+      })
+    : null;
+
+  return (
+    <div>
+      <Tabs className="max-w-full overflow-x-auto" value={kind} onValueChange={(value) => { setKind(value as ModelKind | "all"); setQuery(""); }}>
+        <TabsList variant="line" className="mb-4">
+          <TabsTrigger value="all">全部 {models.length}</TabsTrigger>
+          {(Object.keys(MODEL_KIND_LABELS) as ModelKind[]).map(value => {
+            const count = models.filter(model => modelKind(model) === value).length;
+            return count > 0 ? <TabsTrigger key={value} value={value}>{MODEL_KIND_LABELS[value]} {count}</TabsTrigger> : null;
+          })}
+        </TabsList>
+      </Tabs>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <Input size="lg" aria-label="搜索模型" placeholder="搜索名称或模型 ID" value={query} onChange={event => setQuery(event.target.value)} className="w-64 max-w-full" />
+        <Button
+          type="button"
+          variant="secondary"
+          size="default"
+          className="rounded-lg"
+          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+          onClick={openAddDialog}
+        >
+          <Plus data-icon="inline-start" aria-hidden="true" />
+          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+        </Button>
+      </div>
+      {visibleModels.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-input-border bg-input">
+          <SortableProviderModelList
+            modelIds={visibleModels.map((model) => model.modelId)}
+            sortableModelIds={visibleModels.map((model) => model.modelId)}
+            onReorder={kind === "all" && !query.trim() ? onReorderModelIds : undefined}
+            renderModel={(_modelId, index) => {
+              const model = visibleModels[index]!;
+              const inputFormat = model.config.properties?.inputFormat;
+              const outputFormat = model.config.properties?.outputFormat;
+              const completeProperties =
+                model.config.properties?.contextWindow != null &&
+                inputFormat?.supportsText != null &&
+                inputFormat.supportsImage != null &&
+                inputFormat.supportsVideo != null &&
+                inputFormat.supportsAudio != null &&
+                inputFormat.supportsPdf != null &&
+                outputFormat?.supportsText != null;
+              return (
+                <>
+                  <ModelRowInput
+                    providerRevision={providerRevision}
+                    key={`${providerId}/${model.modelId}`}
+                    providerId={providerId}
+                    providerName={providerName}
+                    providerEnabled={providerEnabled}
+                    providerAccess={providerAccess}
+                    inputTestId={testId(TID_MODEL_PROVIDER_MODEL_INPUT, String(index))}
+                    deleteTestId={testId(TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON, String(index))}
+                    model={model}
+                    onCommit={(value, basedOnRevision) =>
+                      onModelCommit(model.modelId, value, basedOnRevision)
+                    }
+                    onResolveDraft={(nextModelId, personalConfig) =>
+                      providerSettingsService.resolveModelConfig({
+                        providerId,
+                        originalModelId: model.modelId,
+                        modelId: nextModelId,
+                        personalConfig: structuredClone(personalConfig),
+                      })
+                    }
+                    settingsRevision={settingsRevision}
+                    onDelete={!model.builtin ? () => onDeleteModel(model.modelId) : undefined}
+                    onEnabledChange={(enabled) => {
+                      void Promise.resolve(onModelEnabledChange?.(model.modelId, enabled)).catch(
+                        () => undefined,
+                      );
+                    }}
+                    onTest={onTestModel}
+                  />
+                  {(!model.native || model.native.capability === "chat") && !completeProperties && (
+                    <div className="px-3 pb-2 text-ui-sm text-destructive">
+                      {model.issues?.[0]?.message ??
+                        intl.formatMessage({ id: "settings.modelProvider.modelConfigIncomplete" })}
+                    </div>
+                  )}
+                </>
+              );
+            }}
+          />
+        </div>
+      ) : (
+        <div className="mt-1 flex h-12 items-center justify-start gap-2 rounded-lg border border-dashed border-border px-4 text-left text-ui-base text-foreground-subtle">
+          <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
+          {query ? "没有匹配的模型" : intl.formatMessage({ id: "settings.modelProvider.modelsEmpty" })}
+        </div>
+      )}
+      <>
+        <ProviderModelMetadataDialog
+          headerContent={nativeProvider ? <div className="flex items-center justify-between gap-4 pt-2">
+            <span className="text-ui-base text-foreground-subtle">用途</span>
+            <Select value={nativeDraft.capability} onValueChange={value => changeNativeDraft({ ...nativeDraftRef.current, capability: modelCapabilitySchema.parse(value) })}>
+              <SelectTrigger aria-label="用途" className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chat">对话</SelectItem>
+                <SelectItem value="image">图像</SelectItem>
+                <SelectItem value="image-edit">图像编辑</SelectItem>
+                <SelectItem value="video">视频</SelectItem>
+                <SelectItem value="audio">音频</SelectItem>
+              </SelectContent>
+            </Select>
+          </div> : undefined}
+          editorContent={generation ? <GenerationModelFields hideCapability model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
+          onRestore={() => {
+            setAddDraftErrorField(null);
+            setAddCommitError(null);
+            void editor
+              .restore()
+              .catch((error) =>
+                setAddCommitError(error instanceof Error ? error.message : String(error)),
+              );
+          }}
+          mode="add"
+          open={addDialogOpen}
+          draft={addDraft}
+          draftErrorMessage={addCommitError ?? addDraftErrorMessage}
+          draftErrorField={addDraftErrorField}
+          inheritedConfig={editor.inheritedConfig}
+          overrideFields={editor.overrides}
+          onOpenChange={handleAddDialogOpenChange}
+          onDraftChange={updateAddDraft}
+          onCommit={commitAddDraft}
+          saving={addSaving}
+          modelConfigResolutionPending={editor.pending}
+          modelDefaultsLoaded={editor.defaultsLoaded}
+          onModelIdBlur={() => {
+            void editor.flush().catch(() => undefined);
+          }}
+        />
+      </>
+    </div>
+  );
+}

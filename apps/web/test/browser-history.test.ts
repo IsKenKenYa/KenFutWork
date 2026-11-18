@@ -1,0 +1,158 @@
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  BROWSER_HISTORY_STORAGE_KEY,
+  canGoBack,
+  canGoForward,
+  clearHistory,
+  createHistory,
+  currentUrl,
+  goBack,
+  goForward,
+  loadHistory,
+  MAX_HISTORY_ENTRIES,
+  openUrl,
+  parseImportedHistory,
+  replaceCurrent,
+  saveHistory,
+} from "../src/lib/browser-history";
+
+/**
+ * 右栏浏览器的面板内历史栈（用户口径：「浏览器好多东西你都没加」——参考图的浏览器面板有
+ * 后退/前进/刷新）。这里锁栈语义：截断前进分支、越界不动、重复地址不入栈、上限。
+ */
+describe("浏览器面板历史栈", () => {
+  it("空栈：没有当前页，后退前进都不可用", () => {
+    const state = createHistory();
+    expect(currentUrl(state)).toBe("");
+    expect(canGoBack(state)).toBe(false);
+    expect(canGoForward(state)).toBe(false);
+  });
+
+  it("打开页面后成为当前页，可以后退", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    state = openUrl(state, "http://b.com/");
+    expect(currentUrl(state)).toBe("http://b.com/");
+    expect(canGoBack(state)).toBe(true);
+    expect(canGoForward(state)).toBe(false);
+
+    state = goBack(state);
+    expect(currentUrl(state)).toBe("http://a.com/");
+    expect(canGoForward(state)).toBe(true);
+
+    state = goForward(state);
+    expect(currentUrl(state)).toBe("http://b.com/");
+  });
+
+  it("回退后再打开新地址：前进分支被截断（与浏览器一致）", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    state = openUrl(state, "http://b.com/");
+    state = openUrl(state, "http://c.com/");
+    state = goBack(state); // 回到 b
+    state = openUrl(state, "http://d.com/");
+    expect(currentUrl(state)).toBe("http://d.com/");
+    expect(canGoForward(state)).toBe(false);
+    expect(state.entries).toEqual([
+      "http://a.com/",
+      "http://b.com/",
+      "http://d.com/",
+    ]);
+  });
+
+  it("重复打开当前地址不入栈（后退键不原地打转）", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    const same = openUrl(state, "http://a.com/");
+    expect(same).toBe(state);
+    expect(state.entries.length).toBe(1);
+  });
+
+  it("越界时后退/前进都不动（不崩、也不吞掉当前页）", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    expect(goBack(state)).toBe(state);
+    expect(goForward(state)).toBe(state);
+  });
+
+  it("空地址不入栈（地址栏空串不产生一条历史）", () => {
+    const state = createHistory();
+    expect(openUrl(state, "")).toBe(state);
+  });
+
+  it("页面自己跳走：替换当前那一项，不新增历史（后退仍回上一个打开过的地址）", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    state = openUrl(state, "http://b.com/");
+    state = replaceCurrent(state, "http://b.com/next");
+    expect(state.entries).toEqual(["http://a.com/", "http://b.com/next"]);
+    expect(currentUrl(state)).toBe("http://b.com/next");
+    expect(canGoBack(state)).toBe(true);
+    expect(currentUrl(goBack(state))).toBe("http://a.com/");
+
+    // 同一地址 / 空地址不动（返回原引用）；没打开过页面时按一次普通打开
+    expect(replaceCurrent(state, "http://b.com/next")).toBe(state);
+    expect(replaceCurrent(state, "")).toBe(state);
+    expect(currentUrl(replaceCurrent(createHistory(), "http://c.com/"))).toBe(
+      "http://c.com/",
+    );
+  });
+
+  it("超过上限时丢最旧的（只留最近 N 条）", () => {
+    let state = createHistory();
+    const total = MAX_HISTORY_ENTRIES + 10;
+    for (let i = 0; i < total; i += 1) {
+      state = openUrl(state, `http://site-${i}.com/`);
+    }
+    expect(state.entries.length).toBe(MAX_HISTORY_ENTRIES);
+    expect(state.entries[0]).toBe(
+      `http://site-${total - MAX_HISTORY_ENTRIES}.com/`,
+    );
+    expect(currentUrl(state)).toBe(`http://site-${total - 1}.com/`);
+    expect(canGoBack(state)).toBe(true);
+  });
+});
+
+/**
+ * 面板历史的持久化与导入（R5-4「浏览器数据：清除 / 导入」的真对象）。
+ * 它只包含**本面板打开过的地址**——目标站点的 cookie/缓存在跨源 iframe 里，拿不到。
+ */
+describe("面板历史的持久化与导入", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("save/load 往返：坏数据回落空历史，index 夹到合法范围", () => {
+    saveHistory(openUrl(openUrl(createHistory(), "https://a"), "https://b"));
+    expect(loadHistory()).toEqual({
+      entries: ["https://a", "https://b"],
+      index: 1,
+    });
+
+    window.localStorage.setItem(BROWSER_HISTORY_STORAGE_KEY, "{not json");
+    expect(loadHistory()).toEqual(createHistory());
+
+    window.localStorage.setItem(
+      BROWSER_HISTORY_STORAGE_KEY,
+      JSON.stringify({ entries: ["https://a", "", 42], index: 99 }),
+    );
+    expect(loadHistory()).toEqual({ entries: ["https://a"], index: 0 });
+  });
+
+  it("clear 真删；import 同时吃 {entries,index} 与纯地址数组，非法输入返回 null", () => {
+    saveHistory(openUrl(createHistory(), "https://a"));
+    clearHistory();
+    expect(loadHistory()).toEqual(createHistory());
+
+    expect(
+      parseImportedHistory(JSON.stringify(["https://x", "https://y"])),
+    ).toEqual({ entries: ["https://x", "https://y"], index: 1 });
+    expect(
+      parseImportedHistory(
+        JSON.stringify({ entries: ["https://z"], index: 0 }),
+      ),
+    ).toEqual({ entries: ["https://z"], index: 0 });
+    expect(parseImportedHistory("不是 JSON")).toBeNull();
+    expect(parseImportedHistory("[]")).toBeNull();
+  });
+});

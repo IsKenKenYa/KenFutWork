@@ -1,0 +1,23 @@
+{
+  "name": "kenfutwork-blender",
+  "version": "0.4.1",
+  "description": "引导安装和使用官方 Blender CLI，逐轮打开界面建模，实际看图后调整同一项目。",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README_CN.md",
+    "README.md",
+    "LICENSE",
+    "skills"
+  ],
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Blender",
+    "category": "游戏与 3D"
+  },
+  "main": "index.js"
+}

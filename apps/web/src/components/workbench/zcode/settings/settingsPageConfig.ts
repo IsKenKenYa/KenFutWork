@@ -1,0 +1,244 @@
+import type { IPlatformService } from "@zcode/shared";
+import {
+  isSettingsSectionEnabled,
+  type SettingsSectionId,
+} from "@zui/lib/settingsNavigation.js";
+import type { Theme } from "@zui/useTheme.js";
+import {
+  AlarmClock,
+  Anchor,
+  AudioLines,
+  BarChart3,
+  Blocks,
+  Bot,
+  Brain,
+  FileSearch,
+  Globe2,
+  Info,
+  Keyboard,
+  Monitor,
+  Moon,
+  Package,
+  Palette,
+  Archive,
+  type Settings,
+  Settings2,
+  ShieldCheck,
+  Sun,
+  Terminal,
+} from "lucide-react";
+
+export const THEME_MODES: Array<{
+  mode: Theme;
+  icon: typeof Sun;
+}> = [
+  { mode: "system", icon: Monitor },
+  { mode: "zai-dark", icon: Moon },
+  { mode: "zai-light", icon: Sun },
+];
+
+type SettingsSectionGroupId = "basics" | "agentCapabilities" | "dataAndStats";
+
+interface SettingsSectionDefinition {
+  id: SettingsSectionId;
+  icon: typeof Settings;
+  titleId: string;
+  contentTitleId?: string;
+  titleBadgeId?: string;
+  groupId: SettingsSectionGroupId;
+}
+
+const BASE_SETTINGS_SECTION_GROUPS: Array<{
+  id: SettingsSectionGroupId;
+  titleId: string;
+}> = [
+  { id: "basics", titleId: "settings.sidebar.group.basics" },
+  {
+    id: "agentCapabilities",
+    titleId: "settings.sidebar.group.agentCapabilities",
+  },
+  { id: "dataAndStats", titleId: "settings.sidebar.group.dataAndStats" },
+];
+
+const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
+  {
+    id: "general",
+    icon: Settings2,
+    titleId: "settings.systemTitle",
+    groupId: "basics",
+  },
+  {
+    id: "appearance",
+    icon: Palette,
+    titleId: "settings.appearanceTitle",
+    groupId: "basics",
+  },
+  {
+    id: "modelProvider",
+    icon: Package,
+    titleId: "settings.modelProviderTitle",
+    groupId: "basics",
+  },
+  // KenFutWork 宿主分区：语音助手（听/想/说）档位与模型管理，紧跟模型设置。
+  {
+    id: "voice",
+    icon: AudioLines,
+    titleId: "settings.voice.title",
+    groupId: "basics",
+  },
+  {
+    id: "memory",
+    icon: Brain,
+    titleId: "settings.memory",
+    groupId: "agentCapabilities",
+  },
+  // KenFutWork 宿主分区（G7/T7）：权限档旧四档 = 新会话默认档（Q12）。
+  {
+    id: "permissions",
+    icon: ShieldCheck,
+    titleId: "settings.permissions.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "subagents",
+    icon: Bot,
+    titleId: "settings.subagents.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "plugin",
+    icon: Blocks,
+    titleId: "settings.plugins.title",
+    groupId: "agentCapabilities",
+  },
+  // 插件·MCP·技能并成同一个分区（页面内三页签），不再单列导航项。
+  {
+    id: "commands",
+    icon: Terminal,
+    titleId: "settings.commands.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "automations",
+    icon: AlarmClock,
+    titleId: "settings.automations.title",
+    titleBadgeId: "settings.automations.betaBadge",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "hooks",
+    icon: Anchor,
+    titleId: "settings.hooks.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "browser",
+    icon: Globe2,
+    titleId: "settings.browser.title",
+    groupId: "basics",
+  },
+  // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，
+  // 放在基础设置里让用户在同一处理解「控制浏览器 / 控制整台电脑」的关系。
+  {
+    id: "computerUse",
+    icon: Monitor,
+    titleId: "settings.computerUse.title",
+    groupId: "basics",
+  },
+  // 键盘快捷键紧跟「电脑控制」：同属本机操控/效率配置，收纳在基础设置尾部。
+  {
+    id: "shortcuts",
+    icon: Keyboard,
+    titleId: "settings.shortcuts.title",
+    groupId: "basics",
+  },
+  // 工作区搜索范围（.zcodeignore）：面向所有用户的基础工作区行为配置，收在基础设置末尾。
+  {
+    id: "workspaceFileSearch",
+    icon: FileSearch,
+    titleId: "settings.workspaceFileSearch.title",
+    groupId: "basics",
+  },
+  {
+    id: "usage",
+    icon: BarChart3,
+    titleId: "settings.usageTitle",
+    groupId: "dataAndStats",
+  },
+  {
+    id: "archives",
+    icon: Archive,
+    titleId: "archives.nav",
+    groupId: "dataAndStats",
+  },
+  // 关于（宿主信息面板 + 检查更新入口）收在数据与统计组末尾。
+  {
+    id: "about",
+    icon: Info,
+    titleId: "settings.about.title",
+    groupId: "dataAndStats",
+  },
+];
+
+// 兼容既有只读消费者：默认配置代表不带桌面平台能力的 Web 视图；
+// macOS/Windows/Linux 必须继续通过 createSettingsPageConfig 动态加入 Computer Use。
+export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
+  (section) =>
+    section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
+);
+
+interface SettingsPageConfigOptions
+  extends Pick<
+    IPlatformService,
+    "supportsAutomations" | "supportsEmbeddedBrowser" | "supportsComputerUse"
+  > {
+  isDesktop?: boolean;
+  isMacDesktop?: boolean;
+  isWindowsDesktop?: boolean;
+}
+
+export function createSettingsPageConfig({
+  isDesktop = false,
+  isMacDesktop = false,
+  isWindowsDesktop = false,
+  supportsAutomations,
+  supportsEmbeddedBrowser,
+  supportsComputerUse,
+}: SettingsPageConfigOptions = {}) {
+  const showComputerUse = isDesktop || isMacDesktop || isWindowsDesktop;
+  const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) => {
+    if (section.id === "automations" && supportsAutomations === false)
+      return false;
+    if (section.id === "browser" && supportsEmbeddedBrowser === false)
+      return false;
+    if (
+      section.id === "computerUse" &&
+      (!showComputerUse || supportsComputerUse === false)
+    )
+      return false;
+    return isSettingsSectionEnabled(section.id);
+  });
+  const settingsSectionGroups = BASE_SETTINGS_SECTION_GROUPS.map((group) => ({
+    ...group,
+    sections: settingsSections.filter(
+      (section) => section.groupId === group.id,
+    ),
+  })).filter((group) => group.sections.length > 0);
+
+  return { settingsSectionGroups, settingsSections };
+}
+
+export function resolveSettingsSectionForPlatform(
+  section: SettingsSectionId,
+  visibleSections: ReadonlyArray<Pick<SettingsSectionDefinition, "id">>,
+  fallbackSection: SettingsSectionId = "general",
+): SettingsSectionId {
+  if (visibleSections.some((candidate) => candidate.id === section))
+    return section;
+  if (visibleSections.some((candidate) => candidate.id === fallbackSection)) {
+    return fallbackSection;
+  }
+  return visibleSections[0]?.id ?? "general";
+}
+
+export type { SettingsSectionId };

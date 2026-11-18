@@ -1,5 +1,5 @@
 # ── Stage 1: Install dependencies ──────────────────────────────────
-FROM node:22-slim AS deps
+FROM node:22.23.4-slim AS deps
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -17,7 +17,7 @@ COPY packages/config/package.json packages/config/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ── Stage 2: Build shared packages & prepare runtime ──────────────
-FROM node:22-slim AS builder
+FROM node:22.23.4-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -32,12 +32,15 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 COPY packages/shared/ packages/shared/
 COPY packages/config/ packages/config/
 COPY apps/server/ apps/server/
+# 自带插件 bundle（市场「内置」一键安装）：容器 cwd 是 /app/apps/server，加载器的
+# `<cwd>/../../plugins` 候选取到 /app/plugins；不拷则自带插件列表为空。
+COPY plugins/ plugins/
 
-# Build @loomic/shared (server depends on it)
-RUN pnpm --filter @loomic/shared build
+# Build @kenfutwork/shared (server depends on it)
+RUN pnpm --filter @kenfutwork/shared build
 
 # ── Stage 3: Production image ─────────────────────────────────────
-FROM node:22-slim AS production
+FROM node:22.23.4-slim AS production
 
 WORKDIR /app
 
@@ -53,14 +56,14 @@ ENV NODE_ENV=production
 
 EXPOSE 3001
 
-# Python runtime for sandbox code execution (canvas-design skill)
+# Python runtime for sandbox code execution (canvas-design skill); git for checkpoints
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip && \
+    apt-get install -y --no-install-recommends python3 python3-pip git && \
     pip3 install --no-cache-dir --break-system-packages pillow reportlab && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy skills (fonts + SKILL.md) to /opt/loomic/skills/
-COPY skills/ /opt/loomic/skills/
+# Copy skills (fonts + SKILL.md) to /opt/kenfutwork/skills/
+COPY skills/ /opt/kenfutwork/skills/
 
 # SERVICE_MODE: "api" (default) or "worker"
 ENV SERVICE_MODE=api

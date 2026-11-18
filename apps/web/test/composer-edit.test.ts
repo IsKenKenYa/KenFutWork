@@ -17,6 +17,15 @@ import {
  * 回归背景：输入框右键要能撤销/重做/剪切/复制/粘贴/删除/全选
  * （应用内浏览器不弹原生编辑菜单）。区间编辑与历史都在这里锁死。
  */
+
+/** 取出可空的历史结果；为空说明这一步不该返回空，直接报错。 */
+function required<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(`${what}：期望返回历史，实际为 ${String(value)}`);
+  }
+  return value;
+}
+
 describe("输入框区间编辑", () => {
   it("区间夹取：越界与反向选区都被规范化", () => {
     expect(normalizeRange("abc", { start: -5, end: 99 })).toEqual({
@@ -76,19 +85,22 @@ describe("输入框撤销/重做历史", () => {
   it("撤销后再次输入会清空重做栈", () => {
     let history = recordHistory(EMPTY_TEXT_HISTORY, "a", 1000);
     history = recordHistory(history, "ab", 5000);
-    const undone = undoHistory(history, "abc");
-    expect(undone?.history.future).toEqual(["abc"]);
-    const afterTyping = recordHistory(undone!.history, undone!.value, 9000);
+    const undone = required(undoHistory(history, "abc"), "撤销");
+    expect(undone.history.future).toEqual(["abc"]);
+    const afterTyping = recordHistory(undone.history, undone.value, 9000);
     expect(afterTyping.future).toEqual([]);
   });
 
   it("重做：把撤销掉的内容放回来，且可反复撤销/重做", () => {
     let history = recordHistory(EMPTY_TEXT_HISTORY, "a", 1000);
     history = recordHistory(history, "ab", 5000);
-    const undone = undoHistory(history, "abc")!;
-    const redone = redoHistory(undone.history, undone.value)!;
+    const undone = required(undoHistory(history, "abc"), "撤销");
+    const redone = required(redoHistory(undone.history, undone.value), "重做");
     expect(redone.value).toBe("abc");
-    const undoneAgain = undoHistory(redone.history, redone.value)!;
+    const undoneAgain = required(
+      undoHistory(redone.history, redone.value),
+      "再次撤销",
+    );
     expect(undoneAgain.value).toBe("ab");
   });
 

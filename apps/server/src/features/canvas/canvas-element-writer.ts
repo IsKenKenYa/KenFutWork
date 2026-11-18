@@ -1,6 +1,7 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
-import type { CanvasContent } from "@loomic/shared";
+import { createHash } from "node:crypto";
+import type { CanvasContent } from "@kenfutwork/shared";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -9,6 +10,7 @@ import type { CanvasContent } from "@loomic/shared";
 type CanvasElement = Record<string, unknown>;
 
 type ImageInsertOpts = {
+  insertionId?: string;
   canvasId: string;
   objectPath: string; // Storage path for oss:// marker (already uploaded by worker)
   width: number;
@@ -18,7 +20,11 @@ type ImageInsertOpts = {
 };
 
 type VideoInsertOpts = {
+  insertionId?: string;
   canvasId: string;
+  assetId?: string;
+  relativePath?: string;
+  assetVersion?: string;
   signedUrl: string; // Public URL for embeddable link
   width: number;
   height: number;
@@ -38,10 +44,8 @@ type InsertResult = { elementId: string };
  */
 export type CanvasContentStore = {
   readContent(canvasId: string): Promise<CanvasContent | null>;
-  /** 覆盖写；0 行受影响视为失败（不存在或不属本工作区）。 */
-  writeContent(canvasId: string, content: CanvasContent): Promise<void>;
   /**
-   * **原子追加**元素/文件（单条 SQL 内合并）。
+   * 文档发布屏障内原子追加元素/文件。
    * 落画布只能走这里，不能「读-改-写」：并发任务同时落图时后者会覆盖前者，**丢元素**。
    */
   appendContent(
@@ -51,8 +55,6 @@ export type CanvasContentStore = {
       files?: Record<string, Record<string, unknown>> | undefined;
     },
   ): Promise<void>;
-  /** 下载对象字节（M3 前为 Supabase Storage，M3 后为 BlobStore）。 */
-  downloadObject(objectPath: string): Promise<Buffer>;
 };
 
 // ---------------------------------------------------------------------------
@@ -196,6 +198,9 @@ function buildVideoElement(
     locked: false,
     customData: {
       isVideo: true,
+      ...(opts.assetId ? { assetId: opts.assetId } : {}),
+      ...(opts.relativePath ? { relativePath: opts.relativePath } : {}),
+      ...(opts.assetVersion ? { version: opts.assetVersion } : {}),
       mimeType: opts.mimeType,
       ...(opts.durationSeconds != null
         ? { durationSeconds: opts.durationSeconds }
@@ -218,6 +223,50 @@ function readElements(content: CanvasContent | null): CanvasElement[] {
     []) as CanvasElement[];
 }
 
+function insertionIdentity(
+  canvasId: string,
+  insertionId: string | undefined,
+  kind: "image" | "video",
+  source: unknown,
+) {
+  if (!insertionId) return null;
+  const id = createHash("sha256")
+    .update(`${canvasId}/${kind}/${insertionId}`)
+    .digest("hex")
+    .slice(0, 20);
+  return {
+    id,
+    fingerprint: createHash("sha256")
+      .update(JSON.stringify(source))
+      .digest("hex"),
+  };
+}
+function existingInsertion(
+  elements: CanvasElement[],
+  identity: ReturnType<typeof insertionIdentity>,
+) {
+  if (!identity) return undefined;
+  const previous = elements.find((element) => element.id === identity.id);
+  if (!previous) return undefined;
+  const metadata = previous.customData as Record<string, unknown> | undefined;
+  if (metadata?.generationFingerprint !== identity.fingerprint)
+    throw new Error("生成结果发布身份冲突，请重新生成。");
+  return { elementId: identity.id };
+}
+function freezeGeneratedElement(
+  element: CanvasElement,
+  identity: NonNullable<ReturnType<typeof insertionIdentity>>,
+) {
+  element.id = identity.id;
+  element.seed = Number.parseInt(identity.id.slice(0, 7), 16);
+  element.versionNonce = element.seed;
+  element.updated = 0;
+  element.customData = {
+    ...(element.customData as Record<string, unknown>),
+    generationFingerprint: identity.fingerprint,
+  };
+}
+
 /**
  * Insert an image element into a canvas. Reads current content, appends element
  * with auto-placement (or explicit placement), writes it back.
@@ -231,19 +280,7 @@ export async function insertImageElement(
   opts: ImageInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
-  // 1. Download image and convert to base64 dataURL
-  let buffer: Buffer;
-  try {
-    buffer = await store.downloadObject(opts.objectPath);
-  } catch (error) {
-    throw new Error(
-      `Failed to download image from storage: ${
-        error instanceof Error ? error.message : "no data"
-      }`,
-    );
-  }
-
-  const dataURL = `data:${opts.mimeType};base64,${buffer.toString("base64")}`;
+  const dataURL = `oss://project-assets/${opts.objectPath}`;
 
   // 2. Read canvas
   const content = await store.readContent(opts.canvasId);
@@ -252,16 +289,27 @@ export async function insertImageElement(
   }
 
   const elements = readElements(content);
+  const identity = insertionIdentity(opts.canvasId, opts.insertionId, "image", {
+    objectPath: opts.objectPath,
+    width: opts.width,
+    height: opts.height,
+    mimeType: opts.mimeType,
+    title: opts.title,
+    placement: explicitPlacement,
+  });
+  const existing = existingInsertion(elements, identity);
+  if (existing) return existing;
   // 3. Placement
   const placement =
     explicitPlacement ??
     calculateAutoPlacement(elements, opts.width, opts.height, IMAGE_MAX_SIZE);
 
   // 4. Build element + files entry with base64 dataURL
-  const fileId = generateId();
+  const fileId = identity ? `file-${identity.id}` : generateId();
   const element = buildImageElement(fileId, placement, opts);
+  if (identity) freezeGeneratedElement(element, identity);
 
-  // 5. Write：单条 SQL 追加（不能整份覆盖写——并发落图会互相覆盖）
+  // 5. Write：文件锁内追加（不能整份覆盖写——并发落图会互相覆盖）
   await store.appendContent(opts.canvasId, {
     elements: [element],
     files: {
@@ -269,7 +317,7 @@ export async function insertImageElement(
         id: fileId,
         dataURL,
         mimeType: opts.mimeType,
-        created: Date.now(),
+        created: identity ? 0 : Date.now(),
       },
     },
   });
@@ -296,6 +344,18 @@ export async function insertVideoElement(
   }
 
   const elements = readElements(content);
+  const identity = insertionIdentity(opts.canvasId, opts.insertionId, "video", {
+    source: opts.assetId ?? opts.signedUrl,
+    width: opts.width,
+    height: opts.height,
+    mimeType: opts.mimeType,
+    title: opts.title,
+    prompt: opts.prompt,
+    durationSeconds: opts.durationSeconds,
+    placement: explicitPlacement,
+  });
+  const existing = existingInsertion(elements, identity);
+  if (existing) return existing;
 
   // 2. Placement
   const placement =
@@ -304,8 +364,9 @@ export async function insertVideoElement(
 
   // 3. Build element
   const element = buildVideoElement(placement, opts);
+  if (identity) freezeGeneratedElement(element, identity);
 
-  // 4. Write：单条 SQL 追加（理由同图片路径）
+  // 4. Write：文件锁内追加（理由同图片路径）
   await store.appendContent(opts.canvasId, { elements: [element] });
 
   console.log(

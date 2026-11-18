@@ -1,0 +1,393 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WebSocketServer } from "ws";
+
+import {
+  ackScreencastFrame,
+  CdpError,
+  connectCdpClient,
+  dispatchKey,
+  dispatchMouse,
+  dispatchWheel,
+  findBrowserExecutable,
+  readViewport,
+  setViewportOverride,
+  startScreencast,
+  waitForDevtools,
+} from "./cdp-client.js";
+
+/**
+ * CDP 客户端（R5-4「连接到 Chrome」的底座）：这里用一个**真的 WebSocket 替身服务**验协议——
+ * 命令响应配对、错误折叠、超时、断开后拒绝。真实 Chrome 那一段走 GUI 实测。
+ */
+describe("CDP 客户端协议", () => {
+  const servers: WebSocketServer[] = [];
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  /** 起一个替身 CDP 端点：按 method 回结果（或报错），支持延迟。 */
+  function startFakeCdp(
+    handler: (message: {
+      id: number;
+      method: string;
+      params?: Record<string, unknown>;
+    }) => {
+      result?: unknown;
+      error?: { message: string };
+      delayMs?: number;
+    } | null,
+  ) {
+    const server = new WebSocketServer({ port: 0 });
+    servers.push(server);
+    server.on("connection", (socket) => {
+      socket.on("message", (raw) => {
+        const message = JSON.parse(String(raw)) as {
+          id: number;
+          method: string;
+          params?: Record<string, unknown>;
+        };
+        const reply = handler(message);
+        if (!reply) return;
+        const send = () =>
+          socket.send(
+            JSON.stringify(
+              reply.error
+                ? { id: message.id, error: reply.error }
+                : { id: message.id, result: reply.result ?? {} },
+            ),
+          );
+        if (reply.delayMs) setTimeout(send, reply.delayMs);
+        else send();
+      });
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return `ws://127.0.0.1:${port}`;
+  }
+
+  it("命令带 id 配对返回；开标签拿 targetId + sessionId", async () => {
+    const url = startFakeCdp((message) => {
+      if (message.method === "Target.createTarget") {
+        return { result: { targetId: "T1" } };
+      }
+      if (message.method === "Target.attachToTarget") {
+        return { result: { sessionId: "S1" } };
+      }
+      if (message.method === "Target.getTargets") {
+        return {
+          result: {
+            targetInfos: [
+              { targetId: "T1", type: "page", url: "https://a", title: "A" },
+              { targetId: "T9", type: "browser", url: "", title: "" },
+            ],
+          },
+        };
+      }
+      return { result: {} };
+    });
+    const client = connectCdpClient(url);
+    const tab = await client.openTab("https://example.com");
+    expect(tab).toEqual({ targetId: "T1", sessionId: "S1" });
+    // 只列 page 目标（browser 级目标不进列表）
+    expect(await client.listTargets()).toEqual([
+      { targetId: "T1", url: "https://a", title: "A" },
+    ]);
+    client.close();
+  });
+
+  it("CDP 报错折叠成 CdpError；命令超时可读", async () => {
+    const url = startFakeCdp((message) =>
+      message.method === "Page.navigate"
+        ? { error: { message: "Cannot navigate" } }
+        : { result: {}, delayMs: 500 },
+    );
+    const client = connectCdpClient(url, { commandTimeoutMs: 200 });
+    await expect(client.send("Page.navigate", {})).rejects.toMatchObject({
+      code: "command_failed",
+      message: "Cannot navigate",
+    });
+    await expect(client.send("Runtime.evaluate", {})).rejects.toMatchObject({
+      message: expect.stringContaining("超时"),
+    });
+    client.close();
+  });
+
+  it("连接断开后，未决命令立即失败（不等超时）", async () => {
+    const url = startFakeCdp(() => ({ result: {}, delayMs: 5_000 }));
+    const client = connectCdpClient(url, { commandTimeoutMs: 5_000 });
+    const pending = client.send("Page.captureScreenshot", {});
+    client.close();
+    await expect(pending).rejects.toBeInstanceOf(CdpError);
+  });
+});
+
+/**
+ * 面板画面流（`Page.startScreencast` + `Input.dispatch*`）。
+ *
+ * 这里锁的是**协议形状**：事件分发（画面帧不是命令的返回值，走事件）、ack 用的是帧自带的
+ * 数字 `sessionId`（不 ack 就没有下一帧，Chrome 靠它做背压）、以及输入回填的参数形状。
+ * 真实画面与真实点击走 GUI 实测。
+ */
+describe("面板画面流与输入回填", () => {
+  const servers: WebSocketServer[] = [];
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  /** 替身端点：命令一律成功（结果可指定），收到的命令记下来，另外能**主动推事件**。 */
+  function startPushingCdp(results: Record<string, unknown> = {}) {
+    const server = new WebSocketServer({ port: 0 });
+    servers.push(server);
+    const commands: Array<{
+      method: string;
+      params: Record<string, unknown>;
+      sessionId?: string;
+    }> = [];
+    let push: (payload: unknown) => void = () => {};
+    server.on("connection", (socket) => {
+      push = (payload) => socket.send(JSON.stringify(payload));
+      socket.on("message", (raw) => {
+        const message = JSON.parse(String(raw)) as {
+          id?: number;
+          method?: string;
+          params?: Record<string, unknown>;
+          sessionId?: string;
+        };
+        if (typeof message.id !== "number" || !message.method) return;
+        commands.push({
+          method: message.method,
+          params: message.params ?? {},
+          ...(message.sessionId ? { sessionId: message.sessionId } : {}),
+        });
+        socket.send(
+          JSON.stringify({
+            id: message.id,
+            result: results[message.method] ?? {},
+          }),
+        );
+      });
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return {
+      url: `ws://127.0.0.1:${port}`,
+      commands,
+      pushEvent: (payload: unknown) => push(payload),
+    };
+  }
+
+  it("画面帧事件按方法分发；退订后不再收；订阅者抛错不影响命令通道", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+    const frames: Array<{
+      data?: unknown;
+      eventSessionId?: string | undefined;
+    }> = [];
+    const off = client.on("Page.screencastFrame", (params, sessionId) => {
+      frames.push({ data: params.data, eventSessionId: sessionId });
+    });
+    const offBoom = client.on("Page.screencastFrame", () => {
+      throw new Error("订阅者自己炸了");
+    });
+    // 先发一条命令：有回应说明 socket 已经连上（后面的推事件才有地方送）
+    await client.send("Page.enable", {});
+    fake.pushEvent({
+      method: "Page.screencastFrame",
+      params: { data: "AAA", sessionId: 7 },
+      sessionId: "S1",
+    });
+    await vi.waitFor(() => expect(frames.length).toBe(1));
+    expect(frames[0]).toEqual({ data: "AAA", eventSessionId: "S1" });
+
+    off();
+    offBoom();
+    fake.pushEvent({
+      method: "Page.screencastFrame",
+      params: { data: "BBB", sessionId: 8 },
+      sessionId: "S1",
+    });
+    // 命令通道照旧可用（订阅者抛错没把它带崩）
+    await client.send("Runtime.evaluate", { expression: "1" });
+    expect(frames.length).toBe(1);
+    client.close();
+  });
+
+  it("startScreencast 走 jpeg + 指定尺寸；ack 用**帧自带的数字 sessionId**", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+    await startScreencast(client, "S1", {
+      maxWidth: 900,
+      maxHeight: 600,
+      quality: 70,
+    });
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Page.startScreencast",
+      sessionId: "S1",
+      params: {
+        format: "jpeg",
+        quality: 70,
+        maxWidth: 900,
+        maxHeight: 600,
+        everyNthFrame: 1,
+      },
+    });
+    /**
+     * ack 的 `sessionId` 是**帧事件里的那个数字**（与 CDP 会话 id 同名不同物）：
+     * 传成字符串会话 id 就永远等不到下一帧——这是个静默失败，必须钉住。
+     */
+    await ackScreencastFrame(client, "S1", 42);
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Page.screencastFrameAck",
+      sessionId: "S1",
+      params: { sessionId: 42 },
+    });
+    client.close();
+  });
+
+  it("输入回填：鼠标取整、滚轮、Enter 走虚拟键码 + \\r、单字符走 insertText", async () => {
+    const fake = startPushingCdp();
+    const client = connectCdpClient(fake.url);
+
+    await dispatchMouse(client, "S1", {
+      type: "mousePressed",
+      x: 10.6,
+      y: 20.2,
+    });
+    expect(fake.commands.at(-1)?.params).toMatchObject({
+      type: "mousePressed",
+      x: 11,
+      y: 20,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+
+    await dispatchWheel(client, "S1", { x: 5, y: 6, deltaY: 120 });
+    expect(fake.commands.at(-1)?.params).toMatchObject({
+      type: "mouseWheel",
+      x: 5,
+      y: 6,
+      deltaY: 120,
+    });
+
+    await dispatchKey(client, "S1", { key: "Enter" });
+    const [down, up] = fake.commands.slice(-2);
+    expect(down?.params).toMatchObject({
+      type: "rawKeyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      text: "\r",
+    });
+    expect(up?.params).toMatchObject({
+      type: "keyUp",
+      windowsVirtualKeyCode: 13,
+    });
+
+    // 可打印字符：走 insertText（中文输入法合成的结果也走这条）
+    await dispatchKey(client, "S1", { key: "a" });
+    expect(fake.commands.at(-1)).toEqual({
+      method: "Input.insertText",
+      sessionId: "S1",
+      params: { text: "a" },
+    });
+    client.close();
+  });
+
+  it("自由尺寸：真改视口（Emulation）与还原；viewport 读 cssVisualViewport", async () => {
+    const fake = startPushingCdp({
+      "Page.getLayoutMetrics": {
+        cssVisualViewport: { clientWidth: 900, clientHeight: 600, scale: 1 },
+      },
+    });
+    const client = connectCdpClient(fake.url);
+    await setViewportOverride(client, "S1", { width: 900, height: 600 });
+    expect(fake.commands.at(-1)).toMatchObject({
+      method: "Emulation.setDeviceMetricsOverride",
+      sessionId: "S1",
+      params: { width: 900, height: 600, mobile: false },
+    });
+    await setViewportOverride(client, "S1", null);
+    expect(fake.commands.at(-1)?.method).toBe(
+      "Emulation.clearDeviceMetricsOverride",
+    );
+    expect(await readViewport(client, "S1")).toEqual({
+      width: 900,
+      height: 600,
+      scale: 1,
+    });
+    client.close();
+  });
+});
+
+describe("浏览器可执行文件与调试端口探测", () => {
+  it("findBrowserExecutable：本机有 Chrome 就返回存在的路径；显式路径优先", () => {
+    const found = findBrowserExecutable(undefined);
+    if (found) {
+      expect(found.length).toBeGreaterThan(0);
+    }
+    // 显式给的路径不存在时忽略它（回落自动探测），不抛错
+    expect(() => findBrowserExecutable("Z:/not/here/chrome.exe")).not.toThrow();
+  });
+
+  it("waitForDevtools：端口没人听 → 带可读原因失败；有响应 → 返回版本", async () => {
+    await expect(
+      waitForDevtools(9, {
+        timeoutMs: 300,
+        fetchImpl: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "connect_failed" });
+
+    const version = await waitForDevtools(1, {
+      timeoutMs: 500,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            browser: "Chrome/146",
+            protocolVersion: "1.3",
+            webSocketDebuggerUrl: "ws://127.0.0.1:1/devtools/browser/x",
+          }),
+          { status: 200 },
+        ),
+    });
+    expect(version.browser).toBe("Chrome/146");
+  });
+
+  /**
+   * 回归（真机实测抓到）：Chrome 的 `/json/version` 返回的是 **`Browser` / `Protocol-Version`
+   * 首字母大写**的字段，先前直接把它当 CdpVersion 用 → `browser` 恒为 undefined，
+   * 设置页「连接到 Chrome」状态里的浏览器名一直是空的。这里锁住映射。
+   */
+  it("waitForDevtools：Chrome 原样字段（大写 B / 连字符）也要映射进 CdpVersion", async () => {
+    const version = await waitForDevtools(1, {
+      timeoutMs: 500,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            Browser: "Chrome/141.0.7390.55",
+            "Protocol-Version": "1.3",
+            webSocketDebuggerUrl: "ws://127.0.0.1:1/devtools/browser/y",
+          }),
+          { status: 200 },
+        ),
+    });
+    expect(version.browser).toBe("Chrome/141.0.7390.55");
+    expect(version.protocolVersion).toBe("1.3");
+  });
+
+  it("waitForDevtools：没有 webSocketDebuggerUrl 的响应视为未就绪（继续轮询直至超时）", async () => {
+    await expect(
+      waitForDevtools(1, {
+        timeoutMs: 200,
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ Browser: "x" }), { status: 200 }),
+      }),
+    ).rejects.toMatchObject({ code: "connect_failed" });
+  });
+});

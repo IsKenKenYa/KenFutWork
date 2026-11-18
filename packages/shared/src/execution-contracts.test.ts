@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import { projectSummarySchema } from "./contracts.js";
+
+describe("Code 项目工作域契约", () => {
+  it("Task 文件工作域保持真实目录，项目画布按需求创建", () => {
+    const project = {
+      id: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
+      name: "应用",
+      slug: "app",
+      description: null,
+      instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+      createdAt: "2026-10-03T08:00:00.000Z",
+      updatedAt: "2026-10-03T08:00:00.000Z",
+    };
+    const code = projectSummarySchema.parse({
+      ...project,
+      kind: "code",
+      enabledModes: ["code"],
+      workDir: "/home/user/app",
+      additionalDirectories: [
+        { path: "/home/user/reference", access: "read-only" },
+      ],
+    });
+    expect(code).not.toHaveProperty("primaryCanvas");
+    expect(code.workDir).toBe("/home/user/app");
+    expect(
+      projectSummarySchema.safeParse({
+        ...project,
+        kind: "design",
+        enabledModes: ["design"],
+      }).success,
+    ).toBe(true);
+    const work = projectSummarySchema.parse({
+      ...project,
+      kind: "work",
+      enabledModes: ["work"],
+      workDir: "/home/user/work",
+    });
+    expect(work.kind).toBe("work");
+    expect(
+      projectSummarySchema.safeParse({
+        ...project,
+        kind: "work",
+        enabledModes: ["work"],
+      }).success,
+    ).toBe(false);
+  });
+});

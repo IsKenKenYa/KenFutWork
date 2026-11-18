@@ -1,0 +1,389 @@
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
+import type { ToolExecutionContext } from "../../kernel/types.js";
+import { createExecutionScopes } from "../execution/scope-service.js";
+import { createTaskWorkManager } from "../task-work/service.js";
+import { createMemoryTaskWorkStore } from "../task-work/test-store.js";
+import type { TaskWorkContext } from "../task-work/types.js";
+import type { RunUsageSummary } from "../usage/usage-service.js";
+import { createCodeSubagentTool } from "./task-tool.js";
+import type { CodeChildRequest, CodeChildResult } from "./types.js";
+
+async function fixture(
+  preset: "code" | "design" = "code",
+  options: {
+    usageFor?: (
+      context: TaskWorkContext,
+      childRunId: string,
+    ) => Promise<RunUsageSummary | null>;
+    resolveTarget?: Parameters<
+      typeof createCodeSubagentTool
+    >[0]["resolveTarget"];
+  } = {},
+) {
+  const directory = await mkdtemp(join(tmpdir(), "kfw-child-tool-"));
+  const scope = {
+    instanceId: "00000000-0000-4000-8000-000000000001",
+    projectId: "00000000-0000-4000-8000-000000000002",
+    taskId: "00000000-0000-4000-8000-000000000003",
+    generation: 1,
+    rootDirectory: await realpath(directory),
+    additionalDirectories: [],
+    sandboxMode: "workspace-write" as const,
+  };
+  const actor = { instanceId: scope.instanceId, accessClientId: null };
+  const handle = await createExecutionScopes({
+    repository: {
+      load: async () => ({
+        preset: "code",
+        state: "ready",
+        branchGeneration: 1,
+        scope,
+      }),
+    },
+    localInstance: createRuntimeTestInstance(scope.instanceId),
+  }).openTask(actor, scope.taskId);
+  const context: TaskWorkContext = {
+    actor,
+    scope,
+    agentId: "main",
+    runId: "parent",
+    branchGeneration: 1,
+  };
+  const manager = createTaskWorkManager({
+    store: createMemoryTaskWorkStore([context]),
+    executionHostId: directory,
+    resolveMaxConcurrent: async () => 4,
+  });
+  const controller = new AbortController();
+  const execution: ToolExecutionContext = {
+    workContext: {
+      preset,
+      ...(preset === "design" ? { canvasId: "canvas-original" } : {}),
+    },
+    scopeHandle: handle,
+    taskWorkContext: context,
+    signal: controller.signal,
+    sessionId: scope.taskId,
+    toolCallId: "call",
+    modelSpecifier: "provider:model",
+    delegationDepth: 0,
+    codeApproval: {
+      ceiling: "build",
+      resolve: async () => ({
+        mode: "build",
+        scopeGeneration: 1,
+        branchGeneration: 1,
+      }),
+    },
+  };
+  const requests: CodeChildRequest[] = [];
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let finish!: (result: CodeChildResult) => void;
+  const done = new Promise<CodeChildResult>((resolve) => {
+    finish = resolve;
+  });
+  let childSignal: AbortSignal | undefined;
+  const tool = createCodeSubagentTool({
+    manager,
+    ...(options?.resolveTarget ? { resolveTarget: options.resolveTarget } : {}),
+    limitsFor: async () => ({ maxDepth: 2, previewMaxChars: 4 }),
+    ...(options.usageFor ? { usageFor: options.usageFor } : {}),
+    runChild: async (request, signal) => {
+      requests.push(request);
+      childSignal = signal;
+      started();
+      signal.addEventListener(
+        "abort",
+        () =>
+          finish({
+            status: "canceled",
+            summary: "stopped",
+            outputRef: "/logs/result",
+            outputStats: { retainedBytes: 7, totalBytes: 7, discardedBytes: 0 },
+            childSessionId: request.childSessionId,
+            childRunId: "child-run",
+          }),
+        { once: true },
+      );
+      return done;
+    },
+  });
+  return {
+    manager,
+    controller,
+    execution,
+    tool,
+    requests,
+    ready,
+    finish,
+    signal: () => childSignal,
+    cleanup: async () => {
+      await manager.close("test cleanup");
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+const input = {
+  subagent_type: "explore",
+  description: "find evidence",
+  ownership: ["."],
+  completion_criteria: "return source paths",
+};
+
+it.each(["code", "design"] as const)(
+  "%s前台Task随父signal退出，只有一次持久派发，无后台通知重复消费",
+  async (preset) => {
+    const f = await fixture(preset);
+    try {
+      const taskWorkContext = f.execution.taskWorkContext;
+      if (!taskWorkContext) throw new Error("测试前置缺失");
+      const pending = f.tool.execute(input, f.execution);
+      await f.ready;
+      f.controller.abort("parent stopped");
+      expect(await pending).toMatchObject({
+        status: "canceled",
+        summary: "stop",
+      });
+      expect(await f.manager.consumeNotifications(taskWorkContext)).toEqual([]);
+      expect(f.requests).toHaveLength(1);
+      expect(f.requests[0]).toMatchObject({
+        parentSessionId: f.execution.sessionId,
+        approvalCeiling: "build",
+        detached: false,
+        workContext: {
+          preset,
+          ...(preset === "design" ? { canvasId: "canvas-original" } : {}),
+        },
+      });
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
+it("自定义智能体按名称派发：系统提示、工具清单与模型覆盖进入子运行", async () => {
+  const f = await fixture("code", {
+    resolveTarget: async ({ name }) =>
+      name === "doc-reviewer"
+        ? {
+            role: "worker",
+            label: "doc-reviewer",
+            systemPrompt: "你是文档审阅员。",
+            toolAllowlist: ["Read", "Grep"],
+            disallowedTools: ["Bash"],
+            modelSelection: {
+              providerId: "provider-1",
+              modelId: "model-a",
+            },
+          }
+        : null,
+  });
+  try {
+    const pending = f.tool.execute(
+      { ...input, subagent_type: "doc-reviewer" },
+      f.execution,
+    );
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "done",
+      outputRef: "/logs/result",
+      outputStats: { retainedBytes: 4, totalBytes: 4, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    await pending;
+    expect(f.requests[0]).toMatchObject({
+      role: "worker",
+      systemPrompt: "你是文档审阅员。",
+      toolAllowlist: ["Read", "Grep"],
+      disallowedTools: ["Bash"],
+      model: "provider-1:model-a",
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("未知名称与内置名称都由同一解析器拒绝或放行", async () => {
+  const f = await fixture("code", { resolveTarget: async () => null });
+  try {
+    await expect(
+      f.tool.execute({ ...input, subagent_type: "missing-agent" }, f.execution),
+    ).rejects.toThrow(/未知子智能体/);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("后台Task不随父停止，重放返回同一child identity，完整输出引用保留", async () => {
+  const f = await fixture();
+  try {
+    const dispatched = (await f.tool.execute(
+      { ...input, run_in_background: true },
+      f.execution,
+    )) as { taskId: string; childSessionId: string };
+    await f.ready;
+    const replay = await f.tool.execute(
+      { ...input, run_in_background: true },
+      f.execution,
+    );
+    expect(replay).toMatchObject({
+      taskId: dispatched.taskId,
+      childSessionId: dispatched.childSessionId,
+    });
+    f.controller.abort("parent stopped");
+    expect(f.signal()?.aborted).toBe(false);
+    f.finish({
+      status: "completed",
+      summary: "full child evidence",
+      outputRef: "/logs/full-result",
+      outputStats: { retainedBytes: 19, totalBytes: 19, discardedBytes: 0 },
+      childSessionId: dispatched.childSessionId,
+      childRunId: "child-run",
+    });
+    const terminal = new Promise<unknown>((resolve) => {
+      const off = f.manager.onChanged(async (record) => {
+        if (record.id === dispatched.taskId && record.status !== "running") {
+          off();
+          resolve(record);
+        }
+      });
+    });
+    expect(await terminal).toMatchObject({
+      summary: "full",
+      outputRef: "/logs/full-result",
+      detached: true,
+      consumed: false,
+    });
+    expect(f.requests).toHaveLength(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("前台Task完成后按 childRunId 归因用量，不把父 Run 的账算给子代理", async () => {
+  const lookups: Array<{ instanceId: string; childRunId: string }> = [];
+  const f = await fixture("code", {
+    usageFor: async (context, childRunId) => {
+      lookups.push({ instanceId: context.scope.instanceId, childRunId });
+      return {
+        inputTokens: 120,
+        outputTokens: 30,
+        totalTokens: 150,
+        costUsd: 0.01,
+        calls: 2,
+      };
+    },
+  });
+  try {
+    const pending = f.tool.execute(input, f.execution);
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "full child evidence",
+      outputRef: "/logs/full-result",
+      outputStats: { retainedBytes: 19, totalBytes: 19, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    await expect(pending).resolves.toMatchObject({
+      status: "completed",
+      usage: { totalTokens: 150, costUsd: 0.01, calls: 2 },
+    });
+    expect(lookups).toEqual([
+      {
+        instanceId: f.execution.taskWorkContext?.scope.instanceId,
+        childRunId: "child-run",
+      },
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("用量查询失败只丢 usage，Task 本身仍返回完整结果", async () => {
+  const f = await fixture("code", {
+    usageFor: async () => {
+      throw new Error("usage table unavailable");
+    },
+  });
+  try {
+    const pending = f.tool.execute(input, f.execution);
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "full child evidence",
+      outputRef: "/logs/full-result",
+      outputStats: { retainedBytes: 19, totalBytes: 19, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    const result = (await pending) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      status: "completed",
+      outputPath: "/logs/full-result",
+    });
+    expect(result).not.toHaveProperty("usage");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("后台Task派发阶段不阻塞查用量，归因留给 TaskOutput", async () => {
+  const lookups: string[] = [];
+  const f = await fixture("code", {
+    usageFor: async (_context, childRunId) => {
+      lookups.push(childRunId);
+      return null;
+    },
+  });
+  try {
+    const dispatched = (await f.tool.execute(
+      { ...input, run_in_background: true },
+      f.execution,
+    )) as { taskId: string; childSessionId: string };
+    await f.ready;
+    expect(lookups).toEqual([]);
+    expect(dispatched).toMatchObject({
+      taskId: expect.any(String) as string,
+      childSessionId: expect.any(String) as string,
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it.each(["code", "design"] as const)(
+  "%s只读派生不能通过Task创建worker，深度限制来自宿主配置",
+  async (preset) => {
+    const f = await fixture(preset);
+    try {
+      const scopeHandle = f.execution.scopeHandle;
+      if (!scopeHandle) throw new Error("测试前置缺失");
+      await expect(
+        f.tool.execute(
+          { ...input, subagent_type: "worker" },
+          {
+            ...f.execution,
+            scopeHandle: scopeHandle.derive("review"),
+          },
+        ),
+      ).rejects.toThrow(/只读父/);
+      await expect(
+        f.tool.execute(input, { ...f.execution, delegationDepth: 2 }),
+      ).rejects.toThrow(/深度/);
+      expect(f.requests).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);

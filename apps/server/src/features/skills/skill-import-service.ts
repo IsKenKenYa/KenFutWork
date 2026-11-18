@@ -58,6 +58,7 @@ export class SkillImportError extends Error {
     | "github_fetch_error"
     | "tarball_extract_error"
     | "zip_extract_error"
+    | "save_failed"
     | "unsupported_source";
 
   constructor(code: SkillImportError["code"], message: string) {
@@ -314,8 +315,8 @@ function parseGitHubUrl(url: string): GitHubUrlInfo {
     );
   }
 
-  const owner = segments[0]!;
-  const repo = segments[1]!.replace(/\.git$/, "");
+  const [owner = "", repoPart = ""] = segments;
+  const repo = repoPart.replace(/\.git$/, "");
 
   // Default: root of the repo, no specific ref
   let ref: string | null = null;
@@ -326,7 +327,7 @@ function parseGitHubUrl(url: string): GitHubUrlInfo {
     segments.length >= 4 &&
     (segments[2] === "tree" || segments[2] === "blob")
   ) {
-    ref = segments[3]!;
+    ref = segments[3] ?? null;
     path = segments.slice(4).join("/");
   } else if (segments.length > 2) {
     // Fallback: treat remaining segments as a path
@@ -347,7 +348,7 @@ async function githubApiFetch(url: string): Promise<Response> {
   const response = await fetch(url, {
     headers: {
       Accept: "application/vnd.github.v3+json",
-      "User-Agent": "Loomic-Skill-Importer/1.0",
+      "User-Agent": "KenFutWork-Skill-Importer/1.0",
     },
   });
 
@@ -414,7 +415,7 @@ async function listGitHubDirectory(
  */
 async function downloadGitHubFile(downloadUrl: string): Promise<string> {
   const response = await fetch(downloadUrl, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {
@@ -657,7 +658,7 @@ export async function importFromTarballUrl(
   console.log(`[skill-import] Downloading tarball: ${url}`);
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {
@@ -688,6 +689,21 @@ export async function importFromTarballUrl(
 }
 
 /**
+ * package.json 的 author 有两种合法写法：字符串，或 `{ name }` 对象。
+ * 取不出名字时返回 null（调用方据此决定要不要写 manifest.author）。
+ */
+function readPackageAuthorName(author: unknown): string | null {
+  if (typeof author === "string") {
+    return author;
+  }
+  if (typeof author === "object" && author !== null && "name" in author) {
+    const { name } = author;
+    return typeof name === "string" ? name : null;
+  }
+  return null;
+}
+
+/**
  * 从压缩包条目构建技能（tarball 与 zip 共用）。
  *
  * 两个来源的差异只在「怎么拿到条目」，之后完全同构：
@@ -696,7 +712,7 @@ export async function importFromTarballUrl(
  */
 function buildSkillFromArchiveEntries(
   entries: ArchiveEntry[],
-  source: { label: "tarball" | "zip"; url: string },
+  source: { label: "tarball" | "zip" | "sandbox"; url: string },
 ): ImportedSkill {
   const { label, url } = source;
 
@@ -739,13 +755,8 @@ function buildSkillFromArchiveEntries(
     };
     if (pkgJson.version) manifest.version = pkgJson.version as string;
     if (pkgJson.license) manifest.license = pkgJson.license as string;
-    if (typeof pkgJson.author === "string") manifest.author = pkgJson.author;
-    else if (
-      pkgJson.author &&
-      typeof (pkgJson.author as any).name === "string"
-    ) {
-      manifest.author = (pkgJson.author as any).name;
-    }
+    const authorName = readPackageAuthorName(pkgJson.author);
+    if (authorName !== null) manifest.author = authorName;
 
     // Use README.md as skill content, or a minimal placeholder
     skillContent =
@@ -790,8 +801,23 @@ function buildSkillFromArchiveEntries(
   };
 }
 
-// ── ZIP Importer ──────────────────────────────────────────────────────────
+/**
+ * 由「已在内存里的文件列表」构建技能，供从**工作目录**导入使用。
+ *
+ * 直接复用档案包构建器：SKILL.md 判定、frontmatter 解析、`scripts|references|assets`
+ * 附带文件与二进制过滤口径与 zip/tarball 完全一致——两条导入路径不会各自漂移。
+ *
+ * @param files 相对**技能包根**的文件（`path` 用 `/` 分隔）
+ * @param source 来源标签与来源标识（sandbox 导入用 `sandbox:<相对路径>`）
+ */
+export function buildSkillFromFiles(
+  files: Array<{ path: string; content: string }>,
+  source: { label: "tarball" | "zip" | "sandbox"; url: string },
+): ImportedSkill {
+  return buildSkillFromArchiveEntries(files, source);
+}
 
+// ── ZIP Importer ──────────────────────────────────────────────────────────
 /**
  * Import a skill from a .zip / .skill URL.
  *
@@ -802,7 +828,7 @@ export async function importFromZipUrl(url: string): Promise<ImportedSkill> {
   console.log(`[skill-import] Downloading zip: ${url}`);
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "Loomic-Skill-Importer/1.0" },
+    headers: { "User-Agent": "KenFutWork-Skill-Importer/1.0" },
   });
 
   if (!response.ok) {

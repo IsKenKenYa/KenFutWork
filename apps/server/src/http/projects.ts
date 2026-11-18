@@ -2,13 +2,16 @@ import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectDirectoryCandidatesSchema,
+  projectDirectoryQuerySchema,
   projectListQuerySchema,
   projectListResponseSchema,
   projectUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
 import {
   type ProjectService,
   ProjectServiceError,
@@ -18,20 +21,57 @@ import { isZodError } from "./zod-error.js";
 export async function registerProjectRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     projectService: ProjectService;
   },
 ) {
+  app.get("/api/projects/directory-candidates", async (request, reply) => {
+    try {
+      const actor = await options.localAccess.authenticate(request);
+      if (!actor)
+        return reply.code(401).send(
+          unauthenticatedErrorResponseSchema.parse({
+            error: {
+              code: "unauthorized",
+              message: "缺少或无效的本机接入凭据。",
+            },
+          }),
+        );
+      const { path } = projectDirectoryQuerySchema.parse(request.query);
+      const projects = await options.projectService.directoryProjects(
+        actor,
+        path,
+      );
+      return reply.send(
+        projectDirectoryCandidatesSchema.parse({
+          projects: projects.map((project) => ({
+            id: project.id,
+            name: project.name,
+            kind: project.kind,
+            enabledModes: project.enabled_modes,
+            workDir: project.work_dir,
+          })),
+        }),
+      );
+    } catch (error) {
+      if (isZodError(error))
+        return reply
+          .code(400)
+          .send({ message: "目录参数无效，请重新选择文件夹。" });
+      return sendProjectError(error, reply, "project_query_failed");
+    }
+  });
+
   app.get("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
             error: {
               code: "unauthorized",
-              message: "Missing or invalid bearer token.",
+              message: "缺少或无效的本机接入凭据。",
             },
           }),
         );
@@ -47,14 +87,14 @@ export async function registerProjectRoutes(
 
   app.get("/api/projects", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
             error: {
               code: "unauthorized",
-              message: "Missing or invalid bearer token.",
+              message: "缺少或无效的本机接入凭据。",
             },
           }),
         );
@@ -74,14 +114,14 @@ export async function registerProjectRoutes(
 
   app.delete("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
             error: {
               code: "unauthorized",
-              message: "Missing or invalid bearer token.",
+              message: "缺少或无效的本机接入凭据。",
             },
           }),
         );
@@ -97,14 +137,14 @@ export async function registerProjectRoutes(
 
   app.post("/api/projects", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
             error: {
               code: "unauthorized",
-              message: "Missing or invalid bearer token.",
+              message: "缺少或无效的本机接入凭据。",
             },
           }),
         );
@@ -132,14 +172,14 @@ export async function registerProjectRoutes(
 
   app.patch("/api/projects/:projectId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
             error: {
               code: "unauthorized",
-              message: "Missing or invalid bearer token.",
+              message: "缺少或无效的本机接入凭据。",
             },
           }),
         );
@@ -167,13 +207,13 @@ export async function registerProjectRoutes(
     { bodyLimit: 2 * 1024 * 1024 }, // 2 MB for thumbnails
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) {
           return reply.code(401).send(
             unauthenticatedErrorResponseSchema.parse({
               error: {
                 code: "unauthorized",
-                message: "Missing or invalid bearer token.",
+                message: "缺少或无效的本机接入凭据。",
               },
             }),
           );
@@ -219,7 +259,10 @@ function sendProjectError(
     | "project_query_failed"
     | "project_update_failed",
 ) {
-  if (error instanceof ProjectServiceError) {
+  if (
+    error instanceof ProjectServiceError ||
+    error instanceof LocalInstanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {

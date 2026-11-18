@@ -1,18 +1,42 @@
 import {
+  type ApplicationErrorCode,
   applicationErrorResponseSchema,
   pluginExportRequestSchema,
   pluginInspectRequestSchema,
   pluginInspectResponseSchema,
+  pluginInstallBuiltinRequestSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
+  pluginToggleResponseSchema,
+  sandboxPluginBundleListResponseSchema,
+  sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
-
-import type { AdminService } from "../features/admin/admin-service.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+  workDirectoryTargetSchema,
+} from "@kenfutwork/shared";
+import type {
+  FastifyContextConfig,
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
+import type { CanvasRepository } from "../features/canvas/repository.js";
+import type { ExecutionScopes } from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
+import { createScopedBundleSource } from "../features/plugins/bundle-source.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
+import {
+  listSandboxPluginBundles,
+  listScopedPluginBundles,
+} from "../features/plugins/sandbox-plugin-bundles.js";
+import type { ProjectService } from "../features/projects/project-service.js";
+import type { SettingsService } from "../features/settings/settings-service.js";
+import { resolveInsideRoot } from "../utils/inside-root.js";
+import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 
 /**
  * 插件市场与安装路由。
@@ -23,22 +47,64 @@ import { PluginRegistryError } from "../features/plugins/plugin-registry-service
  */
 
 export interface PluginRoutesDeps {
-  auth: RequestAuthenticator;
-  admin: AdminService;
+  localAccess: LocalAccessVerifier;
   registry: PluginRegistryService;
+  /** 「从工作目录安装」需要：画布归属校验 + 沙箱目录解析（与技能/agent 同一处）。 */
+  canvasRepository: CanvasRepository;
+  projects: Pick<ProjectService, "getProject">;
+  executionScopes: Pick<ExecutionScopes, "openTask">;
+  localInstance: LocalInstanceService;
+  /** 插件卡片键值上限来自实例设置（治理值），列表按当前值裁剪后返回。 */
+  settings: Pick<SettingsService, "getInstanceSettings">;
+  sandboxRoot?: string | undefined;
+  canvasWorkDirs?: Record<string, string> | undefined;
+  /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
+  projectWorkDirLoader?:
+    | ((instanceId: string, canvasId: string) => Promise<string | null>)
+    | undefined;
+  /**
+   * 卸载前置钩子（引擎托管缝）：卸载某插件前先做它的引擎清理（flow 插件 = purge
+   * 容器/卷/镜像 + 本地 env/日志/记录，保留插件代码）。失败即**取消卸载**并如实回原因——
+   * 插件没了但引擎还在跑，界面上就再也没有能停它的入口了。
+   */
+  enginePurge?:
+    | ((pluginId: string) => Promise<{ ok: boolean; error?: string }>)
+    | undefined;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
     unauthenticatedErrorResponseSchema.parse({
-      error: { code: "unauthorized", message: "请先登录。" },
+      error: { code: "unauthorized", message: "请从桌面重新建立本机连接。" },
     }),
   );
 }
 
+/**
+ * 插件路由的工作区上下文：与其它聚合同一口径（viewer 解析当前用户的工作区）。
+ *
+ * 解析失败（例如身份已建但个人工作区缺失）**不在这里 500**：公共面板路由本就没有身份，
+ * 而插件真的读写存储时，存储层会因缺工作区 fail loud——报错点离出错点更近，更好排查。
+ */
+async function resolveId(
+  localInstance: LocalInstanceService,
+  user: LocalActor,
+): Promise<string | undefined> {
+  try {
+    const workspace = await localInstance.resolve(user);
+    return workspace.instanceId;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 统一错误响应。`code` 收窄成契约里的封闭枚举——写一个不在枚举里的码（历史上是 `not_found`）
+ * 会让 `parse` 抛错、响应退化成 ZodError 转储，可读原因当场丢失。
+ */
 function sendError(
   reply: FastifyReply,
-  code: string,
+  code: ApplicationErrorCode,
   message: string,
   status: number,
 ) {
@@ -53,34 +119,37 @@ export async function registerPluginRoutes(
   app: FastifyInstance,
   options: PluginRoutesDeps,
 ) {
-  /** 登录 + 管理员双重门（变更类端点用）。 */
-  const requireAdmin = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+  /** 本机接入验证（变更类端点用）。 */
+  const requireAccess = async (
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
   ): Promise<boolean> => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       void sendUnauthenticated(reply);
-      return false;
-    }
-    try {
-      await options.admin.requireAdmin(user);
-    } catch {
-      void sendError(reply, "forbidden", "需要管理员权限。", 403);
       return false;
     }
     return true;
   };
 
   app.get("/api/plugins", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
-    return reply.code(200).send({ plugins: await options.registry.list() });
+    const settings = await options.settings.getInstanceSettings(
+      user,
+      user.instanceId,
+    );
+    return reply.code(200).send({
+      plugins: await options.registry.list({
+        maxFields: settings.pluginCardMaxFields,
+        maxValueCharacters: settings.pluginCardFieldValueMaxChars,
+      }),
+    });
   });
 
   // 只校验不安装：让 UI 在用户点「安装」前就能看到门禁结论
   app.post("/api/plugins/inspect", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
     const parsed = pluginInspectRequestSchema.safeParse(request.body);
@@ -102,9 +171,13 @@ export async function registerPluginRoutes(
   });
 
   app.post("/api/plugins/install", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
 
-    const parsed = pluginInstallRequestSchema.safeParse(request.body);
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const parsed =
+      "builtin" in body
+        ? pluginInstallBuiltinRequestSchema.safeParse(request.body)
+        : pluginInstallRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendError(reply, "invalid_request", "请求参数不合法。", 400);
     }
@@ -127,10 +200,210 @@ export async function registerPluginRoutes(
     }
   });
 
+  // GET /api/plugins/sandbox-bundles?canvasId=… — 列出工作目录里的插件 bundle 候选
+  // 「从工作目录安装」从 Agent 的授权目录发现插件 bundle。
+  app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
+    "/api/plugins/sandbox-bundles",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthenticated(reply);
+      const target = workDirectoryTargetSchema.safeParse(request.query);
+      if (!target.success)
+        return sendError(
+          reply,
+          "invalid_request",
+          "请明确提供 Task 或可视化 Canvas 身份。",
+          400,
+        );
+      try {
+        const directory = await resolveWorkDirectoryTarget(
+          options,
+          user,
+          target.data,
+        );
+        const bundles = directory.scope
+          ? await listScopedPluginBundles(directory.scope)
+          : listSandboxPluginBundles(directory.rootDirectory);
+        return reply
+          .code(200)
+          .send(sandboxPluginBundleListResponseSchema.parse({ bundles }));
+      } catch (error) {
+        return sendError(
+          reply,
+          "invalid_request",
+          error instanceof Error ? error.message : "目录读取失败。",
+          error && typeof error === "object" && "statusCode" in error
+            ? Number(error.statusCode)
+            : 400,
+        );
+      }
+    },
+  );
+
+  // POST /api/plugins/sandbox-install — 把工作目录里的 bundle 目录安装到本实例
+  // 与 /api/plugins/install 同一本机接入门：插件会加载执行第三方代码（本机目录也不例外）
+  app.post("/api/plugins/sandbox-install", async (request, reply) => {
+    if (!(await requireAccess(request, reply))) return reply;
+
+    const parsed = sandboxPluginInstallRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, "invalid_request", "请求参数不合法。", 400);
+    }
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthenticated(reply);
+
+    let directory: Awaited<ReturnType<typeof resolveWorkDirectoryTarget>>;
+    let bundleDir: string;
+    try {
+      const target =
+        "taskId" in parsed.data
+          ? { taskId: parsed.data.taskId }
+          : { canvasId: parsed.data.canvasId };
+      directory = await resolveWorkDirectoryTarget(options, user, target);
+      bundleDir = directory.scope
+        ? await directory.scope.resolvePath(parsed.data.path, "read")
+        : resolveInsideRoot(directory.rootDirectory, parsed.data.path);
+    } catch (error) {
+      return sendError(
+        reply,
+        "invalid_request",
+        error instanceof Error ? error.message : "目录授权不可用。",
+        error && typeof error === "object" && "statusCode" in error
+          ? Number(error.statusCode)
+          : 400,
+      );
+    }
+
+    try {
+      // 本机目录安装：url 传绝对路径（bundle-source 认本地路径），生命周期脚本默认拒绝
+      const result = await options.registry.install({
+        allowLifecycleScripts: false,
+        url: bundleDir,
+        ...(directory.scope
+          ? { localSource: createScopedBundleSource(directory.scope) }
+          : {}),
+      });
+      // 响应形状与 /api/plugins/install 一致：{installed, report}
+      return reply.code(201).send(pluginInstallResponseSchema.parse(result));
+    } catch (error) {
+      if (error instanceof PluginRegistryError) {
+        if (error.report) {
+          return reply.code(422).send({
+            error: { code: "plugin_incompatible", message: error.message },
+            report: error.report,
+          });
+        }
+        const status = error.code === "system_plugin" ? 403 : 400;
+        return sendError(reply, error.code, error.message, status);
+      }
+      request.log.error({ err: error }, "sandbox plugin install failed");
+      return sendError(reply, "install_failed", "安装失败。", 500);
+    }
+  });
+
+  /**
+   * 插件自带路由：`/api/plugins/<pluginId>/<path>`。
+   *
+   * 派发而不是注册到 Fastify：插件可以在运行时装卸，Fastify 的路由表注册后不可撤——
+   * 一张每次都现查的派发表才能做到「卸载即失效」。默认要求登录，插件可用
+   * `public: true` 显式开放（UI 面板 iframe 带不上 Authorization 头）。
+   */
+  const dispatchPluginRoute = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const params = request.params as { pluginId?: string; "*"?: string };
+    const pluginId = params.pluginId ?? "";
+    const routePath = params["*"] ?? "";
+    const query = (request.query ?? {}) as Record<string, string>;
+    if (!pluginId) {
+      return sendError(reply, "invalid_request", "缺少插件 id。", 404);
+    }
+    const user = await options.localAccess.authenticate(request);
+    const instanceId = user
+      ? await resolveId(options.localInstance, user)
+      : undefined;
+    const result = await options.registry.dispatchRoute({
+      pluginId,
+      method: request.method,
+      path: routePath,
+      query,
+      body: request.body,
+      headers: request.headers as Record<string, string | undefined>,
+      isAuthenticated: Boolean(user),
+      ...(instanceId ? { instanceId } : {}),
+    });
+    if (!result) {
+      return sendError(
+        reply,
+        "plugin_not_found",
+        "插件路由不存在（插件可能未安装或未启用）。",
+        404,
+      );
+    }
+    for (const [name, value] of Object.entries(result.headers ?? {})) {
+      reply.header(name, value);
+    }
+    if (typeof result.body === "string") {
+      // HTML/文本（面板页面）原样下发；plugin 自管的 content-type
+      return reply
+        .code(result.status)
+        .type(result.headers?.["content-type"] ?? "text/html; charset=utf-8")
+        .send(result.body);
+    }
+    return reply.code(result.status).send(result.body);
+  };
+
+  /**
+   * 插件静态资源：`/api/plugins/<id>/assets/<path>`（只读、公开）。
+   *
+   * 面板页面若由插件自带，iframe 可以直接加载这里（无需鉴权头）。仅在清单声明
+   * `kenfutwork.assets: true` 时开放；越界/点文件/node_modules/超限一律 404。
+   */
+  const assetsRouteConfig: FastifyContextConfig & { skipLocalAccess: true } = {
+    skipLocalAccess: true,
+  };
+  app.get(
+    "/api/plugins/:pluginId/assets/*",
+    // 面板 iframe 直接加载本路由，不带任何鉴权头；声明 skipLocalAccess 才不会被
+    // 本机总门拦成 401（否则「面板白屏/报错」）。资源本身只读、只暴露已安装插件
+    // 清单内的静态文件，且仅 `assets: true` 时开放。
+    { config: assetsRouteConfig },
+    async (request, reply) => {
+      const params = request.params as { pluginId: string; "*": string };
+      const asset = await options.registry.readAsset({
+        pluginId: params.pluginId,
+        relativePath: params["*"] ?? "",
+      });
+      if (!asset) {
+        return sendError(reply, "plugin_asset_not_found", "资源不存在。", 404);
+      }
+      return reply
+        .code(200)
+        .header("cache-control", "no-cache")
+        .type(asset.contentType)
+        .send(asset.content);
+    },
+  );
+
+  app.get("/api/plugins/:pluginId/*", dispatchPluginRoute);
+  app.post("/api/plugins/:pluginId/*", dispatchPluginRoute);
+
   app.post("/api/plugins/:id/uninstall", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
     const { id } = request.params as { id: string };
     try {
+      // 引擎托管缝：卸载 flow 插件先清引擎（删容器/卷/镜像；插件代码保留，可二次安装）。
+      // 清理失败即取消卸载——卸载后引擎页随之消失，留下的容器就没人能停了。
+      const purge = await options.enginePurge?.(id);
+      if (purge && !purge.ok) {
+        return sendError(
+          reply,
+          "service_unavailable",
+          purge.error ?? "引擎清理失败，已取消卸载。",
+          503,
+        );
+      }
       await options.registry.uninstall(id);
       return reply.code(200).send({ id, installed: false });
     } catch (error) {
@@ -149,7 +422,7 @@ export async function registerPluginRoutes(
   });
 
   app.post("/api/plugins/:id/toggle", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
     const { id } = request.params as { id: string };
     const body = request.body as { enabled?: unknown } | undefined;
     if (typeof body?.enabled !== "boolean") {
@@ -157,9 +430,13 @@ export async function registerPluginRoutes(
     }
     try {
       const updated = await options.registry.setEnabled(id, body.enabled);
-      return reply
-        .code(200)
-        .send({ id: updated.id, installed: updated.enabled });
+      return reply.code(200).send(
+        pluginToggleResponseSchema.parse({
+          id: updated.id,
+          installed: true,
+          enabled: updated.enabled,
+        }),
+      );
     } catch (error) {
       if (error instanceof PluginRegistryError) {
         return sendError(
@@ -176,7 +453,7 @@ export async function registerPluginRoutes(
 
   // 导出产出 bundle 骨架（双声明，两端可装）；不落盘，由客户端决定保存位置
   app.post("/api/plugins/export", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
     const parsed = pluginExportRequestSchema.safeParse(request.body);

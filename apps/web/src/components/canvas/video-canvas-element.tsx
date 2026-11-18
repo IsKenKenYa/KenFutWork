@@ -69,7 +69,9 @@ export function VideoCanvasElement({
   }, []);
 
   return (
-    <div
+    <button
+      type="button"
+      aria-label={playing ? "暂停视频" : "播放视频"}
       style={{ width, height }}
       className="relative flex items-center justify-center overflow-hidden rounded-lg bg-black"
       onPointerDown={stopPropagation}
@@ -98,6 +100,6 @@ export function VideoCanvasElement({
           </div>
         </div>
       )}
-    </div>
+    </button>
   );
 }

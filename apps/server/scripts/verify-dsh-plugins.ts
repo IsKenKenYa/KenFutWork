@@ -4,7 +4,7 @@
  * 用途：回答「我们的门禁对实际生态里的 dsh 插件到底判成什么」，
  * 而不是只看我们自己造的夹具。数据源为 skillhub 的 DSH 插件目录（公开免鉴权）。
  *
- * 用法：pnpm --filter @loomic/server exec tsx scripts/verify-dsh-plugins.ts [数量]
+ * 用法：pnpm --filter @kenfutwork/server exec tsx scripts/verify-dsh-plugins.ts [数量]
  */
 
 import { fetchBundleFiles } from "../src/features/plugins/bundle-source.js";

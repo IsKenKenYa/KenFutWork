@@ -27,6 +27,11 @@ const PERMANENT_FAILURE_PATTERNS: readonly RegExp[] = [
   /unauthorized/i,
   /forbidden/i,
   /额度|余额不足|plan|tier/i,
+  // 认证/凭据类：令牌失效、凭证解不开——重试必然同样失败（实测：改名换掉 scrypt 盐后，
+  // 每轮失败被重试 10 次，全是「认证失败」）
+  /认证失败/,
+  /credential|decrypt/i,
+  /令牌|token 无效|invalid token/i,
 ];
 
 /** 把设置里的值收敛到 [0, 上限]；非法值回落缺省。0 表示不重试。 */
@@ -62,14 +67,39 @@ export interface RunRetryDecision {
  * @param maxAttempts 上限（含首次）；0 = 不重试
  * @param failureMessage 服务端给出的可读失败原因
  * @param sawToolExecution 本轮是否已执行过工具（有副作用 → 绝不重试）
+ * @param terminal 本轮的**显式终态**（由流事件判定）：成功与用户取消都不是失败
  */
 export function decideRunRetry(input: {
   attempt: number;
   maxAttempts: number;
   failureMessage?: string | undefined;
   sawToolExecution: boolean;
+  /**
+   * 显式终态：completed / canceled 都不是失败；`failed` = 服务端已判定失败（如空输出），
+   * 不再自动重试。
+   *
+   * 事故背景：早期实现只在 `run.failed` 上记失败原因，于是「成功收场但没跑
+   * 工具」的轮次里 `failureMessage` 仍是 undefined，而 `isRetryableRunFailure(undefined)`
+   * 按「可重试」处理——**每轮纯对话都被重跑满 10 次**（实测：普通问答与画布助手一次消息
+   * 产出 10 个 run、10 倍 token，而用户看到的回复第一次就已经成功了）；用户取消同理，
+   * 重试会把刚取消的轮次顶回去。
+   */
+  terminal?: "completed" | "canceled" | "failed" | undefined;
 }): RunRetryDecision {
   const maxAttempts = clampMaxRunRetries(input.maxAttempts);
+  if (input.terminal === "completed") {
+    return { retry: false, reason: "本轮已成功完成" };
+  }
+  if (input.terminal === "canceled") {
+    return { retry: false, reason: "本轮已被取消，不重试" };
+  }
+  if (input.terminal === "failed") {
+    /**
+     * 服务端**已判定**的失败（不是上游抖动）：典型是「模型只出思考、没有正文也没有工具」
+     * ——再跑一遍大概率还是空的，自动重试只会白烧额度；用户可以自己点重试。
+     */
+    return { retry: false, reason: "服务端已判定为失败（空输出），不自动重试" };
+  }
   if (maxAttempts <= 1) {
     return { retry: false, reason: "重试上限为 1（即不重试）" };
   }

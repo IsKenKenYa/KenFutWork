@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { instanceHeadersOption, renderInstanceHeaders } from "./instance-headers.js";
+import {
+  instanceHeadersOption,
+  renderInstanceHeaders,
+} from "./instance-headers.js";
 
 describe("instance-headers 渲染（§4.8 自定义请求头）", () => {
   it("无配置返回 undefined——适配器保持库默认行为，不注入空头表", () => {
@@ -53,9 +56,9 @@ describe("instance-headers 渲染（§4.8 自定义请求头）", () => {
     expect(() =>
       renderInstanceHeaders({ Authorization: "Bearer evil" }, {}),
     ).toThrow(/保留头/);
-    expect(() =>
-      renderInstanceHeaders({ "x bad": "v" }, {}),
-    ).toThrow(/合法 HTTP token/);
+    expect(() => renderInstanceHeaders({ "x bad": "v" }, {})).toThrow(
+      /合法 HTTP token/,
+    );
   });
 
   it("渲染后再校验字符集：会话 id 带 CRLF 也注入不了额外头", () => {

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "files": {
     "ignoreUnknown": true,
     "includes": [
@@ -15,14 +15,34 @@
       "!**/.next",
       "!**/dist",
       "!**/out",
+      "!**/public/code-ui",
+      "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
       "!**/.pnpm-store",
       "!**/tmp",
-      "!**/references"
+      "!**/.zcode",
+      "!**/target",
+      "!**/gen",
+      "!**/references",
+      "!**/.agents/skills",
+      "!**/.kenfutwork",
+      "!**/.scratch",
+      "!**/release",
+      "!**/target",
+      "!**/gen",
+      "!**/data",
+      "!**/logs",
+      "!**/runtime",
+      "!flow",
+      "!**/docs/api/openapi.json",
+      "!**/dist-types",
+      "!**/dist-host",
+      "!**/dist-design"
     ]
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space"
+    "indentStyle": "space",
+    "lineEnding": "lf"
   },
   "linter": {
     "enabled": true,

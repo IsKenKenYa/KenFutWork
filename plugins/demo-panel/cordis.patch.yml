@@ -1,0 +1,4 @@
+- insert:
+    - id: kenfutwork-demo-panel
+      name: kenfutwork-demo-panel
+      inject: [tools, systemPrompt, routes, ui]

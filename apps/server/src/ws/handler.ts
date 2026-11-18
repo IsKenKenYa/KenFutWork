@@ -1,45 +1,53 @@
 import { randomUUID } from "node:crypto";
-import type { ContentBlock, ToolBlock, WsCommand } from "@loomic/shared";
-import {
-  type RunCreateRequest,
-  wsCommandSchema,
-  wsRpcResponseSchema,
-} from "@loomic/shared";
+import type { WsCommand, WsTerminalStartCommand } from "@kenfutwork/shared";
+import { wsCommandSchema, wsRpcResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
-import {
-  clampMaxRunRetries,
-  DEFAULT_MAX_RUN_RETRIES,
-  decideRunRetry,
-} from "../agent/run-retry.js";
 import type { AgentRunService } from "../agent/runtime.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
-import { deriveSessionTitle } from "../features/chat/session-title.js";
+import { chunkForFrames } from "../features/code-git/terminal-session.js";
+import type { CodeTerminalService } from "../features/code-terminal/types.js";
+import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
+import {
+  ExecutionScopeError,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
+import type { FlowProjectControl } from "../features/flow/project-control.js";
+import type {
+  LocalAccessService,
+  LocalAccessVerifier,
+} from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
-import type { ConnectionManager } from "./connection-manager.js";
-import type { CanvasEventBuffer } from "./event-buffer.js";
+import {
+  ConnectionIdentityConflictError,
+  type ConnectionManager,
+} from "./connection-manager.js";
+import { type CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
 
+type WsRunPayload = Extract<WsCommand, { action: "agent.run" }>["payload"];
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
-  agentModes?: ExecutionModeService;
   agentRunMetadataService?: AgentRunMetadataService;
-  auth?: RequestAuthenticator;
+  localAccess?: LocalAccessVerifier &
+    Partial<Pick<LocalAccessService, "onRevoked">>;
   chatService?: ChatService;
+  codeTerminal?: CodeTerminalService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
+  flowProjectControl?: Pick<FlowProjectControl, "snapshot">;
   settingsService?: SettingsService;
   threadService?: ThreadService;
-  viewerService?: ViewerService;
+  localInstance?: LocalInstanceService;
+  executionScopes?: ExecutionScopes;
+  codeUi?: Pick<CodeUiService, "admitExternalRun" | "cancelExternalRun">;
 };
 
 export async function registerWsRoute(
@@ -52,17 +60,14 @@ export async function registerWsRoute(
     "/api/ws",
     { websocket: true },
     (socket: WebSocket, request: FastifyRequest) => {
-      const url = new URL(request.url, `http://${request.headers.host}`);
-      const token = url.searchParams.get("token");
-
-      if (!token || !options.auth) {
+      // WS与HTTP共用Cookie/Bearer准入；回环和Origin不能替代真实凭据。
+      if (!options.localAccess) {
         socket.close(4001, "Unauthorized");
         return;
       }
 
       void authenticateAndBind(
         socket,
-        token,
         request,
         options,
         agentRuns,
@@ -74,8 +79,7 @@ export async function registerWsRoute(
 
 async function authenticateAndBind(
   socket: WebSocket,
-  token: string,
-  _request: FastifyRequest,
+  request: FastifyRequest,
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
@@ -99,53 +103,256 @@ async function authenticateAndBind(
   };
   socket.on("message", captureEarly);
 
-  let authenticatedUser: AuthenticatedUser;
+  let authenticatedUser: LocalActor;
+  let revoked = false;
+  let unsubscribeRevoked = () => {};
+  let removeRegistered = () => {};
+  const releaseAuth = () => {
+    unsubscribeRevoked();
+    unsubscribeRevoked = () => {};
+  };
+  const rejectConnection = (code: number, reason: string) => {
+    // 先撤销服务端路由资格，再发close帧；客户端close可能早于服务端close事件。
+    // 注册前为noop，冲突拒绝不会删除另一客户端的entry。
+    removeRegistered();
+    socket.off("message", captureEarly);
+    earlyMessages.length = 0;
+    releaseAuth();
+    try {
+      socket.close(code, reason);
+    } catch {
+      log.warn("socket_close_failed", { reason: "本机连接关闭尚未确认" });
+      try {
+        socket.terminate();
+      } catch {
+        log.warn("socket_terminate_failed", {
+          reason: "本机连接强制关闭尚未确认",
+        });
+      }
+    }
+  };
+  socket.once("close", releaseAuth);
+  const auth = options.localAccess;
+  if (!auth) {
+    rejectConnection(4001, "本机连接凭据缺失");
+    return;
+  }
+  const authRequest = { ip: request.ip, headers: request.headers };
   try {
-    const fakeRequest = {
-      headers: { authorization: `Bearer ${token}` },
-    } as unknown as FastifyRequest;
-    const user = await options.auth!.authenticate(fakeRequest);
-    if (!user) {
-      log.warn("auth_rejected", { reason: "invalid_token" });
-      socket.close(4001, "Unauthorized");
+    const user = await auth.authenticate(authRequest);
+    if (!user?.accessClientId) {
+      rejectConnection(4001, "本机连接凭据已失效");
       return;
     }
     authenticatedUser = user;
-    log.info("connected", { userId: user.id });
-  } catch (err) {
-    log.warn("auth_error", {
-      error: err instanceof Error ? err.message : String(err),
+    if (!auth.onRevoked) {
+      rejectConnection(1011, "本机接入撤权通知不可用");
+      return;
+    }
+    // 注册前先订阅撤权再重验，不能将期间已撤销的身份加入连接索引。
+    unsubscribeRevoked = auth.onRevoked((clientId) => {
+      if (clientId !== authenticatedUser.accessClientId) return;
+      revoked = true;
+      rejectConnection(4001, "本机连接授权已撤销");
     });
-    socket.close(4001, "Unauthorized");
+    if (revoked) releaseAuth();
+    const current = await auth.authenticate(authRequest);
+    if (
+      revoked ||
+      !current ||
+      current.instanceId !== user.instanceId ||
+      current.accessClientId !== user.accessClientId
+    ) {
+      rejectConnection(4001, "本机连接授权已失效");
+      return;
+    }
+  } catch {
+    log.warn("auth_error", { reason: "本机接入校验暂不可用" });
+    rejectConnection(1011, "本机服务暂时不可用");
+    return;
+  }
+  if (socket.readyState !== 1) {
+    releaseAuth();
+    socket.off("message", captureEarly);
+    earlyMessages.length = 0;
     return;
   }
 
-  if (socket.readyState !== 1) return;
-
-  // Use client-provided connectionId for reconnect identity; fallback to server UUID
-  const urlForParams = new URL(_request.url, `http://${_request.headers.host}`);
+  const urlForParams = new URL(request.url, `http://${request.headers.host}`);
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
-  connectionManager.register(connectionId, authenticatedUser.id, socket);
+  try {
+    connectionManager.register(
+      connectionId,
+      authenticatedUser.instanceId,
+      socket,
+      authenticatedUser.accessClientId,
+    );
+    removeRegistered = () => {
+      connectionManager.remove(connectionId, socket);
+    };
+  } catch (error) {
+    if (error instanceof ConnectionIdentityConflictError) {
+      rejectConnection(4001, error.message);
+    } else {
+      rejectConnection(1011, "本机连接注册失败");
+    }
+    return;
+  }
+  log.info("connected", { instanceId: authenticatedUser.instanceId });
 
-  // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
+  // 沿既有30s心跳/60s无pong门；每轮仅一个授权查询，不累积慢查询。
   let lastPong = Date.now();
-  socket.on("pong", () => {
+  const onPong = () => {
     lastPong = Date.now();
-  });
-
+  };
+  socket.on("pong", onPong);
+  let heartbeatPending = false;
   const pingInterval = setInterval(() => {
+    if (socket.readyState !== 1) return;
     if (Date.now() - lastPong > 60_000) {
-      log.warn("pong_timeout", { userId: authenticatedUser.id });
+      log.warn("pong_timeout", { instanceId: authenticatedUser.instanceId });
+      removeRegistered();
+      releaseAuth();
       socket.terminate();
       return;
     }
-    if (socket.readyState === 1) {
-      socket.ping();
-    }
+    if (heartbeatPending) return;
+    heartbeatPending = true;
+    void (async () => {
+      try {
+        const current = await auth.authenticate(authRequest);
+        if (socket.readyState !== 1) return;
+        if (
+          revoked ||
+          !current ||
+          current.instanceId !== authenticatedUser.instanceId ||
+          current.accessClientId !== authenticatedUser.accessClientId
+        ) {
+          rejectConnection(4001, "本机连接授权已失效");
+          return;
+        }
+        socket.ping();
+      } catch {
+        rejectConnection(1011, "本机服务暂时不可用");
+      } finally {
+        heartbeatPending = false;
+      }
+    })();
   }, 30_000);
 
-  const onMessage = (raw: Buffer | string) => {
+  // terminal owner采用本次socket独立身份；重连复用的transport ID不能接管旧PTY。
+  const terminalConnectionId = randomUUID();
+  const terminalOwner = options.localInstance?.resolve(authenticatedUser);
+  const sendToClient = (message: Record<string, unknown>) => {
+    if (socket.readyState === 1) socket.send(JSON.stringify(message));
+  };
+  const sendTerminal = (message: Record<string, unknown>): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (socket.readyState !== 1) {
+        resolve();
+        return;
+      }
+      socket.send(JSON.stringify(message), (error) =>
+        error ? reject(error) : resolve(),
+      );
+    });
+  const terminalFailure = (
+    id: string,
+    error: unknown,
+    action?: string,
+    requestId?: string,
+  ) => {
+    if (requestId)
+      sendToClient({
+        type: "error",
+        requestId,
+        action,
+        code: "terminal_failed",
+        message: error instanceof Error ? error.message : "终端操作失败",
+      });
+    sendToClient({
+      type: "terminal.exit",
+      sessionId: id,
+      exitCode: null,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  };
+  const startTerminal = async (
+    payload: WsTerminalStartCommand["payload"],
+    requestId?: string,
+  ) => {
+    const terminals = options.codeTerminal;
+    if (!terminals || !terminalOwner)
+      throw new Error("服务端没有装配Task终端能力。");
+    await terminalOwner;
+    if (socket.readyState !== 1) throw new Error("终端连接已经关闭。");
+    const opened = await terminals.create(
+      authenticatedUser,
+      terminalConnectionId,
+      payload,
+    );
+    await sendTerminal({
+      type: "command.ack",
+      action: "terminal.start",
+      ...(requestId ? { requestId } : {}),
+      payload: {
+        sessionId: opened.id,
+        shell: opened.shell,
+        executable: opened.executable,
+        tty: opened.tty,
+        ...(opened.reused ? { reused: true } : {}),
+      },
+    });
+    await terminals.subscribe(
+      authenticatedUser,
+      terminalConnectionId,
+      opened.id,
+      {
+        output: async (chunk) => {
+          for (const data of chunkForFrames(chunk))
+            await sendTerminal({
+              type: "terminal.output",
+              sessionId: opened.id,
+              data,
+            });
+        },
+        exit: (exit) =>
+          sendTerminal({
+            type: "terminal.exit",
+            sessionId: opened.id,
+            exitCode: exit.exitCode,
+            ...(exit.reason ? { reason: exit.reason } : {}),
+          }),
+      },
+    );
+  };
+  const closeTerminals = async () => {
+    const workspace = await terminalOwner;
+    if (workspace)
+      await options.codeTerminal?.closeConnection(
+        workspace.instanceId,
+        terminalConnectionId,
+        "终端连接断开",
+      );
+  };
+
+  const onMessage = async (raw: Buffer | string) => {
+    try {
+      const current = await options.localAccess?.authenticate(request);
+      if (
+        !current ||
+        current.instanceId !== authenticatedUser.instanceId ||
+        current.accessClientId !== authenticatedUser.accessClientId
+      ) {
+        socket.close(4001, "本机连接授权已失效");
+        return;
+      }
+    } catch {
+      socket.close(1011, "本机服务暂时不可用");
+      return;
+    }
+    if (socket.readyState !== 1) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(
@@ -183,63 +390,111 @@ async function authenticateAndBind(
         msg = wsCommandSchema.parse(parsed);
       } catch {
         socket.send(
-          JSON.stringify({ type: "error", message: "Invalid command format" }),
+          JSON.stringify({
+            type: "error",
+            code: "invalid_command",
+            message: "请求格式无效",
+            ...(typeof obj.id === "string" && obj.id.length <= 128
+              ? { requestId: obj.id }
+              : {}),
+            ...(typeof obj.action === "string" ? { action: obj.action } : {}),
+          }),
         );
         return;
       }
 
       if (msg.action === "agent.run") {
         const p = msg.payload;
-        const runToken = p.accessToken ?? token;
         void handleRunCommand(
-          {
-            ...authenticatedUser,
-            accessToken: runToken,
-          },
+          authenticatedUser,
           connectionId,
-          {
-            sessionId: p.sessionId,
-            conversationId: p.conversationId,
-            prompt: p.prompt,
-            ...(p.canvasId !== undefined ? { canvasId: p.canvasId } : {}),
-            ...(p.attachments !== undefined
-              ? { attachments: p.attachments }
-              : {}),
-            ...(p.imageGenerationPreference !== undefined
-              ? { imageGenerationPreference: p.imageGenerationPreference }
-              : {}),
-            ...(p.videoGenerationPreference !== undefined
-              ? { videoGenerationPreference: p.videoGenerationPreference }
-              : {}),
-            ...(p.mentions !== undefined ? { mentions: p.mentions } : {}),
-            ...(p.model !== undefined ? { model: p.model } : {}),
-            ...(p.preset !== undefined ? { preset: p.preset } : {}),
-            ...(p.executionMode !== undefined
-              ? { executionMode: p.executionMode }
-              : {}),
-          },
+          p,
           agentRuns,
           connectionManager,
           options,
-        );
-      } else if (msg.action === "agent.cancel") {
-        log.info("run_cancel", {
-          userId: authenticatedUser.id,
-          runId: msg.payload.runId,
-        });
-        const cancelResult = agentRuns.cancelRun(msg.payload.runId);
-        if (!cancelResult) {
+          msg.id,
+        ).catch((error: unknown) => {
           socket.send(
             JSON.stringify({
               type: "error",
-              message: `Run not found: ${msg.payload.runId}`,
+              action: msg.action,
+              ...(msg.id ? { requestId: msg.id } : {}),
+              ...(error instanceof CodeUiRepositoryError ||
+              error instanceof ExecutionScopeError
+                ? { code: error.code }
+                : {}),
+              message: error instanceof Error ? error.message : String(error),
             }),
           );
+        });
+      } else if (msg.action === "task.resume") {
+        connectionManager.sendTo(connectionId, {
+          type: "error",
+          action: msg.action,
+          ...(msg.id ? { requestId: msg.id } : {}),
+          code: "shared_conversation_required",
+          message: "请重新连接共享会话。",
+        });
+      } else if (msg.action === "agent.cancel") {
+        log.info("run_cancel", {
+          instanceId: authenticatedUser.instanceId,
+          runId: msg.payload.runId,
+        });
+        const identity = agentRuns.getRunIdentity?.(msg.payload.runId);
+        if (identity && identity.instanceId !== authenticatedUser.instanceId) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code: "run_not_found",
+            message: "运行不存在",
+          });
+          return;
+        }
+        if (
+          identity &&
+          msg.payload.taskId &&
+          identity.taskId !== msg.payload.taskId
+        ) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code: "scope_mismatch",
+            message: "取消目标与Task不匹配",
+          });
+          return;
+        }
+        try {
+          if (!options.codeUi)
+            throw new ExecutionScopeError(
+              "admission_unavailable",
+              "共享会话服务未加载，请重启应用后重试。",
+              503,
+            );
+          const cancelResult = await options.codeUi.cancelExternalRun(
+            authenticatedUser,
+            msg.payload.runId,
+            msg.payload.taskId,
+          );
+          connectionManager.sendTo(connectionId, {
+            type: "command.ack",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            payload: cancelResult,
+          });
+        } catch (error) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            message: error instanceof Error ? error.message : "运行停止失败。",
+          });
         }
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
         log.info("canvas_resume", {
-          userId: authenticatedUser.id,
+          instanceId: authenticatedUser.instanceId,
           canvasId: p.canvasId,
           lastSeq: p.lastSeq,
         });
@@ -256,6 +511,7 @@ async function authenticateAndBind(
         connectionManager.sendTo(connectionId, {
           type: "command.ack",
           action: "canvas.resume",
+          ...(msg.id ? { requestId: msg.id } : {}),
           payload: {
             canvasId: p.canvasId,
             latestSeq: options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0,
@@ -271,17 +527,138 @@ async function authenticateAndBind(
             event: entry.event,
           });
         }
+      } else if (msg.action === "flow.resume") {
+        /**
+         * flow 事件续传（P5）：作用域是本地实例（flowRun 事件没有 canvasId），
+         * 与其他 flowRun 事件同一条 WS 通道；客户端按 runId + payload.seq 去重。
+         */
+        const scope = flowEventScopeKey(authenticatedUser.instanceId);
+        log.info("flow_resume", {
+          instanceId: authenticatedUser.instanceId,
+          lastSeq: msg.payload.lastSeq,
+        });
+        const buffered =
+          options.eventBuffer?.getAfter(scope, msg.payload.lastSeq) ?? [];
+        const missed = [];
+        for (const entry of buffered) {
+          const event = entry.event;
+          if (
+            event.type !== "flowRun.event" ||
+            !event.hostProjectId ||
+            !event.hostGeneration ||
+            !options.flowProjectControl
+          )
+            continue;
+          const gate = await options.flowProjectControl.snapshot(
+            authenticatedUser,
+            event.hostProjectId,
+          );
+          if (!gate.draining && gate.generation === event.hostGeneration)
+            missed.push(entry);
+        }
+        // ACK 先行（与 canvas.resume 同一时序口径）：客户端先注册监听再收重放
+        connectionManager.sendTo(connectionId, {
+          type: "command.ack",
+          action: "flow.resume",
+          ...(msg.id ? { requestId: msg.id } : {}),
+          payload: {
+            latestSeq: options.eventBuffer?.getLatestSeq(scope) ?? 0,
+            replayed: missed.length,
+          },
+        });
+        for (const entry of missed) {
+          connectionManager.sendTo(connectionId, {
+            type: "event",
+            event: entry.event,
+          });
+        }
+      } else if (msg.action === "terminal.start") {
+        void startTerminal(msg.payload, msg.id).catch((error: unknown) =>
+          terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
+        );
+      } else if (msg.action === "terminal.input") {
+        void options.codeTerminal
+          ?.write(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            msg.payload.data,
+          )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
+          );
+      } else if (msg.action === "terminal.resize") {
+        void options.codeTerminal
+          ?.resize(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            msg.payload.cols,
+            msg.payload.rows,
+          )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
+          );
+      } else if (msg.action === "terminal.stop") {
+        void options.codeTerminal
+          ?.stop(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            "客户端关闭终端",
+          )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
+          );
       }
     }
   };
 
-  socket.on("message", onMessage);
+  let messageQueue = Promise.resolve();
+  const enqueueMessage = (raw: Buffer | string) => {
+    messageQueue = messageQueue
+      .then(() => onMessage(raw))
+      .catch((error: unknown) => {
+        log.warn("message_failed", {
+          error: error instanceof Error ? error.message : "消息处理失败",
+        });
+        socket.close(1011, "本机消息处理失败");
+      });
+  };
+  socket.on("message", enqueueMessage);
   // 回放鉴权期间缓冲的早期消息（否则 open 后立即发送的命令会静默丢失）
   forwarding = true;
   socket.off("message", captureEarly);
   for (const raw of earlyMessages.splice(0)) {
     try {
-      onMessage(raw);
+      enqueueMessage(raw);
     } catch (error) {
       log.warn("early_message_replay_failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -290,369 +667,123 @@ async function authenticateAndBind(
   }
 
   socket.on("close", () => {
-    log.info("disconnected", { userId: authenticatedUser.id, connectionId });
+    log.info("disconnected", {
+      instanceId: authenticatedUser.instanceId,
+      connectionId,
+    });
     clearInterval(pingInterval);
+    releaseAuth();
+    socket.off("pong", onPong);
+    void closeTerminals().catch((error: unknown) =>
+      log.warn("terminal_cleanup_unconfirmed", {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     // 带 socket 身份：客户端重连复用 connectionId，迟到的旧 socket close 不得删掉新注册
     connectionManager.remove(connectionId, socket);
   });
 
   socket.on("error", () => {
-    log.error("socket_error", { userId: authenticatedUser.id, connectionId });
+    log.error("socket_error", {
+      instanceId: authenticatedUser.instanceId,
+      connectionId,
+    });
     clearInterval(pingInterval);
+    releaseAuth();
+    socket.off("pong", onPong);
     connectionManager.remove(connectionId, socket);
+    /**
+     * 必须把 socket 也收掉，不能只注销注册。
+     *
+     * 只删 map entry 会留下**半开连接**：客户端那侧 socket 还开着（收不到 close 就不知道
+     * 该重连），于是 `connected` 还是 true、命令照样发得进来——服务端会真的把 run 跑起来，
+     * 而 ack 与随后所有事件都推不回去（实测日志：`ack_sent delivered=false`，
+     * 客户端 12 秒后报「请求未被确认，请重试。」，可那一轮其实在执行）。
+     * 关掉它，客户端才会走 onclose → 重连 → resume 对账。
+     */
+    try {
+      socket.close();
+    } catch {
+      // 已经坏掉的 socket 关它会抛，忽略
+    }
   });
 }
 
 async function handleRunCommand(
-  authenticatedUser: AuthenticatedUser,
+  actor: LocalActor,
   connectionId: string,
-  payload: Omit<RunCreateRequest, "accessToken">,
+  payload: WsRunPayload,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
+  requestId?: string,
+) {
+  if (!services.localInstance) throw new Error("本地实例准入服务未装配。");
+  const release = services.localInstance.beginAdmission();
+  try {
+    return await handleAdmittedRunCommand(
+      actor,
+      connectionId,
+      payload,
+      agentRuns,
+      connectionManager,
+      services,
+      requestId,
+    );
+  } finally {
+    release();
+  }
+}
+
+async function handleAdmittedRunCommand(
+  actor: LocalActor,
+  connectionId: string,
+  payload: WsRunPayload,
+  _agentRuns: AgentRunService,
+  connectionManager: ConnectionManager,
+  services: RegisterWsOptions,
+  requestId?: string,
 ) {
   const log = createPipelineLogger("agent.run", {
-    userId: authenticatedUser.id,
+    instanceId: actor.instanceId,
     sessionId: payload.sessionId,
   });
-  log.info("started", { prompt: payload.prompt.slice(0, 80) });
+  // 只记长度：prompt 是用户内容，桌面形态落本机日志、自托管形态落运维日志，都不该带上原文。
+  log.info("started", { promptChars: payload.prompt.length });
 
-  // Code 模式会话供给（方案 A）：工作台用**客户端自造**的 sessionId 发起 run，库里
-  // 没有对应 chat_sessions 行——于是线程解析失败、助手消息无处落库（实测 0 行）。
-  // 这里按该 id 供给真实会话与线程（载体是工作区隐藏的「Code 工作台」项目/画布），
-  // 供给成功则下面的解析直接命中；失败不阻断 run（解析处仍有兜底），只记一条 warn。
-  // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
-  if (services.chatService && payload.preset !== "design") {
-    try {
-      const provisioned = await services.chatService.ensureCodeSession(
-        authenticatedUser,
-        {
-          sessionId: payload.sessionId,
-          // 标题派生先剥 prompt 首部的【…】指令块（目录提示/思考强度），
-          // 否则侧栏会出现「【目录名称：test（仅用户标注的命名提示…」泄漏。
-          title: deriveSessionTitle(payload.prompt),
-        },
-      );
-      log.info("code_session_ensured", { sessionId: provisioned.sessionId });
-    } catch (error) {
-      log.warn("code_session_ensure_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // viewer 解析（工作区作用域）：模型默认值、执行模式持久化共用，只解析一次
-  const viewerPromise = (async () => {
-    if (!services.viewerService) return undefined;
-    try {
-      return await services.viewerService.ensureViewer(authenticatedUser);
-    } catch (error) {
-      log.warn("viewer_resolve_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    }
-  })();
-
-  // Resolve thread + model in parallel
-  const [threadId, viewer, model] = await Promise.all([
-    (async (): Promise<string | undefined> => {
-      if (!services.threadService) return undefined;
-      try {
-        const sessionThread =
-          await services.threadService.resolveOwnedSessionThread(
-            authenticatedUser,
-            payload.sessionId,
-          );
-        return sessionThread.threadId;
-      } catch (error) {
-        log.warn("thread_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-    viewerPromise,
-    (async (): Promise<string | undefined> => {
-      if (!services.settingsService) return undefined;
-      try {
-        const viewer = await viewerPromise;
-        if (!viewer) return undefined;
-        const settings = await services.settingsService.getWorkspaceSettings(
-          authenticatedUser,
-          viewer.workspace.id,
-        );
-        return settings.defaultModel;
-      } catch (error) {
-        log.warn("model_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-  ]);
-  // Client-provided model takes priority over workspace default
-  const resolvedModel = payload.model ?? model;
-  log.lap("resolve", {
-    threadId: !!threadId,
-    threadIdValue: threadId ?? null,
-    model: resolvedModel,
-  });
-
-  // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活（写穿 chat_sessions）
-  //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
-  const modeScope = viewer ? { workspaceId: viewer.workspace.id } : undefined;
-  // plan 批准门（机器可读）：线程在 plan 且消息本身就是批准短语时，本条消息起按
-  // agent 执行——过去文字「批准」不解锁工具门，用户必须再手动切档（GUI 实测多绕一步）
-  let effectiveMode = payload.executionMode;
-  if (
-    effectiveMode === "plan" &&
-    threadId &&
-    services.agentModes &&
-    isPlanApprovalInput(payload.prompt)
-  ) {
-    effectiveMode = "agent";
-    log.info("plan_approval_auto_upgrade", {
-      threadId,
-      detail: "plan 批准短语命中，本条消息起按 agent 执行",
-    });
-  }
-  if (effectiveMode && threadId && services.agentModes) {
-    try {
-      await services.agentModes.activate(threadId, effectiveMode, modeScope);
-    } catch (error) {
-      // 内存激活已先生效（store 失败只影响重启后的读回），run 按新模式继续
-      log.warn("execution_mode_persist_failed", {
-        executionMode: effectiveMode,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  } else if (!effectiveMode && threadId && services.agentModes && modeScope) {
-    // 未声明模式的 run（画布助手/旧客户端）：读回线程持久化模式，
-    // 重启后线程仍按既定模式走（引导 + 工具门都以 hydrate 后的缓存为准）
-    try {
-      await services.agentModes.hydrate(threadId, modeScope);
-    } catch (error) {
-      log.warn("execution_mode_hydrate_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  } else if (payload.executionMode && payload.executionMode !== "agent") {
-    /**
-     * 模式**静默降级**是曾经的坑：threadId 解析不出来时，pre-step 会退化成 "agent"、
-     * 工具门整段跳过（见 agent-modes/plugin.ts），而客户端与模型都以为自己在目标模式里。
-     * 这里必须响亮：运行降级为 agent 时留下可检索的日志，别让它无声发生。
-     */
-    log.warn("execution_mode_not_applied", {
-      executionMode: payload.executionMode,
-      reason: threadId ? "agent_modes_service_missing" : "thread_unresolved",
-      detail: threadId
-        ? "agentModes 服务不可用"
-        : "会话未在服务端解析出 thread（客户端 sessionId 未被服务端持久化），模式引导与工具门都不会生效",
-    });
-  }
-
-  const canvasId = payload.canvasId ?? payload.conversationId;
-
-  /**
-   * 起一次尝试：建 run + 落元数据 + 绑定画布 + 发 ack + 标活跃。
-   * 重试必须整段重来：**新 runId 要重新 ack 给客户端**，否则事件因 runId 不匹配被丢。
-   */
-  const startAttempt = async (): Promise<string> => {
-    const response = agentRuns.createRun(payload, {
-      accessToken: authenticatedUser.accessToken,
-      userId: authenticatedUser.id,
-      ...(resolvedModel ? { model: resolvedModel } : {}),
-      ...(threadId ? { threadId } : {}),
-    });
-    const runId = response.runId;
-    log.lap("run_created", { runId });
-
-    // Persist run metadata
-    if (threadId && services.agentRunMetadataService) {
-      try {
-        await services.agentRunMetadataService.createAcceptedRun({
-          ...(resolvedModel ? { model: resolvedModel } : {}),
-          runId,
-          sessionId: payload.sessionId,
-          threadId,
-        });
-      } catch {
-        // Non-fatal
-      }
-    }
-
-    // Bind this connection to the canvas so events route correctly
-    connectionManager.bindCanvas(connectionId, canvasId);
-
-    // Send ACK to the specific connection that initiated the run.
-    // Retry with short delays if the connection is temporarily unavailable
-    // (e.g., brief disconnect/reconnect during page transitions).
-    const ackMessage = {
-      type: "command.ack",
-      action: "agent.run",
-      payload: response,
-    };
-    let ackSent = connectionManager.sendTo(connectionId, ackMessage);
-    if (!ackSent) {
-      for (let i = 0; i < 5; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        ackSent = connectionManager.sendTo(connectionId, ackMessage);
-        if (ackSent) break;
-      }
-    }
-    log.lap("ack_sent", { runId, connectionId, delivered: ackSent });
-
-    // Track active run so reconnecting clients can detect it
-    connectionManager.setActiveRun(canvasId, runId);
-    return runId;
-  };
-
-  const keepAlive = setInterval(() => {
-    connectionManager.sendTo(connectionId, { type: "keep-alive" });
-  }, 15_000);
-
-  // Accumulate assistant content blocks for server-side persistence
-  const assistantText: string[] = [];
-  const assistantBlocks: ContentBlock[] = [];
-
-  const runSettings =
-    viewer && services.settingsService
-      ? await services.settingsService
-          .getWorkspaceSettings(authenticatedUser, viewer.workspace.id)
-          .catch(() => undefined)
-      : undefined;
-  const maxAttempts = clampMaxRunRetries(
-    runSettings?.agentMaxRetries ?? DEFAULT_MAX_RUN_RETRIES,
+  if (!services.executionScopes || !services.codeUi)
+    throw new ExecutionScopeError(
+      "admission_unavailable",
+      "共享会话服务未加载，请重启应用后重试。",
+      503,
+    );
+  const scope = await services.executionScopes.openTask(
+    actor,
+    payload.taskId ?? payload.sessionId,
   );
-  let runId = await startAttempt();
-  try {
-    // 失败自动重试（判定集中在 agent/run-retry.ts）。上限取自工作区设置，缺省 10。
-    for (let attempt = 1; ; attempt += 1) {
-      assistantText.length = 0;
-      assistantBlocks.length = 0;
-      let sawToolExecution = false;
-      let failureMessage: string | undefined;
-      let firstEvent = true;
-      for await (const event of agentRuns.streamRun(runId)) {
-        if (firstEvent) {
-          log.lap("first_token", { runId });
-          firstEvent = false;
-        }
-
-        // Buffer for replay on reconnect
-        services.eventBuffer?.push(canvasId, event);
-
-        // Broadcast to all viewers
-        connectionManager.pushToCanvas(canvasId, event);
-        // 副作用观测点：只要工具跑过，本轮就**不允许**重试（否则重复施加副作用）
-        if (event.type === "tool.started" || event.type === "tool.completed") {
-          sawToolExecution = true;
-        }
-        if (event.type === "run.failed") failureMessage = event.error.message;
-
-        // Accumulate content for server-side persistence
-        if (event.type === "message.delta") {
-          const lastBlock = assistantBlocks[assistantBlocks.length - 1];
-          if (lastBlock && lastBlock.type === "text") {
-            (lastBlock as { type: "text"; text: string }).text += event.delta;
-          } else {
-            assistantBlocks.push({ type: "text", text: event.delta });
-          }
-          assistantText.push(event.delta);
-        } else if (event.type === "tool.started") {
-          assistantBlocks.push({
-            type: "tool",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            status: "running" as const,
-            ...(event.input ? { input: event.input } : {}),
-          });
-        } else if (event.type === "tool.completed") {
-          const idx = assistantBlocks.findIndex(
-            (b) =>
-              b.type === "tool" &&
-              (b as ToolBlock).toolCallId === event.toolCallId,
-          );
-          if (idx >= 0) {
-            assistantBlocks[idx] = {
-              ...(assistantBlocks[idx] as ToolBlock),
-              status: "completed" as const,
-              ...(event.output ? { output: event.output } : {}),
-              ...(event.outputSummary
-                ? { outputSummary: event.outputSummary }
-                : {}),
-              ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-            };
-          }
-        }
-      }
-      log.lap("stream_done", { runId });
-
-      const decision = decideRunRetry({
-        attempt,
-        failureMessage,
-        maxAttempts,
-        sawToolExecution,
-      });
-      if (!decision.retry) {
-        // ── Server-side assistant message persistence ──
-        if (
-          services.chatService &&
-          (assistantText.length > 0 || assistantBlocks.length > 0)
-        ) {
-          try {
-            await services.chatService.createMessage(
-              authenticatedUser,
-              payload.sessionId,
-              {
-                role: "assistant",
-                content: assistantText.join(""),
-                contentBlocks: assistantBlocks,
-              },
-            );
-            log.lap("assistant_message_persisted", { runId });
-          } catch (err) {
-            log.warn("assistant_message_persist_failed", {
-              runId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-
-        break;
-      }
-      log.warn("run_retrying", { attempt, reason: decision.reason, runId });
-      runId = await startAttempt();
-      const retryEvent = {
-        type: "run.retrying" as const,
-        runId,
-        attempt: attempt + 1,
-        maxAttempts,
-        reason: decision.reason,
-        timestamp: new Date().toISOString(),
-      };
-      services.eventBuffer?.push(canvasId, retryEvent);
-      connectionManager.pushToCanvas(canvasId, retryEvent);
-    }
-  } catch (error) {
-    log.error("stream_error", {
-      runId,
-      error: error instanceof Error ? error.message : "unknown",
-    });
-    const failedEvent = {
-      type: "run.failed" as const,
-      runId,
-      error: {
-        code: "run_failed" as const,
-        message: error instanceof Error ? error.message : "Stream failed",
-      },
-      timestamp: new Date().toISOString(),
-    };
-    services.eventBuffer?.push(canvasId, failedEvent);
-    connectionManager.pushToCanvas(canvasId, failedEvent);
-  } finally {
-    clearInterval(keepAlive);
-    connectionManager.clearActiveRun(canvasId);
-  }
+  if (scope.describe().taskId !== payload.sessionId)
+    throw new ExecutionScopeError(
+      "scope_mismatch",
+      "运行必须绑定所属会话的任务。",
+      409,
+    );
+  const admitted = await services.codeUi.admitExternalRun(
+    actor,
+    scope,
+    payload.inputId ?? requestId ?? randomUUID(),
+    payload.prompt,
+    payload,
+  );
+  connectionManager.sendTo(connectionId, {
+    type: "command.ack",
+    action: "agent.run",
+    ...(requestId ? { requestId } : {}),
+    payload: {
+      runId: admitted.runId,
+      sessionId: admitted.sessionId,
+      conversationId: admitted.conversationId,
+      status: admitted.status,
+    },
+  });
+  await admitted.publish();
 }

@@ -1,189 +1,316 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
+import type { InstanceSqlClient } from "../persistence/types.js";
+import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import {
+  createProjectSkillRepository,
+  createSkillCatalogRepository,
+  createSkillImportReceiptRepository,
+  insertOwnedSkillRecord,
+  insertSkillFileRecords,
+  SkillImportConflictError,
+  SkillImportDeletedError,
+  skillImportRequestKey,
+} from "./repository.js";
 
-import { createViewerRepository } from "../bootstrap/repository.js";
-import { createPostgresPersistence } from "../persistence/providers/postgres.js";
-import { createSkillCatalogRepository } from "./repository.js";
-
-/**
- * skills 聚合真实库集成测试（默认 skipped：需要 DATABASE_URL）。
- * 目的：证明 `workspace_skills JOIN skills` 在真库上成立，且工作区谓词生效
- * （跨工作区安装的技能不可见）。
- *
- * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @loomic/server exec vitest run skills.integration
- */
-const DATABASE_URL = process.env.DATABASE_URL;
-const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";
-
-type IdRow = { id: string };
-
-describe.skipIf(!DATABASE_URL)("skills 真实库集成", () => {
-  it("已安装 skill 经 JOIN 取回，跨工作区不可见", async () => {
-    const persistence = createPostgresPersistence({
-      databaseUrl: DATABASE_URL as string,
-    });
-
-    try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
-      );
-      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
-
-      const workspace = await createViewerRepository(
-        persistence,
-      ).findPersonalWorkspace((profile as IdRow).id);
-      const workspaceId = workspace?.id as string;
-      expect(workspaceId).toBeTruthy();
-
-      const slug = `integration-skill-${Date.now().toString(36)}`;
-      const skills = createSkillCatalogRepository(persistence);
-      let skillId: string | undefined;
-
+describe.skipIf(process.env.KENFUTWORK_CRUD_TEST_PG !== "1")(
+  "实例技能真实 Postgres",
+  () => {
+    it("本地技能和资源父链、安装幂等、卸载后迟到启停不能重装成立", async () => {
+      const database = await createTaskWorkDatabase();
       try {
-        const inserted = await persistence.queryOne<IdRow>(
-          `insert into public.skills
-                  (name, slug, description, author, version, category, source, skill_content)
-           values ($1, $2, $3, $4, $5, $6, $7, $8)
-           returning id`,
-          [
-            "集成技能",
-            slug,
-            "集成测试用",
-            "integration",
-            "0.0.1",
-            // category/source 受 CHECK 约束：见 skills_category_check / skills_source_check
-            "custom",
-            "user",
-            "# 集成技能\n步骤…",
-          ],
-        );
-        skillId = inserted?.id as string;
-
-        await persistence.query(
-          `insert into public.workspace_skills (workspace_id, skill_id, enabled)
-           values ($1, $2, true)`,
-          [workspaceId, skillId],
-        );
-
-        const rows = await skills.listWorkspaceSkills(workspaceId);
-        const row = rows.find((entry) => entry.slug === slug);
-        expect(row).toMatchObject({
-          description: "集成测试用",
-          enabled: true,
-          skillContent: "# 集成技能\n步骤…",
-        });
-
-        // 跨工作区不可见（隔离门禁）
-        await expect(
-          skills.listWorkspaceSkills(FOREIGN_WORKSPACE),
-        ).resolves.toEqual([]);
-      } finally {
-        if (skillId) {
-          // workspace_skills 对 skills 是 ON DELETE CASCADE，删 skill 即连带清理
-          await persistence.query("delete from public.skills where id = $1", [
-            skillId,
-          ]);
-        }
-      }
-    } finally {
-      await persistence.close();
-    }
-  });
-
-  /**
-   * 回归锁：`insertFilesForOwnedSkill` 是 `insert ... select ... from (values ...)`
-   * 形状，Postgres 不会把目标列的 uuid 类型反推给未定型参数——漏了 `$1::uuid`
-   * 就报 `operator does not exist: uuid = text`（SQLSTATE 42883）。
-   *
-   * 这条只在**真库执行**时才暴露：单测只断言 SQL 文本，当时全绿；路由又把该错误
-   * 当非致命吞掉（skill 建了、文件没进），所以必须有一条真的跑起来。
-   */
-  it("写入路径可在真库执行：coalesce 缺省 + 批量插文件 + 非本人拒绝", async () => {
-    const persistence = createPostgresPersistence({
-      databaseUrl: DATABASE_URL as string,
-    });
-
-    try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
-      );
-      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
-      const userId = (profile as IdRow).id;
-
-      const skills = createSkillCatalogRepository(persistence);
-      const slug = `integration-write-${Date.now().toString(36)}`;
-      let skillId: string | undefined;
-
-      try {
-        const created = await skills.insertOwned(userId, {
+        const instanceId = await createLocalInstanceRepository(
+          database.persistence,
+        ).ensure();
+        const repository = createSkillCatalogRepository(database.persistence);
+        const skill = await repository.insertOwned(instanceId, {
+          name: "本地技能",
+          slug: `skill-${randomUUID()}`,
           category: "custom",
-          description: "写入路径集成测试",
-          name: "集成写入技能",
-          skillContent: "# 集成写入",
-          slug,
+          description: "说明",
+          skillContent: "正文",
+          createdByClientId: null,
         });
-        skillId = created?.id as string;
-        expect(skillId).toBeTruthy();
-
-        // coalesce 复刻「列缺席即用列默认」：不传 author/version/metadata 时
-        // 落库必须是列默认，而不是 NULL
-        expect(created).toMatchObject({
-          author: "system",
-          metadata: {},
-          source: "user",
-          version: "1.0",
-        });
-
-        const written = await skills.insertFilesForOwnedSkill(userId, skillId, [
-          { content: "print(1)", filePath: "scripts/a.py" },
-          {
-            content: "# b",
-            filePath: "references/b.md",
-            mimeType: "text/markdown",
-          },
-        ]);
-        expect(written).toBe(2);
-
-        const files = await skills.listFilesForVisibleSkill(userId, skillId);
-        expect(files.map((f) => f.file_path)).toEqual([
-          "references/b.md",
-          "scripts/a.py",
-        ]);
-        expect(files.map((f) => f.mime_type)).toEqual([
-          "text/markdown",
-          "text/plain",
-        ]);
-
-        // 非本人不写入（父子校验内联在语句里，不靠 RLS）
-        await expect(
-          skills.insertFilesForOwnedSkill(FOREIGN_WORKSPACE, skillId, [
-            { content: "x", filePath: "scripts/evil.py" },
+        if (!skill || typeof skill.id !== "string")
+          throw new Error("技能夹具未创建。");
+        const skillId = skill.id;
+        expect(
+          await repository.insertFilesForOwnedSkill(instanceId, skillId, [
+            { filePath: "scripts/run.py", content: "print(1)" },
           ]),
-        ).resolves.toBe(0);
-
-        await expect(
-          skills.listFilesForVisibleSkill(FOREIGN_WORKSPACE, skillId),
-        ).resolves.toEqual([]);
-
-        // 非本人不可改、不可删
-        await expect(
-          skills.updateOwnedById(FOREIGN_WORKSPACE, skillId, {
-            name: "hijack",
-          }),
-        ).resolves.toBeNull();
-        await expect(
-          skills.deleteOwnedById(FOREIGN_WORKSPACE, skillId),
-        ).resolves.toBe(0);
+        ).toBe(1);
+        expect(
+          await repository.findVisibleById(randomUUID(), skillId),
+        ).toBeNull();
+        expect(
+          await repository.listFilesForVisibleSkill(randomUUID(), skillId),
+        ).toEqual([]);
+        await repository.upsertInstallation({
+          instanceId,
+          installedByClientId: null,
+          skillId,
+          enabled: true,
+        });
+        await repository.upsertInstallation({
+          instanceId,
+          installedByClientId: null,
+          skillId,
+          enabled: true,
+        });
+        expect(
+          (await repository.listInstanceSkills(instanceId)).filter(
+            (item) => item.skillId === skillId,
+          ),
+        ).toHaveLength(1);
+        expect(
+          (await repository.listSkillFiles(instanceId, [skillId]))[0],
+        ).toMatchObject({ path: "scripts/run.py", content: "print(1)" });
+        expect(await repository.uninstall(instanceId, skillId)).toBe(1);
+        expect(await repository.setEnabled(instanceId, skillId, true)).toBe(
+          false,
+        );
+        expect(
+          (await repository.listInstalled(instanceId)).some(
+            (item) => item.skill_id === skillId,
+          ),
+        ).toBe(false);
+        expect(await repository.deleteOwnedById(instanceId, skillId)).toBe(1);
       } finally {
-        if (skillId) {
-          // skill_files 对 skills 是 ON DELETE CASCADE，删 skill 即连带清理
-          await persistence.query("delete from public.skills where id = $1", [
-            skillId,
-          ]);
-        }
+        await database.close();
       }
-    } finally {
-      await persistence.close();
-    }
-  });
-});
+    });
+
+    it("项目级启停按真实项目 id 生效，项目不存在时读不到分档", async () => {
+      const database = await createTaskWorkDatabase();
+      try {
+        const instanceId = await createLocalInstanceRepository(
+          database.persistence,
+        ).ensure();
+        const catalog = createSkillCatalogRepository(database.persistence);
+        const projectSkills = createProjectSkillRepository(
+          database.persistence,
+        );
+        const skill = await catalog.insertOwned(instanceId, {
+          name: "项目技能",
+          slug: `project-skill-${randomUUID()}`,
+          category: "custom",
+          description: "说明",
+          skillContent: "正文",
+          createdByClientId: null,
+        });
+        if (!skill || typeof skill.id !== "string") {
+          throw new Error("技能夹具未创建。");
+        }
+        const projectRows = await database.persistence
+          .forInstance(instanceId)
+          .query<{ id: string }>(
+            `insert into public.projects (instance_id, name, slug, kind)
+             values (:instance, '技能项目', $1, 'design')
+             returning id`,
+            [`project-${randomUUID()}`],
+          );
+        const projectId = projectRows[0]?.id;
+        if (!projectId) {
+          throw new Error("项目夹具未创建。");
+        }
+
+        expect(await projectSkills.findProject(instanceId, projectId)).toEqual({
+          id: projectId,
+          name: "技能项目",
+        });
+        expect(
+          await projectSkills.upsertProjectSkill({
+            instanceId,
+            projectId,
+            skillId: skill.id,
+            enabled: true,
+          }),
+        ).toBe(1);
+        const initial = await projectSkills.listProjectSkills(
+          instanceId,
+          projectId,
+        );
+        expect(initial).toHaveLength(1);
+        expect(initial[0]).toMatchObject({
+          skillId: skill.id,
+          enabled: true,
+        });
+        expect(
+          await projectSkills.setProjectSkillEnabled(
+            instanceId,
+            projectId,
+            skill.id,
+            false,
+          ),
+        ).toBe(true);
+        expect(
+          (await projectSkills.listProjectSkills(instanceId, projectId))[0]
+            ?.enabled,
+        ).toBe(false);
+        expect(
+          await projectSkills.findProject(instanceId, randomUUID()),
+        ).toBeNull();
+        expect(
+          await projectSkills.upsertProjectSkill({
+            instanceId,
+            projectId: randomUUID(),
+            skillId: skill.id,
+            enabled: true,
+          }),
+        ).toBe(0);
+      } finally {
+        await database.close();
+      }
+    });
+
+    it("导入回执顺序重放、同键冲突、删除后墓碑与并发同键成立", async () => {
+      const database = await createTaskWorkDatabase();
+      try {
+        const instanceId = await createLocalInstanceRepository(
+          database.persistence,
+        ).ensure();
+        const catalog = createSkillCatalogRepository(database.persistence);
+        const receipts = createSkillImportReceiptRepository(
+          database.persistence,
+        );
+        const sourceRootPath = `/root/${randomUUID()}`;
+        const sourceSlug = `writer-${randomUUID()}`;
+        const requestKey = skillImportRequestKey(sourceRootPath, sourceSlug);
+        const digest = "b".repeat(64);
+        const create = async (client: InstanceSqlClient) => {
+          const created = await insertOwnedSkillRecord(client, {
+            name: "导入技能",
+            slug: sourceSlug,
+            category: "custom",
+            description: "说明",
+            skillContent: "正文",
+            createdByClientId: null,
+          });
+          if (!created || typeof created.id !== "string") {
+            throw new Error("导入技能未写入。");
+          }
+          await insertSkillFileRecords(client, created.id, [
+            { filePath: "references/a.md", content: "a" },
+          ]);
+          return { skillId: created.id };
+        };
+
+        const first = await receipts.admitImport({
+          instanceId,
+          requestKey,
+          parameterFingerprint: digest,
+          sourceRootPath,
+          sourceSlug,
+          create,
+        });
+        expect(first.kind).toBe("created");
+        const replayed = await receipts.admitImport({
+          instanceId,
+          requestKey,
+          parameterFingerprint: digest,
+          sourceRootPath,
+          sourceSlug,
+          create,
+        });
+        expect(replayed).toEqual({ kind: "replayed", skillId: first.skillId });
+        expect(
+          (await catalog.listVisible(instanceId)).filter(
+            (row) => row.slug === sourceSlug,
+          ),
+        ).toHaveLength(1);
+
+        await expect(
+          receipts.admitImport({
+            instanceId,
+            requestKey,
+            parameterFingerprint: "c".repeat(64),
+            sourceRootPath,
+            sourceSlug,
+            create,
+          }),
+        ).rejects.toBeInstanceOf(SkillImportConflictError);
+
+        const concurrentRoot = `/root/${randomUUID()}`;
+        const concurrentSlug = `concurrent-${randomUUID()}`;
+        const concurrentKey = skillImportRequestKey(
+          concurrentRoot,
+          concurrentSlug,
+        );
+        const concurrentCreate = async (client: InstanceSqlClient) => {
+          const created = await insertOwnedSkillRecord(client, {
+            name: "并发技能",
+            slug: concurrentSlug,
+            category: "custom",
+            description: "",
+            skillContent: "正文",
+            createdByClientId: null,
+          });
+          if (!created || typeof created.id !== "string") {
+            throw new Error("并发技能未写入。");
+          }
+          return { skillId: created.id };
+        };
+        const concurrent = await Promise.all([
+          receipts.admitImport({
+            instanceId,
+            requestKey: concurrentKey,
+            parameterFingerprint: digest,
+            sourceRootPath: concurrentRoot,
+            sourceSlug: concurrentSlug,
+            create: concurrentCreate,
+          }),
+          receipts.admitImport({
+            instanceId,
+            requestKey: concurrentKey,
+            parameterFingerprint: digest,
+            sourceRootPath: concurrentRoot,
+            sourceSlug: concurrentSlug,
+            create: concurrentCreate,
+          }),
+        ]);
+        expect(
+          concurrent.filter((entry) => entry.kind === "created"),
+        ).toHaveLength(1);
+        expect(new Set(concurrent.map((entry) => entry.skillId)).size).toBe(1);
+        expect(
+          (await catalog.listVisible(instanceId)).filter(
+            (row) => row.slug === concurrentSlug,
+          ),
+        ).toHaveLength(1);
+
+        expect(await catalog.deleteOwnedById(instanceId, first.skillId)).toBe(
+          1,
+        );
+        const tombstone = await database.persistence
+          .forInstance(instanceId)
+          .queryOne<Record<string, unknown>>(
+            `select status, skill_id, parameter_fingerprint,
+                    source_root_path, source_slug
+               from public.skill_import_receipts
+              where instance_id = :instance and request_key = $1`,
+            [requestKey],
+          );
+        expect(tombstone).toEqual({
+          status: "deleted",
+          skill_id: null,
+          parameter_fingerprint: null,
+          source_root_path: null,
+          source_slug: null,
+        });
+        await expect(
+          receipts.admitImport({
+            instanceId,
+            requestKey,
+            parameterFingerprint: digest,
+            sourceRootPath,
+            sourceSlug,
+            create,
+          }),
+        ).rejects.toBeInstanceOf(SkillImportDeletedError);
+      } finally {
+        await database.close();
+      }
+    });
+  },
+);

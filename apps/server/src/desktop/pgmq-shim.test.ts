@@ -10,7 +10,7 @@ import {
 
 const BIN_DIR = join("/pg", "native", "bin");
 const EXT_DIR = join("/pg", "native", "share", "extension");
-const SHIM_DIR = join("/app", "docker", "pg-dev-shim");
+const SHIM_DIR = join("/app", "docker", "pg", "pg-dev-shim");
 
 /** 假查询端：只回答「pgmq 是否可用」，并在安装后翻转状态。 */
 function createFakeClient(options: { availableAfterInstall?: boolean } = {}) {
@@ -47,8 +47,8 @@ describe("pgmq shim：源目录解析", () => {
   const allPresent = (path: string) =>
     path.includes("pgmq.control") || path.includes("pgmq--1.0.sql");
 
-  it("优先级：LOOMIC_PGMQ_SHIM_DIR → <exe>/pg/shim → 仓库 docker/pg-dev-shim", () => {
-    const env = { LOOMIC_PGMQ_SHIM_DIR: join("E:/", "shim") };
+  it("优先级：KENFUTWORK_PGMQ_SHIM_DIR → <exe>/pg/shim → 仓库 docker/pg/pg-dev-shim", () => {
+    const env = { KENFUTWORK_PGMQ_SHIM_DIR: join("E:/", "shim") };
     expect(
       resolvePgmqShimDir({
         env,
@@ -74,7 +74,7 @@ describe("pgmq shim：源目录解析", () => {
         exeDir: join("D:/", "app"),
         repoRoot: join("D:/", "repo"),
       }),
-    ).toBe(join("D:/", "repo", "docker", "pg-dev-shim"));
+    ).toBe(join("D:/", "repo", "docker", "pg", "pg-dev-shim"));
   });
 
   it("候选目录必须两个文件齐全，否则视为没有 shim（返回 undefined）", () => {
@@ -117,7 +117,7 @@ describe("pgmq shim：安装", () => {
     expect(client).toBeTruthy();
   });
 
-  it("不可用且没有 shim 源 → fail loud 并给出 LOOMIC_PGMQ_SHIM_DIR 提示", async () => {
+  it("不可用且没有 shim 源 → fail loud 并给出 KENFUTWORK_PGMQ_SHIM_DIR 提示", async () => {
     const { client } = createFakeClient();
     const { deps } = createFakeDeps([]);
 
@@ -127,7 +127,7 @@ describe("pgmq shim：安装", () => {
         { binDir: BIN_DIR, shimDir: undefined },
         deps,
       ),
-    ).rejects.toThrow(/LOOMIC_PGMQ_SHIM_DIR/);
+    ).rejects.toThrow(/KENFUTWORK_PGMQ_SHIM_DIR/);
   });
 
   it("不可用时把两个文件装进 share/extension，已存在的不重复覆盖", async () => {

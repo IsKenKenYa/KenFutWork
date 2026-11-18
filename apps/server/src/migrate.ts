@@ -7,7 +7,6 @@ import {
   adoptLegacyLedger,
   applyMigrations,
   assertNoDrift,
-  loadMigrationFiles,
   loadMigrationSet,
   MigrationError,
   planMigrations,
@@ -26,13 +25,14 @@ import {
  * 用有 DDL 权限的连接执行（运行角色无 DDL），与 API/Worker 的 persistence 口径分开。
  */
 
-// 目录名沿用 `supabase/`（《AGENTS.md》约定：迁移目录名不改），但内容已是自管 Postgres SQL
+// 迁移根：源码态仓库 `docker/pg/`；发布包复制为同级 `db/`（内容仍是自管 Postgres SQL）
 const MIGRATIONS_ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "..",
-  "supabase",
+  "docker",
+  "pg",
 );
 
 const MIGRATIONS_DIR = join(MIGRATIONS_ROOT, "migrations");
@@ -74,10 +74,6 @@ function withDatabase(url: string, database: string): string {
   return parsed.toString();
 }
 
-function databaseNameOf(url: string): string {
-  return new URL(url).pathname.replace(/^\//, "") || "postgres";
-}
-
 async function runStatus(databaseUrl: string): Promise<void> {
   const files = loadSet();
   const pool = new Pool({ connectionString: databaseUrl });
@@ -89,11 +85,11 @@ async function runStatus(databaseUrl: string): Promise<void> {
     console.log(`迁移目录：${MIGRATIONS_DIR}`);
     console.log(`目标库：${describeUrl(databaseUrl)}`);
     console.log(
-      `文件 ${files.length} 条 / 已执行 ${ledger.length} 条 / 待执行 ${plan.pending.length} 条`,
+      `文件 ${files.length} 条 / 已执行 ${ledger.filter((entry) => !entry.superseded_by).length} 条 / 已明确退役 ${ledger.filter((entry) => entry.superseded_by).length} 条 / 待处理 ${plan.pending.length} 条`,
     );
 
     if (plan.checksumDrift.length > 0) {
-      console.error("\n[漂移] 已执行的迁移被改动（必须新增前向修复迁移）：");
+      console.error("\n[漂移] 账本记录的迁移被改动（必须新增前向修复迁移）：");
       for (const { file } of plan.checksumDrift) {
         console.error(`  ${file.version}_${file.name}`);
       }
@@ -123,11 +119,15 @@ async function runApply(databaseUrl: string): Promise<void> {
   try {
     const result = await applyMigrations(toQueryable(pool), loadSet(), {
       onApplied: (file) => console.log(`  已执行 ${file.version}_${file.name}`),
+      onSuperseded: (file, byVersion) =>
+        console.log(
+          `  已明确退役 ${file.version}_${file.name}（由${byVersion}取代，未执行原SQL）`,
+        ),
     });
     console.log(
-      result.applied.length === 0
+      result.applied.length === 0 && result.superseded.length === 0
         ? "没有待执行的迁移（账本与文件一致）。"
-        : `完成：本次执行 ${result.applied.length} 条迁移。`,
+        : `完成：本次执行 ${result.applied.length} 条、明确退役 ${result.superseded.length} 条迁移。`,
     );
   } finally {
     await pool.end();
@@ -245,7 +245,7 @@ async function main(): Promise<void> {
 
   if (!databaseUrl) {
     console.error(
-      "缺少数据库连接串：请设置 LOOMIC_DATABASE_URL 或 DATABASE_URL（见 .env.example）。",
+      "缺少数据库连接串：请设置 KENFUTWORK_DATABASE_URL 或 DATABASE_URL（见 .env.example）。",
     );
     process.exit(1);
   }

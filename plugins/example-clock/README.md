@@ -1,6 +1,6 @@
-# loomic-example-clock
+# kenfutwork-example-clock
 
-Loomic 参考插件：演示一个**双端兼容**的插件 bundle。
+KenFutWork 参考插件：演示一个**双端兼容**的插件 bundle。
 
 同一份产物同时声明 `dsh.bundle`（deepseek-harness）与 `loomic.bundle`，
 两边的装载形状都是 `{ name, inject, apply(ctx) }`，所以不需要转换步骤。
@@ -18,12 +18,12 @@ example-clock/
 
 - `tools` — 向宿主工具注册表贡献 `clock_now`
 
-Loomic 侧支持的能力面见 `apps/server/src/features/plugins/capability-binding.ts`；
+KenFutWork 侧支持的能力面见 `apps/server/src/features/plugins/capability-binding.ts`；
 不在该表内（或标记为不支持）的能力会让安装被兼容性门禁拦下。
 
 ## 安装
 
-Loomic：在插件市场「从链接安装」里填本目录路径，先校验再安装。
+KenFutWork：在插件市场「从链接安装」里填本目录路径，先校验再安装。
 
 deepseek-harness：
 
@@ -34,4 +34,4 @@ dsh plugin --profile <profile> add ./plugins/example-clock
 ## 说明
 
 `index.js` 用 dsh 的 ContentBlock 形状返回结果（`{ content: [...] }`）；
-Loomic 的适配层会优先取 `structuredContent`，否则取文本块。
+KenFutWork 的适配层会优先取 `structuredContent`，否则取文本块。

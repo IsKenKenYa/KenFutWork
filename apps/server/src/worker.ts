@@ -1,4 +1,4 @@
-// @credits-system — Worker process: handles job failure refunds (credit refund on generation error)
+// 后台生成任务消费进程；BYOK记录usage，不检查账户或余额。
 import { bootstrap } from "global-agent";
 
 // Enable HTTP proxy for all outbound requests if GLOBAL_AGENT_HTTP_PROXY is set
@@ -13,9 +13,8 @@ async function setupProxy() {
 }
 
 import { loadServerEnv } from "./config/env.js";
-import { startJobLoop } from "./features/jobs/job-loop.js";
+import { resolveLocalRuntimeEnv } from "./desktop/runtime.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
-import { registerAllProviders } from "./generation/providers/register-all.js";
 import { composePlugins } from "./kernel/compose.js";
 import { workerProfile } from "./profiles/worker.js";
 
@@ -27,34 +26,25 @@ import { workerProfile } from "./profiles/worker.js";
 async function main() {
   await setupProxy();
 
-  const env = loadServerEnv();
+  const env = resolveLocalRuntimeEnv(loadServerEnv());
 
   if (!env.databaseUrl) {
     console.error(
-      "LOOMIC_DATABASE_URL（或 DATABASE_URL）是 worker 进程的必需项。",
+      "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是 worker 进程的必需项。",
     );
     process.exit(1);
   }
 
-  registerAllProviders(env);
-
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
-  const kernel = composePlugins(env, workerProfile({ credentialEnv: env }));
+  const kernel = composePlugins(env, workerProfile());
+  await kernel.get("localInstance").getContext();
 
-  const loop = startJobLoop({
-    assetWriter: kernel.get("assetWriter"),
-    blob: kernel.get("blob"),
-    creditService: kernel.get("credits"),
-    env,
-    jobService: kernel.get("jobs"),
-    modelProviders: kernel.get("modelProviders"),
-    queue: kernel.get("queue"),
-    usageService: kernel.get("usage"),
-  });
+  const loop = kernel.get("jobLoop");
 
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {
     await loop.shutdown();
+    await kernel.dispose();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

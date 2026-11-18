@@ -1,0 +1,230 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  type CommandOutcome,
+  createNativeDirectoryPicker,
+  interpretPickerOutcome,
+  nativePickerCommands,
+  resolvePickerCommands,
+} from "./directory-picker.js";
+
+/**
+ * 原生目录对话框（桌面形态）：命令形状与结果翻译是纯逻辑，这里全覆盖；
+ * 「真的弹出一个对话框」那一段只能人点，走真机验收（见《改造计划》§4.13）。
+ */
+describe("原生目录对话框命令", () => {
+  it("Windows 用壳层 IFileOpenDialog 的现代文件夹框，且切 UTF-8 与 -STA", () => {
+    const [command, ...rest] = nativePickerCommands("win32");
+    expect(rest).toHaveLength(0);
+    expect(command?.command).toBe("powershell.exe");
+    expect(command?.args).toContain("-STA");
+    const script = command?.args.at(-1) ?? "";
+    // 中文路径经管道回来必须按 UTF-8（否则按 ANSI 代码页乱码）
+    expect(script).toContain(
+      "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8",
+    );
+    // CLSID_FileOpenDialog + IFileOpenDialog 的 IID + FOS_PICKFOLDERS
+    expect(script).toContain("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7");
+    expect(script).toContain("d57c7288-d4ad-4768-be02-9d969532d960");
+    expect(script).toContain("0x20u | 0x40u | 0x800u");
+    expect(script).toContain("0x80058000u");
+    // 置顶 owner：对话框不开在浏览器窗口后面
+    expect(script).toContain("TopMost = $true");
+    // 回归锁：WinForms 的旧版「浏览文件夹」树形框不得回来（5.1 下 AutoUpgrade
+    // 实测不升级到现代对话框，用户要的是资源管理器那种）
+    expect(script).not.toContain("FolderBrowserDialog");
+  });
+
+  it("macOS 用 osascript 的 choose folder", () => {
+    const [command] = nativePickerCommands("darwin");
+    expect(command?.command).toBe("osascript");
+    expect(command?.args.join(" ")).toContain("choose folder");
+  });
+
+  it("Linux 先 zenity 再 kdialog（前者没装就换后者）", () => {
+    const commands = nativePickerCommands("linux");
+    expect(commands.map((entry) => entry.command)).toEqual([
+      "zenity",
+      "kdialog",
+    ]);
+    expect(commands[0]?.args).toContain("--directory");
+  });
+});
+
+describe("对话框结果翻译", () => {
+  const interpret = (
+    platform: NodeJS.Platform,
+    outcome: Partial<CommandOutcome>,
+  ) =>
+    interpretPickerOutcome({
+      platform,
+      outcome: { code: 0, stdout: "", stderr: "", ...outcome },
+    });
+
+  it("Windows：选中返回路径（去掉 CRLF）", () => {
+    expect(interpret("win32", { stdout: "D:\\Desktop\\test\r\n" })).toEqual({
+      status: "picked",
+      path: "D:\\Desktop\\test",
+    });
+  });
+
+  it("中文路径原样带回来", () => {
+    expect(interpret("win32", { stdout: "D:\\桌面\\我的项目\n" })).toEqual({
+      status: "picked",
+      path: "D:\\桌面\\我的项目",
+    });
+  });
+
+  it("Windows：取消 = 退出码 0 但没有输出", () => {
+    expect(interpret("win32", { stdout: "", code: 0 })).toEqual({
+      status: "cancelled",
+    });
+  });
+
+  it("macOS：`POSIX path` 的末尾斜杠被剥掉，根目录保留", () => {
+    expect(interpret("darwin", { stdout: "/Users/me/app/\n" })).toEqual({
+      status: "picked",
+      path: "/Users/me/app",
+    });
+    expect(interpret("darwin", { stdout: "/\n" })).toEqual({
+      status: "picked",
+      path: "/",
+    });
+  });
+
+  it("macOS：-128 是用户取消，不是失败", () => {
+    expect(
+      interpret("darwin", {
+        code: 1,
+        stderr: "execution error: User canceled. (-128)",
+      }),
+    ).toEqual({ status: "cancelled" });
+  });
+
+  it("Linux：zenity 取消（退出 1 且无输出）", () => {
+    expect(interpret("linux", { code: 1, stdout: "" })).toEqual({
+      status: "cancelled",
+    });
+  });
+
+  it("命令不存在 → unavailable（换下一个候选）", () => {
+    expect(interpret("linux", { missing: true, code: null })).toEqual({
+      status: "unavailable",
+      reason: "这台机器上没有可用的文件夹对话框命令（缺 zenity / kdialog）。",
+    });
+  });
+
+  it("Windows 缺命令时说的是 PowerShell，不再误报 zenity / kdialog", () => {
+    expect(interpret("win32", { missing: true, code: null })).toEqual({
+      status: "unavailable",
+      reason:
+        "这台机器上没有可用的文件夹对话框命令（缺 PowerShell（powershell.exe））。",
+    });
+  });
+
+  it("真的执行失败 → failed，并带上 stderr（截断）", () => {
+    const result = interpret("linux", {
+      code: 3,
+      stderr: "Gtk-WARNING: cannot open display",
+    });
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.reason).toContain("退出码 3");
+    expect(result.reason).toContain("cannot open display");
+  });
+
+  it("超时（对话框一直开着）→ failed 且说清是超时", () => {
+    const result = interpret("win32", { code: null, timedOut: true });
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.reason).toContain("超时");
+  });
+});
+
+describe("选择器装配", () => {
+  const outcome = (partial: Partial<CommandOutcome>): CommandOutcome => ({
+    code: 0,
+    stdout: "",
+    stderr: "",
+    ...partial,
+  });
+  /** 测试里一律禁掉真实文件系统探测：命令名保持声明值，断言才稳定。 */
+  const noResolve = () => null;
+
+  it("Linux 上 zenity 没装、kdialog 装了 → 用 kdialog 的结果", async () => {
+    const runCommand = vi.fn(async (command: { command: string }) =>
+      command.command === "zenity"
+        ? outcome({ code: null, missing: true })
+        : outcome({ stdout: "/home/me/app\n" }),
+    );
+    const picker = createNativeDirectoryPicker({
+      platform: "linux",
+      runCommand,
+      findExecutable: noResolve,
+    });
+    expect(picker.availability()).toEqual({ available: true });
+    await expect(picker.pick()).resolves.toEqual({
+      status: "picked",
+      path: "/home/me/app",
+    });
+    expect(runCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it("取消是终态：不会再去试下一个候选命令", async () => {
+    const runCommand = vi.fn(async () => outcome({ code: 1, stdout: "" }));
+    const picker = createNativeDirectoryPicker({
+      platform: "linux",
+      runCommand,
+      findExecutable: noResolve,
+    });
+    await expect(picker.pick()).resolves.toEqual({ status: "cancelled" });
+    expect(runCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("超时上限透传给命令执行（默认 10 分钟）", async () => {
+    const runCommand = vi.fn(async (_command: unknown, timeoutMs: number) =>
+      outcome({ code: 1, stdout: "", stderr: `timeout=${timeoutMs}` }),
+    );
+    const picker = createNativeDirectoryPicker({
+      platform: "darwin",
+      runCommand,
+      findExecutable: noResolve,
+      timeoutMs: 1234,
+    });
+    await picker.pick();
+    expect(runCommand.mock.calls[0]?.[1]).toBe(1234);
+  });
+
+  /**
+   * 回归背景（真机踩到）：桌面壳可能从一个 PATH 已损坏/陈旧的父进程继承环境
+   * （机器级 PATH 被第三方安装器整键覆盖，只剩它自己那一段）——`powershell.exe`
+   * 按名字根本找不到，用户点「打开文件夹」直接失败。终端那条路径早就解析绝对路径，
+   * 这里当时漏了。
+   */
+  it("起进程前把命令名解析成绝对路径", async () => {
+    const runCommand = vi.fn(
+      async (_command: { command: string }, _timeoutMs: number) =>
+        outcome({ stdout: "D:\\Desktop\\test" }),
+    );
+    const picker = createNativeDirectoryPicker({
+      platform: "win32",
+      runCommand,
+      findExecutable: (name) =>
+        name === "powershell.exe"
+          ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          : null,
+    });
+    await picker.pick();
+    expect(runCommand.mock.calls[0]?.[0]?.command).toBe(
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+  });
+
+  it("解析不到就保持裸名（spawn 会报 ENOENT → 翻成「不可用」）", () => {
+    const resolved = resolvePickerCommands(
+      [{ command: "powershell.exe", args: [] }],
+      noResolve,
+    );
+    expect(resolved[0]?.command).toBe("powershell.exe");
+  });
+});

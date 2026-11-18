@@ -1,3 +1,4 @@
+import { serverFetch } from "@/lib/local-access";
 import { getServerBaseUrl } from "./env";
 
 export type GoogleFontItem = {
@@ -15,7 +16,7 @@ export async function fetchGoogleFonts(
   if (category) params.set("category", category);
 
   const url = `${getServerBaseUrl()}/api/fonts?${params}`;
-  const res = await fetch(url);
+  const res = await serverFetch(url);
   if (!res.ok) return [];
   const data = (await res.json()) as { fonts: GoogleFontItem[] };
   return data.fonts;

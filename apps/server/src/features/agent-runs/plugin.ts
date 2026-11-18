@@ -1,29 +1,61 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { ToolGate, LoomicAgentFactory } from "../../agent/deep-agent.js";
-import { createAgentPersistenceService } from "../../agent/persistence/index.js";
+import type { AgentContextBranchService } from "../../agent/context-history.js";
+import type {
+  KenFutWorkAgentFactory,
+  ToolGate,
+} from "../../agent/deep-agent.js";
+import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
+import {
+  type AgentPersistenceService,
+  createAgentPersistenceService,
+} from "../../agent/persistence/index.js";
+import type { AgentRuntimeProvider } from "../../agent/provider-contract.js";
+import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
-import { composeToolGate } from "../../agent/tool-gate.js";
-import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
+import {
+  createInstanceSkillsByInstanceLoader,
+  createInstanceSkillsLoader,
+} from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
-import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
+import type {
+  KernelEvents,
+  PluginDefinition,
+  PreStepPayload,
+} from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
-import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { runPluginHooks } from "../plugins/plugin-hooks.js";
+import { createProjectRepository } from "../projects/repository.js";
+import { createProjectWorkDirLoader } from "../projects/work-dir.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
-import { createAgentRunMetadataService } from "./agent-run-service.js";
+import {
+  createAgentActivityQuery,
+  createAgentRunMetadataService,
+} from "./agent-run-service.js";
+import {
+  basePromptSection,
+  codeProjectPromptSection,
+  codeRolePromptSection,
+  createRulesPromptSection,
+  skillsPromptSection,
+} from "./prompt-sections.js";
 import { createAgentRunRepository } from "./repository.js";
 
 export interface AgentRunsPluginDeps {
   connectionManager: ConnectionManager;
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
-  /** 事件缝（DEC-1）：pre-step waterfall，执行模式/权限插件改写模型输入。 */
-  emitPreStep?: (payload: {
-    input: string;
-    runId: string;
-    threadId?: string | undefined;
-  }) => Promise<{ input: unknown }>;
-  agentFactory?: LoomicAgentFactory;
+  /** pre-step waterfall，指导插件可以改写模型输入。 */
+  emitPreStep?: (
+    payload: PreStepPayload & {
+      input: string;
+      runId: string;
+    },
+  ) => Promise<{ input: unknown }>;
+  agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
+  contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
 }
@@ -35,67 +67,202 @@ export function createAgentRunsPlugin(
   return {
     name: "agent-runs",
     inject: [
-      "agentModes",
-      "auth",
+      "localAccess",
       "brandKit",
       "canvas",
-      "credits",
       "persistence",
       "settings",
       "threads",
-      "tierGuard",
-      "viewer",
+      "localInstance",
+      "taskWork",
+      "plugins",
     ],
     apply(ctx) {
-      ctx.register("agentPersistence", () =>
-        createAgentPersistenceService(ctx.env),
+      let runtime: ReturnType<typeof createAgentRunService> | undefined;
+      ctx.effect(() => async () => {
+        await runtime?.stopAllRuns("host_shutdown");
+      });
+      let persistence: AgentPersistenceService | undefined;
+      ctx.register("agentPersistence", () => {
+        persistence = createAgentPersistenceService(ctx.env);
+        return persistence;
+      });
+      const agentRunRepository = createAgentRunRepository(
+        ctx.get("persistence"),
       );
       ctx.register("agentRunMetadata", () =>
         createAgentRunMetadataService({
-          repository: createAgentRunRepository(ctx.get("persistence")),
+          repository: agentRunRepository,
+          localInstance: ctx.get("localInstance"),
+          threadService: ctx.get("threads"),
         }),
       );
       const canvasRepository = createCanvasRepository(ctx.get("persistence"));
 
+      // 运行时属主的提示段：base（两模式恒挂）、skills（run 事实渲染）、
+      // 规则与插件段（规则经 ctx 携带，插件段闭包自取——装/卸载下一轮即生效）。
+      const systemPrompt = ctx.get("systemPrompt");
+      systemPrompt.register(basePromptSection);
+      systemPrompt.register(codeRolePromptSection);
+      systemPrompt.register(codeProjectPromptSection);
+      systemPrompt.register(skillsPromptSection);
+      systemPrompt.register(
+        createRulesPromptSection({
+          pluginFragments: () =>
+            ctx.tryGet("plugins")?.listPromptFragments() ?? [],
+        }),
+      );
+
       ctx.register("agentRuns", (d) => {
+        const agentPersistence = d.get("agentPersistence");
         const jobService = ctx.tryGet("jobs");
-        // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
-        const agentModes = d.get("agentModes");
-        // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
-        // tool-pre-execute 事件缝拦不到它们，必须在这里与模式判定合并（见 tool-gate.ts）。
+        // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
+        // 缺席（部分装配/未启用）则不打检查点，run 照常
+        const checkpoints = ctx.tryGet("checkpoints");
+        // 原生工具不经过注册表，非Task调用在此执行对应场景的权限检查。
         const permissions = ctx.tryGet("permissions");
-        const toolGateFor = (threadId: string): ToolGate => {
-          const policy = agentModes.resolveToolPolicy(threadId);
-          return composeToolGate({
-            modeVerdict: (toolName) => evaluateToolPolicy(policy, toolName),
-            ...(permissions
+        const toolGateFor = (
+          threadId: string,
+          scoped = false,
+          goalId?: string,
+        ): ToolGate | undefined => {
+          if (!permissions || scoped) return undefined;
+          return (toolName) => {
+            const decision = permissions.evaluate({
+              toolName,
+              threadId,
+              scenario: goalId ? "automation" : "interactive",
+            });
+            return decision.decision === "deny"
               ? {
-                  permissionVerdict: (toolName: string) => {
-                    const decision = permissions.evaluate({ toolName, threadId });
-                    if (decision.decision !== "deny") {
-                      return { allowed: true } as const;
-                    }
-                    return {
-                      allowed: false as const,
-                      reason:
-                        decision.reason ??
-                        "该工具在当前权限档位下需审批后才能调用。",
-                    };
-                  },
+                  allowed: false,
+                  reason:
+                    decision.reason ??
+                    "该工具在当前权限档位下需审批后才能调用。",
                 }
-              : {}),
-          });
+              : { allowed: true };
+          };
         };
-        return createAgentRunService({
-          agentPersistenceService: d.get("agentPersistence"),
+        runtime = createAgentRunService({
+          codeProjectContextLoader: (scope, limits, signal) =>
+            ctx
+              .get("capabilities")
+              .require<
+                NonNullable<
+                  Parameters<
+                    typeof createAgentRunService
+                  >[0]["codeProjectContextLoader"]
+                >
+              >("code-project-context", "code-tools:project-context")(
+              scope,
+              limits,
+              signal,
+            ),
+          resolveCodeApprovalMode: async (handle) => {
+            const scope = handle.describe();
+            const row = await ctx
+              .get("persistence")
+              .forInstance(scope.instanceId)
+              .queryOne<{
+                state: import("../code-ui/conversation.js").CodeUiConversationState;
+                scope_generation: number | string;
+                branch_generation: number | string;
+              }>(
+                "select state, scope_generation, branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null and deleted_at is null and archived = false and execution_state = 'ready'",
+                [scope.taskId],
+              );
+            if (!row) throw new Error("Code Task 已关闭或授权不可用。");
+            const config = row.state.snapshots.find(
+              (snapshot) => snapshot.sessionId === scope.taskId,
+            )?.config;
+            if (!config) throw new Error("Code Task 权限配置缺失。");
+            const mode =
+              protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+                mode: config.mode,
+              }).mode;
+            const planEnabled =
+              protocol.sessionConfigStateSchema.shape.planEnabled.parse(
+                config.planEnabled,
+              ) ?? false;
+            return {
+              // Task保留基础mode；规划仅收窄本次实际权限，不改写配置。
+              mode: planEnabled ? "plan" : mode,
+              baseMode: mode,
+              planEnabled,
+              planningEpoch: row.state.planningEpoch ?? 0,
+              scopeGeneration: Number(row.scope_generation),
+              branchGeneration: Number(row.branch_generation),
+            };
+          },
+          taskWork: ctx.get("taskWork"),
+          processSandbox: ctx.get("processSandbox"),
+          resolveTaskWorkContext: async (actor, scopeHandle, runId) => {
+            const scope = scopeHandle.describe();
+            const row = await ctx
+              .get("persistence")
+              .forInstance(scope.instanceId)
+              .queryOne<{ branch_generation: string | number }>(
+                "select branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null and archived = false and execution_state = 'ready'",
+                [scope.taskId],
+              );
+            if (!row) throw new Error("Code Task 已关闭或授权不可用。");
+            return {
+              actor,
+              scope,
+              ownerKind: "code" as const,
+              agentId: scopeHandle.agentId,
+              runId,
+              branchGeneration: Number(row.branch_generation),
+            };
+          },
+          runExtensions: () =>
+            ctx
+              .get("capabilities")
+              .list<AgentRunExtension>("agent-run-extension")
+              .map((registration) => registration.value),
+          agentPersistenceService: agentPersistence,
+          contextHistoryArchives: ctx.get("contextHistoryArchives"),
+          contextBranchProvider:
+            deps.contextBranchProvider ??
+            createNativeContextBranchService({
+              agentPersistenceService: agentPersistence,
+            }),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+          ...(deps.runtimeProvider
+            ? { runtimeProvider: deps.runtimeProvider }
+            : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
-          brandKitService: d.get("brandKit"),
           canvasRepository,
           canvasService: d.get("canvas"),
-          workspaceSkillsLoader: createWorkspaceSkillsLoader({
+          // 保留本次实际有效文件引用，runtime分别记录capture状态与run/phase。
+          ...(checkpoints
+            ? {
+                checkpointHooks: {
+                  beforeTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "pre",
+                    }),
+                  afterTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "post",
+                    }),
+                },
+              }
+            : {}),
+          instanceSkillsLoader: createInstanceSkillsLoader({
             canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),
+            plugins: ctx.get("plugins"),
+          }),
+          instanceSkillsByInstanceLoader: createInstanceSkillsByInstanceLoader({
+            skills: createSkillCatalogRepository(ctx.get("persistence")),
+            plugins: ctx.get("plugins"),
+          }),
+          // 项目绑定的本机工作目录（web 形态「填本机路径」）→ run 的沙箱作用域
+          projectWorkDirLoader: createProjectWorkDirLoader({
+            projects: createProjectRepository(ctx.get("persistence")),
           }),
           connectionManager: deps.connectionManager,
           ...(deps.agentModel ? { model: deps.agentModel } : {}),
@@ -106,30 +273,56 @@ export function createAgentRunsPlugin(
           env: ctx.env,
           ...(jobService ? { jobService } : {}),
           modelProviders: ctx.get("modelProviders"),
+          // run 起始期校验模型是否在目录里（E）：可选用依赖，没有就跳过
+          ...(ctx.tryGet("modelCatalog")
+            ? { modelCatalog: ctx.get("modelCatalog") as never }
+            : {}),
+          // 用户规则（settings 同一趟顺带读 autoCompact/hooks）：规则段经
+          // systemPromptRegistry 组装，runtime 只负责把读到的片段放进 ctx
+          settingsService: ctx.get("settings"),
+          // 插件贡献：命令与实例命令合并（实例优先）；SessionStart 钩子在 run 起始期
+          // 执行，additionalContext 经 promptCompositionContext 注入系统提示。
+          pluginCommands: () => ctx.get("plugins").listCommands("code"),
+          pluginHookRunner: async ({ cwd, signal }) =>
+            runPluginHooks({
+              hooks: await ctx.get("plugins").listHooks("code"),
+              cwd,
+              ...(signal ? { signal } : {}),
+            }),
           runUsage: ctx.get("runUsage"),
           tools: ctx.get("tools"),
+          systemPromptRegistry: ctx.get("systemPrompt"),
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
-          creditService: d.get("credits"),
-          tierGuard: d.get("tierGuard"),
-          viewerService: d.get("viewer"),
+          localInstance: d.get("localInstance"),
         });
+        return runtime;
       });
+      return async () => {
+        await persistence?.dispose();
+      };
     },
     mounted(ctx) {
-      // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
-      const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
-        agentModes: ctx.get("agentModes"),
+        // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
+        // （仓储是无状态包装，重建不引入额外连接/状态）
+        activityQuery: createAgentActivityQuery({
+          repository: createAgentRunRepository(ctx.get("persistence")),
+        }),
+        // 会话最近一轮 run 的终态（失败轮的原因）：与 activity 同一条仓储包装
+        latestRunQuery: (input) =>
+          createAgentRunRepository(ctx.get("persistence")).latestForSession(
+            input,
+          ),
+        executionScopes: ctx.get("executionScopes"),
+        codeUi: ctx.get("codeUi"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
-        auth: ctx.get("auth"),
-        ...(chatService ? { chatService } : {}),
+        localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),
         threadService: ctx.get("threads"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         // 平台池额度前置拦截（FORM-10）：走系统供应商且余额耗尽时拒绝启动
-        creditService: ctx.get("credits"),
         modelProviders: ctx.get("modelProviders"),
       });
     },

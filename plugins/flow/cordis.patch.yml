@@ -1,0 +1,7 @@
+# flow 插件（FORM-11）：产品入口条目。
+# P2 只做入口门控（安装态决定工作台 Flow 模式是否出现），不声明服务端能力；
+# P6 起在这里挂引擎托管（engineRuntime：WSL2 / 本机容器双 Provider + 按需下载）。
+- insert:
+    - id: kenfutwork-flow
+      name: kenfutwork-flow
+      inject: []

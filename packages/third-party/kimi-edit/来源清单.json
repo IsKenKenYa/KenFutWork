@@ -1,0 +1,36 @@
+{
+  "repository": "https://github.com/MoonshotAI/kimi-code",
+  "commit": "21406fb4c805cc8c715e6d1f16ad3fb5f25f4fe3",
+  "license": "MIT",
+  "consumer": "apps/server/src/features/code-tools/file-mutations.ts",
+  "records": [
+    {
+      "source": "packages/agent-core-v2/src/_base/text/line-endings.ts",
+      "target": "line-endings.ts",
+      "originalSha256": "4ac05ad1f5619a0d95ae18d1ba9641a0de975a3887726e2f9cd2f4f122d5b1db",
+      "currentSha256": "4ac05ad1f5619a0d95ae18d1ba9641a0de975a3887726e2f9cd2f4f122d5b1db",
+      "modification": "none"
+    },
+    {
+      "source": "packages/agent-core-v2/src/app/edit/textModel.ts",
+      "target": "textModel.ts",
+      "originalSha256": "25af3ad11456ad25e70b9f1eee8b32700f1d15c0054cf5824d259675d09b30cd",
+      "currentSha256": "2a207bdcb3ff04bc3e80b5b8753e0855218536a5605dd25364fac5b9b3e35ce2",
+      "modification": "ESM relative imports only"
+    },
+    {
+      "source": "packages/agent-core-v2/src/app/edit/editService.ts",
+      "target": "editService.ts",
+      "originalSha256": "c586e7686a0227e16c9d6879f3a8d196db11bfe91be199b4e04c7837d91531e8",
+      "currentSha256": "65f34ea17d5b830562eae2e332ddc40fb5935af264002fe1f36d322273b5a289",
+      "modification": "ESM relative imports only"
+    },
+    {
+      "source": "LICENSE",
+      "target": "LICENSE",
+      "originalSha256": "23cc68e17992e0b512ae2e80afc5787d7d8e0fbfbdb4fff54ec0245508fa400e",
+      "currentSha256": "23cc68e17992e0b512ae2e80afc5787d7d8e0fbfbdb4fff54ec0245508fa400e",
+      "modification": "none"
+    }
+  ]
+}

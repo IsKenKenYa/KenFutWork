@@ -1,6 +1,6 @@
 "use client";
 
-import type { BrandKitAsset } from "@loomic/shared";
+import type { BrandKitAsset } from "@kenfutwork/shared";
 import { Image as ImageIcon, Plus, X } from "lucide-react";
 
 import { cn } from "../../lib/utils";
@@ -20,6 +20,7 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
       <div className="relative group">
         <div className="w-[150px] h-[113px] rounded-xl border bg-muted/30 flex items-center justify-center overflow-hidden">
           {asset.file_url ? (
+            // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
               src={asset.file_url}
               alt={asset.display_name}
@@ -37,7 +38,7 @@ export function AssetCard({ asset, onDelete, onUpdateLabel }: AssetCardProps) {
             "flex items-center justify-center",
             "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
           )}
-          aria-label={`Delete ${asset.display_name}`}
+          aria-label={`删除 ${asset.display_name}`}
         >
           <X className="h-3 w-3 text-muted-foreground" />
         </button>

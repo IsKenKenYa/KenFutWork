@@ -1,0 +1,855 @@
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import { accountCommand } from "./account-command.js";
+import { unixCommand } from "./command.js";
+import { executionEnvironment, prependExecutionPath } from "./environment.js";
+import { processInvocationFingerprint } from "./invocation-identity.js";
+import { prepareLinuxSandboxArgv } from "./linux-launch.js";
+import type { ProcessOwner } from "./managed-process.js";
+import { ProcessOutputCapture } from "./output-capture.js";
+import { commandDirectory, unixPolicy } from "./policy.js";
+import { processOwnerKey } from "./process-identity.js";
+import type { HelperRequest, HelperResponse } from "./protocol.js";
+import {
+  prepareLinuxProcessInspector,
+  preparePtySessionInspector,
+} from "./pty-native-runtime.js";
+import { loadTaskPtyRuntime } from "./pty-runtime.js";
+import { readonlyProbe } from "./readonly-probe.js";
+import { losesExecutionRights } from "./scope-change.js";
+import { waitForSpawnAdmission } from "./spawn-cancellation.js";
+import type {
+  SandboxProcessSnapshot as ManagedProcessSnapshot,
+  ProcessExit,
+  ProcessOutputStream,
+  SandboxProcessRequest as ProcessSpawnRequest,
+  ProjectReadSandboxScope,
+} from "./types.js";
+import { ProcessSandboxError } from "./types.js";
+import { UnixManagedProcess } from "./unix-process.js";
+import { WindowsTaskBroker } from "./windows-broker.js";
+import { windowsLaunch } from "./windows-policy.js";
+import { WindowsManagedProcess } from "./windows-process.js";
+
+interface ProcessInvocation {
+  taskId: string | undefined;
+  generation: number;
+  fingerprint: string;
+  controller: AbortController;
+  child: Promise<ProcessOwner>;
+  owner?: ProcessOwner;
+  cancellation?: Promise<ManagedProcessSnapshot | null>;
+}
+
+class TaskProcessHelper {
+  private ownerKey = "";
+  private projectScope: ProjectReadSandboxScope | undefined;
+  private generation = 0;
+  private phase: "starting" | "ready" | "revoking" | "closed" | "failed" =
+    "starting";
+  private options:
+    | Extract<HelperRequest, { method: "initialize" }>["options"]
+    | undefined;
+  private privateDirectory = "";
+  private temporaryDirectory = "";
+  private readonly processes = new Map<string, ProcessOwner>();
+  private windowsBroker: WindowsTaskBroker | undefined;
+  private windowsBrokerPath = "";
+  private readonly invocations = new Map<string, ProcessInvocation>();
+  private readonly wrapping = new Set<AbortController>();
+  private ptyRuntime: ReturnType<typeof loadTaskPtyRuntime> | undefined;
+  private linuxInspector: Promise<string> | undefined;
+  private sessionInspector: Promise<string> | undefined;
+  private closePromise: Promise<void> | undefined;
+  private initialization: Promise<null> | undefined;
+  private readonly invalidatedProcesses = new Set<string>();
+  private readonly readOnlyProofs = new Map<string, Promise<void>>();
+  private readonly accountHome = homedir();
+  private sandboxInitialization: Promise<void> | undefined;
+
+  async execute(input: HelperRequest): Promise<unknown> {
+    if (input.method === "initialize") {
+      this.initialization ??= this.initialize(input);
+      return this.initialization;
+    }
+    if (input.method === "revoke")
+      return this.revoke(input.generation, input.reason);
+    if (input.method === "scopechange")
+      return this.revoke(input.next.generation, input.reason, input.next);
+    if (input.method === "close") return this.close(input.reason);
+    if (input.method === "spawn")
+      return this.spawn(input.request, input.internalWriteRoots);
+    if (input.method === "cancelspawn") return this.cancelSpawn(input);
+    const child = this.processes.get(input.processId);
+    if (!child)
+      throw new ProcessSandboxError("process_closed", "命令句柄不存在。");
+    if (input.method === "output")
+      return child.output(
+        input.offset,
+        input.maxBytes,
+        input.stream,
+        input.preserveNul,
+      );
+    if (input.method === "outputreader") {
+      if (!child.setOutputReader)
+        throw new ProcessSandboxError(
+          "invalid_process_request",
+          "命令没有 PTY 输出 reader。",
+        );
+      await child.setOutputReader(input.active, input.stream);
+      return null;
+    }
+    if (input.method === "outputack") {
+      if (!child.acknowledgeOutput)
+        throw new ProcessSandboxError(
+          "invalid_process_request",
+          "命令没有实时 PTY 输出。",
+        );
+      await child.acknowledgeOutput(input.sequence, input.stream);
+      return null;
+    }
+    if (input.method === "wait") return child.wait();
+    if (input.method === "stop") return child.stop(input.reason);
+    if (input.method === "endstdin") {
+      await child.endStdin();
+      return null;
+    }
+    if (
+      this.phase !== "ready" ||
+      this.invalidatedProcesses.has(input.processId)
+    ) {
+      throw new ProcessSandboxError(
+        "scope_revoked",
+        "Task 权限已收紧，旧命令不再接受 stdin。",
+      );
+    }
+    if (input.method === "resize") {
+      if (!child.resize)
+        throw new ProcessSandboxError(
+          "invalid_process_request",
+          "该命令没有 PTY resize 能力。",
+        );
+      await child.resize(input.cols, input.rows);
+      return null;
+    }
+    await child.stdin(input.data);
+    return null;
+  }
+
+  private async initialize(
+    input: Extract<HelperRequest, { method: "initialize" }>,
+  ): Promise<null> {
+    if (this.options !== undefined)
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "Task helper 已初始化。",
+      );
+    if (
+      process.platform !== "darwin" &&
+      process.platform !== "linux" &&
+      process.platform !== "win32"
+    ) {
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        "本平台需要原生 Task sandbox broker。",
+      );
+    }
+    this.ownerKey = processOwnerKey(input.initial.scope);
+    if (
+      "kind" in input.initial.scope
+        ? input.taskId !== undefined ||
+          JSON.stringify(input.projectOwner) !==
+            JSON.stringify(input.initial.scope)
+        : input.taskId !== input.initial.scope.taskId ||
+          input.projectOwner !== undefined
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "执行 owner 与初始化身份不匹配。",
+      );
+    if ("kind" in input.initial.scope) {
+      this.projectScope = structuredClone(input.initial.scope);
+      if (input.options.network.allowedDomains.length > 0)
+        throw new ProcessSandboxError(
+          "invalid_process_request",
+          "项目读取不允许网络授权。",
+        );
+    }
+    this.generation = input.initial.scope.generation;
+    this.options = input.options;
+    this.privateDirectory = join(
+      input.options.captureRoot,
+      createHash("sha256").update(this.ownerKey).digest("hex"),
+    );
+    await mkdir(join(this.privateDirectory, "output"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    this.temporaryDirectory = await realpath(
+      await mkdtemp(join(tmpdir(), "kfw-task-process-")),
+    );
+    const home = join(this.temporaryDirectory, "home");
+    await mkdir(home, { recursive: true, mode: 0o700 });
+    process.env.HOME = home;
+    process.env.CLAUDE_CODE_TMPDIR = this.temporaryDirectory;
+    if (process.platform === "win32") {
+      if (
+        input.initial.scope.sandboxMode !== "danger-full-access" &&
+        input.options.network.allowedDomains.length > 0
+      ) {
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          "当前原生 Windows PSEC 无法落实客户端专用的受限代理策略；拒绝扩大网络权限。",
+        );
+      }
+      this.windowsBrokerPath =
+        input.options.windowsBrokerPath ??
+        fileURLToPath(
+          new URL(
+            import.meta.url.endsWith(".ts")
+              ? "./native/target/release/kenfutwork-process-broker.exe"
+              : "./process-broker.exe",
+            import.meta.url,
+          ),
+        );
+      this.windowsBroker = new WindowsTaskBroker(
+        this.windowsBrokerPath,
+        executionEnvironment(process.env),
+      );
+      const capability = (await this.windowsBroker.rpc({
+        method: "probe",
+        ...(input.initial.scope.sandboxMode === "danger-full-access"
+          ? { unrestricted: true }
+          : {}),
+      })) as {
+        protocolVersion?: number;
+        pty?: string;
+        stdio?: string;
+        unrestrictedExecution?: boolean;
+        projectReadOnly?: boolean;
+      };
+      if (
+        capability.protocolVersion !== 2 ||
+        capability.pty !== "conpty" ||
+        capability.stdio !== "ack-stream" ||
+        ("kind" in input.initial.scope &&
+          capability.projectReadOnly !== true) ||
+        (input.initial.scope.sandboxMode === "danger-full-access" &&
+          capability.unrestrictedExecution !== true)
+      )
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          "Windows native broker 缺少完整 ConPTY/stdio 能力，请更新发布资源。",
+        );
+      if (input.initial.scope.sandboxMode === "read-only")
+        await this.ensureReadOnlyProof(input.initial);
+      this.phase = "ready";
+      return null;
+    }
+    if (input.initial.scope.sandboxMode !== "danger-full-access")
+      await this.ensureSandbox(input.initial);
+    this.phase = "ready";
+    return null;
+  }
+
+  private ensureSandbox(request: ProcessSpawnRequest): Promise<void> {
+    this.sandboxInitialization ??= (async () => {
+      const policy = await this.policy(request);
+      const dependencies = await SandboxManager.checkDependenciesAsync();
+      if (
+        !SandboxManager.isSupportedPlatform() ||
+        dependencies.errors.length > 0
+      )
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          `真实沙箱不可用：${dependencies.errors.join("；")}`,
+        );
+      await SandboxManager.initialize(policy, undefined, true);
+      if (request.scope.sandboxMode === "read-only")
+        await this.ensureReadOnlyProof(request);
+      else await this.probe(request);
+    })();
+    return this.sandboxInitialization;
+  }
+
+  private async policy(
+    request: ProcessSpawnRequest,
+    internalWriteRoots: readonly string[] = [],
+  ) {
+    const options = this.requireOptions();
+    const policy = await unixPolicy({
+      scope: request.scope,
+      privateDirectory: this.privateDirectory,
+      temporaryDirectory: this.temporaryDirectory,
+      network: options.network,
+      internalWriteRoots,
+      runtimeReadRoots: [
+        ...(options.runtimeReadRoots ?? []),
+        ...(request.runtimeReadRoots ?? []),
+      ],
+    });
+    // SRT 明确的 macOS PTY ioctl 能力；仅该次 PTY 命令启用，目录与网络授权不变。
+    return { ...policy, allowPty: request.pty !== undefined };
+  }
+
+  private requireOptions() {
+    if (!this.options)
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        "Task helper 尚未初始化。",
+      );
+    return this.options;
+  }
+
+  private async probe(request: ProcessSpawnRequest): Promise<void> {
+    const protectedFile = join(this.privateDirectory, "probe.txt");
+    await writeFile(protectedFile, "private runtime probe", { mode: 0o600 });
+    // Linux tmpfs 隐藏 private parent 时返回 ENOENT；Darwin seatbelt 返回 EACCES/EPERM。
+    const unavailable = process.platform === "linux" ? ',"ENOENT"' : "";
+    const checks =
+      request.scope.sandboxMode === "read-only"
+        ? readonlyProbe(request.scope)
+        : { program: "const readonlyFailures=[];", targets: [] };
+    const program = `const fs=require("node:fs");let denied=0;let read="allowed",write="allowed";try{fs.readFileSync(${JSON.stringify(protectedFile)})}catch(e){read=e.code;if(["EACCES","EPERM"${unavailable}].includes(e.code))denied++}try{fs.writeFileSync(${JSON.stringify(protectedFile)},"escape")}catch(e){write=e.code;if(["EACCES","EPERM","EROFS"${unavailable}].includes(e.code))denied++}${checks.program}
+if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read,write,readonlyFailures}));process.exit(denied===2&&readonlyFailures.length===0?0:91)`;
+    try {
+      const probe = await this.launch(
+        {
+          scope: request.scope,
+          agentId: request.agentId,
+          invocationId: `probe:${randomUUID()}`,
+          argv: { executable: process.execPath, args: ["-e", program] },
+          background: false,
+          limits: request.limits,
+          timeoutMs: request.limits.killGraceMs,
+        },
+        true,
+      );
+      const exited = await probe.wait();
+      if (exited.exitCode !== 0 || !exited.rangeEmpty) {
+        const evidence = probe.output(0, request.limits.previewMaxChars).data;
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          `操作系统未落实读取/写入隔离：${evidence}`,
+        );
+      }
+    } finally {
+      await Promise.all(
+        checks.targets.map((path) => rm(path, { force: true })),
+      );
+    }
+  }
+
+  private ensureReadOnlyProof(request: ProcessSpawnRequest): Promise<void> {
+    if (this.requireOptions().network.allowedDomains.length > 0)
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        "当前Task网络策略无法证明只读命令无网，未执行命令。",
+      );
+    const key = JSON.stringify(request.scope);
+    let proof = this.readOnlyProofs.get(key);
+    if (!proof) {
+      proof = this.probe(request);
+      this.readOnlyProofs.set(key, proof);
+    }
+    return proof;
+  }
+
+  private async spawn(
+    request: ProcessSpawnRequest,
+    internalWriteRoots: readonly string[],
+  ): Promise<ManagedProcessSnapshot> {
+    if (this.projectScope && internalWriteRoots.length > 0)
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "项目读取不能签发内部写目录。",
+      );
+    this.assertReady(request);
+    const fingerprint = processInvocationFingerprint(
+      request,
+      internalWriteRoots,
+    );
+    const previous = this.invocations.get(request.invocationId);
+    if (previous && previous.fingerprint !== fingerprint)
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "同一调用身份不能启动不同参数的命令。",
+      );
+    let pending = previous;
+    if (!pending) {
+      const controller = new AbortController();
+      // 先签发取消身份再进入准备；失败和取消均保留，重放不能重启副作用。
+      const invocation: ProcessInvocation = {
+        taskId: request.scope.taskId,
+        generation: request.scope.generation,
+        fingerprint,
+        controller,
+        child: Promise.resolve().then(async () => {
+          try {
+            controller.signal.throwIfAborted();
+            if (
+              !this.windowsBroker &&
+              request.scope.sandboxMode !== "danger-full-access"
+            )
+              await waitForSpawnAdmission(
+                this.ensureSandbox(request),
+                controller.signal,
+              );
+            if (request.scope.sandboxMode === "read-only")
+              await waitForSpawnAdmission(
+                this.ensureReadOnlyProof(request),
+                controller.signal,
+              );
+            controller.signal.throwIfAborted();
+            this.assertReady(request);
+            return await this.launch(
+              request,
+              false,
+              internalWriteRoots,
+              invocation,
+            );
+          } finally {
+            this.wrapping.delete(controller);
+          }
+        }),
+      };
+      this.invocations.set(request.invocationId, invocation);
+      this.wrapping.add(controller);
+      pending = invocation;
+    }
+    pending.controller.signal.throwIfAborted();
+    return (await pending.child).snapshot();
+  }
+
+  private cancelSpawn(
+    input: Extract<HelperRequest, { method: "cancelspawn" }>,
+  ): Promise<ManagedProcessSnapshot | null> {
+    const invocation = this.invocations.get(input.invocationId);
+    if (
+      input.taskId !== this.ownerKey ||
+      !invocation ||
+      invocation.taskId !== input.taskId ||
+      invocation.generation !== input.generation ||
+      invocation.fingerprint !== input.fingerprint
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "取消请求与原命令的 Task、代际或调用身份不匹配。",
+      );
+    invocation.cancellation ??= (async () => {
+      invocation.controller.abort(
+        new ProcessSandboxError("process_closed", "命令启动已取消。"),
+      );
+      // owner 赋值到下一次 await 之间是同步步骤；此处无 owner 且已封死后续派发。
+      const owner = invocation.owner;
+      if (!owner) return null;
+      try {
+        const exit = await owner.stop(input.reason);
+        if (!exit.rangeEmpty)
+          throw new ProcessSandboxError(
+            "stop_unconfirmed",
+            "取消命令后，进程范围尚未确认清空。",
+          );
+      } catch (error) {
+        // ready/wait 可能保留启动错误；最终清空事实不能被该错误覆盖。
+        if (!owner.snapshot().exit?.rangeEmpty)
+          throw new ProcessSandboxError(
+            "stop_unconfirmed",
+            `取消命令尚未确认停止：${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          );
+      }
+      const snapshot = owner.snapshot();
+      if (!snapshot.exit?.rangeEmpty)
+        throw new ProcessSandboxError(
+          "stop_unconfirmed",
+          "取消命令缺少进程范围清空的最终快照。",
+        );
+      return snapshot;
+    })();
+    return invocation.cancellation;
+  }
+
+  private async launch(
+    request: ProcessSpawnRequest,
+    probe = false,
+    internalWriteRoots: readonly string[] = [],
+    invocation?: ProcessInvocation,
+  ): Promise<ProcessOwner> {
+    const abort = invocation?.controller ?? new AbortController();
+    this.wrapping.add(abort);
+    let wrapped = false;
+    try {
+      this.assertReady(request, probe);
+      abort.signal.throwIfAborted();
+      const cwd = await commandDirectory(request.scope, request.cwd);
+      abort.signal.throwIfAborted();
+      this.assertReady(request, probe);
+      const id = randomUUID();
+      if (this.windowsBroker) {
+        this.assertReady(request, probe);
+        const launch = await windowsLaunch({
+          request,
+          processId: id,
+          cwd,
+          privateDirectory: this.privateDirectory,
+          temporaryDirectory: this.temporaryDirectory,
+          brokerPath: this.windowsBrokerPath,
+          internalWriteRoots,
+          accountHome: this.accountHome,
+          runtimeReadRoots: [
+            ...(this.requireOptions().runtimeReadRoots ?? []),
+            ...(request.runtimeReadRoots ?? []),
+          ],
+          ...(this.requireOptions().runtimePathAdditions
+            ? {
+                runtimePathAdditions:
+                  this.requireOptions().runtimePathAdditions,
+              }
+            : {}),
+        });
+        this.assertReady(request, probe);
+        abort.signal.throwIfAborted();
+        const { output, snapshot } = this.captureProcess(request, id);
+        const child = new WindowsManagedProcess(
+          this.windowsBroker,
+          request,
+          output,
+          snapshot,
+          launch,
+          (changed) => {
+            if (!probe) this.send({ event: "snapshot", snapshot: changed });
+          },
+          (sequence, data, offset, nextOffset, stream) =>
+            this.sendProcessOutput(
+              id,
+              sequence,
+              data,
+              offset,
+              nextOffset,
+              stream,
+            ),
+        );
+        if (invocation) invocation.owner = child;
+        this.processes.set(id, child);
+        await child.ready.promise;
+        abort.signal.throwIfAborted();
+        this.assertReady(request, probe);
+        return child;
+      }
+      const unrestricted = request.scope.sandboxMode === "danger-full-access";
+      if (unrestricted && request.pty && process.platform === "linux")
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          "Linux完全访问PTY尚缺受信任session范围管理，未启动终端。",
+        );
+      const descriptor = unrestricted
+        ? accountCommand(request, this.accountHome)
+        : await SandboxManager.wrapWithSandboxArgv(
+            unixCommand(request),
+            "/bin/sh",
+            await this.policy(request, internalWriteRoots),
+            abort.signal,
+            cwd,
+            {
+              commandId: id,
+              commandText:
+                request.command ?? request.argv?.executable ?? "命令",
+            },
+          );
+      wrapped = !unrestricted;
+      if (!unrestricted && process.platform === "linux")
+        descriptor.argv = prepareLinuxSandboxArgv(
+          descriptor.argv,
+          Boolean(request.pty),
+          this.privateDirectory,
+          request.scope.sandboxMode === "read-only",
+        );
+      this.assertReady(request, probe);
+      abort.signal.throwIfAborted();
+      if (!unrestricted)
+        descriptor.env = {
+          ...executionEnvironment(descriptor.env),
+          HOME: process.env.HOME,
+          CLAUDE_CODE_TMPDIR: this.temporaryDirectory,
+        };
+      // POSIX 侧同样补随包运行时 PATH（与 Windows 路径口径一致，见 environment.ts）。
+      prependExecutionPath(
+        descriptor.env as Record<string, string>,
+        this.requireOptions().runtimePathAdditions,
+      );
+      if (process.platform === "darwin")
+        this.sessionInspector ??= preparePtySessionInspector(
+          this.privateDirectory,
+          request.limits,
+        );
+      if (request.pty)
+        this.ptyRuntime ??= loadTaskPtyRuntime(
+          this.privateDirectory,
+          request.limits,
+          this.sessionInspector,
+        );
+      const ptyModule = request.pty ? await this.ptyRuntime : undefined;
+      this.assertReady(request, probe);
+      abort.signal.throwIfAborted();
+      if (!unrestricted && process.platform === "linux")
+        this.linuxInspector ??= prepareLinuxProcessInspector(
+          this.privateDirectory,
+          request.limits,
+        );
+      const linuxInspector = await this.linuxInspector;
+      const sessionInspector = await this.sessionInspector;
+      this.assertReady(request, probe);
+      abort.signal.throwIfAborted();
+      const { output, snapshot } = this.captureProcess(request, id);
+      const child = new UnixManagedProcess(
+        descriptor,
+        request,
+        cwd,
+        output,
+        snapshot,
+        (changed) => {
+          if (!probe) this.send({ event: "snapshot", snapshot: changed });
+        },
+        () => {
+          if (!unrestricted) SandboxManager.cleanupAfterCommand();
+        },
+        ptyModule?.module,
+        (sequence, data, offset, nextOffset, stream) =>
+          this.sendProcessOutput(
+            id,
+            sequence,
+            data,
+            offset,
+            nextOffset,
+            stream,
+          ),
+        sessionInspector ?? ptyModule?.inspector,
+        linuxInspector,
+        {
+          signal: abort.signal,
+          assertReady: () => {
+            this.assertReady(request, probe);
+          },
+        },
+      );
+      if (invocation) invocation.owner = child;
+      this.processes.set(id, child);
+      wrapped = false; // 命令 owner 已接管恰好一次 cleanup。
+      await child.ready.promise;
+      abort.signal.throwIfAborted();
+      this.assertReady(request, probe);
+      return child;
+    } finally {
+      this.wrapping.delete(abort);
+      if (wrapped) SandboxManager.cleanupAfterCommand();
+    }
+  }
+
+  private sendProcessOutput(
+    processId: string,
+    sequence: number,
+    data: string,
+    offset: number,
+    nextOffset: number,
+    stream?: ProcessOutputStream,
+  ): void {
+    const frame = { processId, sequence, data, offset, nextOffset };
+    this.send(
+      stream
+        ? { event: "stdio-output", ...frame, stream }
+        : { event: "pty-output", ...frame },
+    );
+  }
+
+  private captureProcess(request: ProcessSpawnRequest, id: string) {
+    const output = new ProcessOutputCapture(
+      join(this.privateDirectory, "output", `${id}.bin`),
+      request.limits.maxOutputBytes,
+    );
+    const snapshot: ManagedProcessSnapshot = {
+      id,
+      ...("kind" in request.scope
+        ? { projectOwner: request.scope }
+        : { ownerTaskId: this.ownerKey }),
+      agentId: request.agentId,
+      invocationId: request.invocationId,
+      generation: request.scope.generation,
+      state: "starting",
+      pid: null,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      enforcement: {
+        backend:
+          request.scope.sandboxMode === "danger-full-access"
+            ? "host-account"
+            : this.windowsBroker
+              ? "windows-task-broker"
+              : process.platform === "darwin"
+                ? "srt-seatbelt"
+                : "srt-bwrap",
+        filesystem:
+          request.scope.sandboxMode === "danger-full-access"
+            ? "unrestricted"
+            : "enforced",
+        ...(request.scope.sandboxMode === "danger-full-access"
+          ? { network: "unrestricted" as const }
+          : {}),
+        processRange: this.windowsBroker
+          ? "job-object"
+          : process.platform === "darwin" ||
+              request.scope.sandboxMode === "danger-full-access"
+            ? "process-group"
+            : "pid-namespace",
+        permissionsGeneration: request.scope.generation,
+      },
+      exit: null,
+      retainedBytes: 0,
+      totalBytes: 0,
+      discardedBytes: 0,
+      outputPath: output.path,
+    };
+    return { output, snapshot };
+  }
+
+  private assertReady(request: ProcessSpawnRequest, probe = false): void {
+    if (
+      this.projectScope &&
+      (JSON.stringify(request.scope) !== JSON.stringify(this.projectScope) ||
+        !request.argv ||
+        request.command !== undefined ||
+        request.shell !== undefined ||
+        request.background ||
+        request.pty !== undefined ||
+        request.stdio !== undefined ||
+        request.runtimeReadRoots !== undefined)
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "项目读取身份或执行方式已改变。",
+      );
+    if (
+      this.closePromise ||
+      (probe
+        ? this.phase !== "starting" && this.phase !== "ready"
+        : this.phase !== "ready") ||
+      processOwnerKey(request.scope) !== this.ownerKey ||
+      request.scope.generation < this.generation
+    ) {
+      throw new ProcessSandboxError(
+        "scope_revoked",
+        "Task 执行授权已撤销或正在收紧。",
+      );
+    }
+  }
+
+  private async revoke(
+    generation: number,
+    reason: string,
+    next?: import("@kenfutwork/shared").CodeExecutionScope,
+  ): Promise<null> {
+    this.phase = "revoking";
+    this.generation = Math.max(this.generation, generation);
+    for (const abort of this.wrapping)
+      abort.abort(new ProcessSandboxError("scope_revoked", reason));
+    try {
+      const affected = [...this.processes.values()].filter(
+        (child) => !next || losesExecutionRights(child.scope, next),
+      );
+      for (const child of affected)
+        this.invalidatedProcesses.add(child.snapshot().id);
+      const outcomes = await Promise.all(
+        affected.map((child) => child.stop(reason)),
+      );
+      if (outcomes.some((outcome) => !outcome.rangeEmpty))
+        throw new ProcessSandboxError(
+          "stop_unconfirmed",
+          "存在尚未确认退出的命令。",
+        );
+      this.phase = "ready";
+      return null;
+    } catch (error) {
+      this.phase = "failed";
+      throw error;
+    }
+  }
+
+  close(reason: string): Promise<void> {
+    this.closePromise ??= (async () => {
+      // 先停已有 proof owner，不能等待其所属初始化结束后才发停止。
+      await this.revoke(this.generation, reason);
+      await this.initialization?.catch(() => {});
+      await this.sandboxInitialization?.catch(() => {});
+      await Promise.all(
+        [...this.readOnlyProofs.values()].map((proof) => proof.catch(() => {})),
+      );
+      this.phase = "closed";
+      if (this.windowsBroker) await this.windowsBroker.close();
+      else if (this.sandboxInitialization) await SandboxManager.reset();
+      if (this.temporaryDirectory)
+        await rm(this.temporaryDirectory, { recursive: true, force: true });
+    })();
+    return this.closePromise;
+  }
+
+  send(message: HelperResponse, disconnectAfterSend = false): void {
+    if (!process.connected) return;
+    if (disconnectAfterSend) {
+      // 先交付关闭回执再由helper结束IPC，让父端完整观察stdio和close。
+      process.send?.(message, () => {
+        if (process.connected) process.disconnect();
+      });
+    } else process.send?.(message);
+  }
+}
+
+const helper = new TaskProcessHelper();
+process.on("message", (message: HelperRequest) => {
+  if (
+    !message ||
+    typeof message.id !== "string" ||
+    typeof message.method !== "string"
+  )
+    return;
+  void helper.execute(message).then(
+    (value) => {
+      helper.send(
+        {
+          id: message.id,
+          ok: true,
+          value: (value ?? null) as ManagedProcessSnapshot | ProcessExit | null,
+        },
+        message.method === "close",
+      );
+    },
+    (error: unknown) => {
+      helper.send({
+        id: message.id,
+        ok: false,
+        error: {
+          code:
+            error instanceof ProcessSandboxError ? error.code : "spawn_failed",
+          message:
+            error instanceof Error ? error.message : "进程 helper 执行失败。",
+        },
+      });
+    },
+  );
+});
+const close = (reason: string): void => {
+  void helper.close(reason).then(
+    () => {
+      process.exitCode = 0;
+    },
+    () => {
+      process.exitCode = 1;
+    },
+  );
+};
+process.on("disconnect", () => close("ipc_disconnected"));
+process.once("SIGTERM", () => close("helper_terminated"));
+process.once("SIGINT", () => close("helper_interrupted"));

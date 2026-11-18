@@ -1,0 +1,63 @@
+name: 出包（Windows / macOS）
+
+# 只由手动触发驱动：出包链跑一次十几分钟，且必须在**对应平台的真实 runner** 上跑
+#（scripts/package-mac.mjs:135 只认 darwin/arm64，package-win.mjs:79 只认 win32，
+# fetch-runtimes.mjs 也没有交叉下载能力）。挂在 push 上会让每次提交都烧双平台时长，
+# 而出包失败也不该染红 PR——PR 的门禁在 ci.yml。
+#
+# 平台过滤放在**调用方的 job 级 `if`** 上用 `inputs` 表达；被调方 _package-platform.yml
+# 里不许用 `matrix` 做 job 级过滤（`matrix` 上下文在 job 级 `if` 不可用，会得到空值，
+# 结果是「工作流显示成功但整个 job 被跳过」）。
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 出哪个平台
+        type: choice
+        default: both
+        options: [both, macos, windows]
+      channel:
+        description: debug=只传 Actions 产物；rc=另建 draft Release
+        type: choice
+        default: debug
+        options: [debug, rc]
+      ref:
+        description: 分支或提交（留空=本次运行所在的 ref）
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  # 出包中途取消只会留下半截产物，且不省时间
+  cancel-in-progress: false
+
+jobs:
+  # `jobs.<id>.permissions` 的取值只能是 read / write / none，**不支持表达式**（本轮实测：
+  # 写 `${{ ... && 'write' || 'read' }}` 会让整个文件解析失败，工作流名退化成文件路径、
+  # 0 秒失败且没有日志）。能触发 workflow_dispatch 的人本来就有写权限，所以这里静态给 write，
+  # 实际只有 rc 那一步会用到它。
+  macos:
+    name: macOS
+    if: github.repository == 'IsKenKenYa/KenFutWork' && github.event.inputs.platform != 'windows'
+    uses: ./.github/workflows/_package-platform.yml
+    with:
+      platform: macos
+      channel: ${{ github.event.inputs.channel }}
+      checkout_ref: ${{ github.event.inputs.ref }}
+    permissions:
+      contents: write
+
+  windows:
+    name: Windows
+    if: github.repository == 'IsKenKenYa/KenFutWork' && github.event.inputs.platform != 'macos'
+    uses: ./.github/workflows/_package-platform.yml
+    with:
+      platform: windows
+      channel: ${{ github.event.inputs.channel }}
+      checkout_ref: ${{ github.event.inputs.ref }}
+    permissions:
+      contents: write

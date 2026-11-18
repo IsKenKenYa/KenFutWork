@@ -26,7 +26,7 @@ export function createQueuePlugin(): PluginDefinition {
         }
         if (driver !== "pgmq") {
           throw new Error(
-            `[queue] 未知 LOOMIC_QUEUE_DRIVER：${driver}（可用：pgmq | in-process）`,
+            `[queue] 未知 KENFUTWORK_QUEUE_DRIVER：${driver}（可用：pgmq | in-process）`,
           );
         }
         if (!ctx.env.databaseUrl) {

@@ -1,17 +1,25 @@
-import type {
-  AIMessage,
-  AIMessageChunk,
-  ToolMessage,
-} from "@langchain/core/messages";
+import type { StreamEvent, ToolArtifact } from "@kenfutwork/shared";
+import { imageArtifactSchema, videoArtifactSchema } from "@kenfutwork/shared";
+import type { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import {
   AIMessageChunk as AIMessageChunkClass,
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
-import type { StreamEvent, ToolArtifact } from "@loomic/shared";
-import { imageArtifactSchema, videoArtifactSchema } from "@loomic/shared";
-
+import type { RunUsageTotals } from "../features/usage/run-usage-accumulator.js";
+import { TOOL_INTERRUPTION_SUMMARY } from "../kernel/owned-tool-interruption.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import type { CompactionPlan } from "./auto-compact.js";
+import {
+  createModelCallUsageTracker,
+  MODEL_USAGE_AGENT_METADATA,
+  type ModelCallUsage,
+} from "./model-call-usage.js";
+import {
+  type CompositionPart,
+  measureMessages,
+  mergeComposition,
+} from "./prompt-composition.js";
 import {
   StreamIdleTimeoutError,
   withStreamIdleGuard,
@@ -33,11 +41,20 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | undefined;
   runId: string;
   sessionId: string;
+  /** 主 agent 的 lc_agent_name（createDeepAgent name）：归因时排除主 run。 */
+  mainAgentName?: string;
   signal?: AbortSignal;
+  /**
+   * 工具 schema 的分段量（runtime 在装配后量好传入）：MCP 工具 / 系统工具。
+   * 消息侧分段由本适配器在 `on_chat_model_start` 时量，两边合并成一条 composition。
+   */
+  toolComposition?: readonly CompositionPart[] | undefined;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
+  /** 工具中间件提供模型 call id 的事实；SDK on_tool_* 仅是内部运行标识。 */
+  canonicalToolEvents?: boolean;
   /**
    * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
    * 有界失败。缺省用库内默认值。
@@ -45,6 +62,11 @@ type AdaptDeepAgentStreamOptions = {
   idleTimeoutMs?: number;
   /** 空闲超时触发时调用（中止底层请求、释放上游连接）。 */
   abortRun?: () => void;
+  /**
+   * 自动压缩口径（传了才消费已提交的新摘要事实并发 `run.compacted`）：
+   * 与 agent 装配用的是同一份（见 agent/auto-compact.ts）。
+   */
+  autoCompact?: CompactionPlan | undefined;
 };
 
 /**
@@ -52,18 +74,157 @@ type AdaptDeepAgentStreamOptions = {
  * artifacts suppressed (the parent re-emits them with placement).
  */
 const SUB_AGENT_PARENT_TOOLS = new Set(["video_generate"]);
+/**
+ * 子代理归因（DEC-19）：事件来自哪个具名子代理的 run。langchain v2 事件没有
+ * `parent_ids`，归因只能靠 run metadata（`lc_agent_name`，deepagents/自建派发
+ * 都写入）；主 agent 的事件没有该 metadata。
+ */
+function readSubagentName(
+  evt: LangChainStreamEvent,
+  mainAgentName: string,
+): string | undefined {
+  const name = evt.metadata?.lc_agent_name;
+  if (typeof name !== "string" || name.length === 0) return undefined;
+  // 主 agent 自己的 run 也带 lc_agent_name（createDeepAgent 的 name）——不是子代理
+  return name === mainAgentName ? undefined : name;
+}
+
+/** 派发调用 id（父 run 里 task/task_background 的 toolCallId），路由键。 */
+function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
+  const callId = evt.metadata?.lc_agent_call_id;
+  return typeof callId === "string" && callId.length > 0 ? callId : undefined;
+}
+/** 模型调用自带的 agent 归属；缺失即视为无归属，不从派发栈补猜。 */
+function readModelUsageAgentCallId(
+  evt: LangChainStreamEvent,
+): string | undefined {
+  const callId = evt.metadata?.[MODEL_USAGE_AGENT_METADATA];
+  return typeof callId === "string" && callId.length > 0 ? callId : undefined;
+}
+/**
+ * 同一子代理的模型调用累计：一个子代理可能多次调用模型（工具循环），用量按
+ * 派发 id 求和；上游未上报缓存字段时缺省，不拿 0 冒充。
+ */
+function sumAgentUsage(
+  calls: Map<string, ModelCallUsage>,
+  owners: Map<string, string>,
+  agentCallId: string,
+): RunUsageTotals {
+  const totals: RunUsageTotals = { inputTokens: 0, outputTokens: 0 };
+  for (const [modelCallId, usage] of calls) {
+    if (owners.get(modelCallId) !== agentCallId) continue;
+    totals.inputTokens += usage.inputTokens;
+    totals.outputTokens += usage.outputTokens;
+    if (usage.cachedInputTokens !== undefined)
+      totals.cachedInputTokens =
+        (totals.cachedInputTokens ?? 0) + usage.cachedInputTokens;
+  }
+  return totals;
+}
+
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
+
+export async function* projectCanonicalToolEvent(
+  data: Record<string, unknown>,
+  identity: { runId: string; sessionId: string; conversationId: string },
+): AsyncGenerator<
+  Extract<StreamEvent, { type: "tool.started" | "tool.completed" }>
+> {
+  const stream = (async function* () {
+    yield { event: "on_custom_event", name: "kenfutwork.tool", data };
+  })();
+  for await (const event of adaptDeepAgentStream({
+    ...identity,
+    stream,
+    canonicalToolEvents: true,
+  })) {
+    if (event.type === "tool.started" || event.type === "tool.completed")
+      yield event;
+  }
+}
+
+function canonicalToolEvent(
+  evt: LangChainStreamEvent,
+): LangChainStreamEvent | undefined {
+  if (evt.event !== "on_custom_event" || evt.name !== "kenfutwork.tool")
+    return undefined;
+  const data = evt.data;
+  const toolCallId = readString(data?.toolCallId);
+  const toolName = readString(data?.toolName);
+  if (!toolCallId || !toolName) throw new Error("工具生命周期事实缺少调用身份");
+  const phase = data?.phase;
+  if (
+    phase !== "started" &&
+    phase !== "completed" &&
+    phase !== "failed" &&
+    phase !== "cancelled"
+  ) {
+    throw new Error("工具生命周期事实缺少有效阶段");
+  }
+  return {
+    event:
+      phase === "started"
+        ? "on_tool_start"
+        : phase === "completed"
+          ? "on_tool_end"
+          : phase === "cancelled"
+            ? "on_tool_cancelled"
+            : "on_tool_error",
+    name: toolName,
+    run_id: toolCallId,
+    data:
+      phase === "started"
+        ? { input: data?.input }
+        : phase === "completed"
+          ? { output: data?.output }
+          : { error: data?.error },
+    metadata: {
+      ...(readString(data?.agentName)
+        ? { lc_agent_name: data?.agentName }
+        : {}),
+      ...(readString(data?.agentCallId)
+        ? { lc_agent_call_id: data?.agentCallId }
+        : {}),
+    },
+  };
+}
 
 export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
 ): AsyncGenerator<StreamEvent> {
   const now = options.now ?? (() => new Date().toISOString());
+  const mainAgentName = options.mainAgentName ?? "kenfutwork";
   const seenCompletedToolCalls = new Set<string>();
   const seenStreamedMessageIds = new Set<string>();
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  const usageTracker = createModelCallUsageTracker();
+  /**
+   * 子代理用量归因（用户要求：卡片要有结论与用量）：每个模型调用在 start 时记录
+   * 它属于哪个派发（metadata 优先，派发栈兜底）；observe 时把同一派发的所有模型
+   * 调用求和后随 `run.usage` 下发。并行 fan-out 的栈归因限制与正文路由一致。
+   */
+  const modelCallUsageById = new Map<string, ModelCallUsage>();
+  const modelCallAgentById = new Map<string, string>();
+  const activeModelRuns = new Set<string>();
+  let outputLimited = false;
+  /**
+   * 派发栈（DEC-19 兜底归因）：metadata 传播在 createAgent 嵌套链上不可靠
+   * （真机实测子代理嵌套工具事件缺 lc_agent_name）。前台派发是栈式嵌套——
+   * subagent_task started 压栈（归因名=入参 subagent_type）、completed 弹栈；
+   * 栈顶派发即当前嵌套事件的归属。并行 fan-out 时多个子代理交错流式，
+   * 栈归因可能串位——已知限制，与 metadata 主归因兜底并用。
+   */
+  const dispatchStack: Array<{ callId: string; name: string }> = [];
+  /** 本轮是否已报过「上下文已压缩」（每轮最多一条）。 */
+  let compactionReported = false;
+  /**
+   * 分类占比（R4-1）：在 on_chat_model_start 时按模型**实际输入**量一次，
+   * 与 runtime 传来的工具分段合并，随 run.usage 下发。**字符数口径**（不是 token 拆分）。
+   */
+  let composition: CompositionPart[] | undefined;
 
   yield {
     conversationId: options.conversationId,
@@ -81,6 +242,7 @@ export async function* adaptDeepAgentStream(
   try {
     // 空闲看门狗：上游停滞不再是无限挂起，且中止信号在等待期即可生效
     for await (const rawEvent of withStreamIdleGuard(options.stream, {
+      idleEnabled: () => activeModelRuns.size > 0,
       ...(options.idleTimeoutMs === undefined
         ? {}
         : { idleMs: options.idleTimeoutMs }),
@@ -96,12 +258,160 @@ export async function* adaptDeepAgentStream(
         continue;
       }
 
-      const evt = rawEvent;
+      if (options.canonicalToolEvents && rawEvent.event.startsWith("on_tool_"))
+        continue;
+      const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
+      if (evt.event === "on_chat_model_start")
+        activeModelRuns.add(evt.run_id ?? "anonymous-model");
+      if (
+        evt.event === "on_chat_model_end" ||
+        evt.event === "on_chat_model_error"
+      )
+        activeModelRuns.delete(evt.run_id ?? "anonymous-model");
+      if (
+        evt.event === "on_custom_event" &&
+        evt.name === "kenfutwork.compaction.applied"
+      ) {
+        const fact = evt.data?.output as { checkpointId?: unknown } | undefined;
+        if (
+          !compactionReported &&
+          options.autoCompact &&
+          typeof fact?.checkpointId === "string"
+        ) {
+          compactionReported = true;
+          yield {
+            type: "run.compacted" as const,
+            runId: options.runId,
+            triggerTokens: options.autoCompact.trigger.value,
+            triggerSource: options.autoCompact.source,
+            keepMessages: options.autoCompact.keep.value,
+            timestamp: now(),
+          };
+        }
+        continue;
+      }
+
+      if (evt.event === "on_chat_model_start") {
+        usageTracker.start(evt);
+        // 只认模型调用自身的归属元数据；并发子代理事件交错到达，派发栈推断会串账。
+        const agentCallId = readModelUsageAgentCallId(evt);
+        if (agentCallId && evt.run_id)
+          modelCallAgentById.set(evt.run_id, agentCallId);
+        if (!readSubagentName(evt, mainAgentName)) outputLimited = false;
+      }
+      if (
+        evt.event === "on_chat_model_stream" ||
+        evt.event === "on_chat_model_end"
+      ) {
+        const message =
+          evt.event === "on_chat_model_stream"
+            ? evt.data?.chunk
+            : evt.data?.output;
+        if (
+          AIMessageClass.isInstance(message) ||
+          AIMessageChunkClass.isInstance(message)
+        ) {
+          if (!readSubagentName(evt, mainAgentName)) {
+            const reason =
+              message.response_metadata?.finish_reason ??
+              message.response_metadata?.stop_reason;
+            if (reason === "length" || reason === "max_tokens")
+              outputLimited = true;
+          }
+          const observed = usageTracker.observe(evt, message);
+          if (observed) {
+            let totals = observed.totals;
+            try {
+              totals = options.onUsage?.(observed.usage) ?? totals;
+            } catch {
+              // 观测旁路不能把真实模型正文或完成变成运行失败；不记录潜在敏感异常。
+              console.warn(
+                "[model-usage] 用量采集失败，保留本次观测并继续运行。",
+              );
+            }
+            modelCallUsageById.set(observed.usage.modelCallId, observed.usage);
+            const agentCallId = modelCallAgentById.get(
+              observed.usage.modelCallId,
+            );
+            const agentTotals = agentCallId
+              ? sumAgentUsage(
+                  modelCallUsageById,
+                  modelCallAgentById,
+                  agentCallId,
+                )
+              : undefined;
+            if (observed.emit)
+              yield {
+                type: "run.usage",
+                runId: options.runId,
+                modelCallId: observed.usage.modelCallId,
+                ...(agentCallId
+                  ? {
+                      agentCallId,
+                      agentInputTokens: agentTotals?.inputTokens,
+                      agentOutputTokens: agentTotals?.outputTokens,
+                      ...(agentTotals?.cachedInputTokens === undefined
+                        ? {}
+                        : {
+                            agentCachedInputTokens:
+                              agentTotals.cachedInputTokens,
+                          }),
+                    }
+                  : {}),
+                inputTokens: observed.usage.inputTokens,
+                outputTokens: observed.usage.outputTokens,
+                ...(observed.usage.owner?.contextWindowTokens == null
+                  ? {}
+                  : {
+                      contextWindowTokens:
+                        observed.usage.owner.contextWindowTokens,
+                    }),
+                ...(observed.usage.owner?.maxOutputTokens == null
+                  ? {}
+                  : { maxOutputTokens: observed.usage.owner.maxOutputTokens }),
+                ...(observed.usage.cachedInputTokens === undefined
+                  ? {}
+                  : { cachedInputTokens: observed.usage.cachedInputTokens }),
+                runInputTokens: totals.inputTokens,
+                runOutputTokens: totals.outputTokens,
+                ...(totals.cachedInputTokens === undefined
+                  ? {}
+                  : { runCachedInputTokens: totals.cachedInputTokens }),
+                ...(composition?.length ? { composition } : {}),
+                timestamp: now(),
+              };
+          }
+        }
+      }
+
+      // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
+      if (evt.event === "on_chat_model_start") {
+        const data = (evt as { data?: unknown }).data as
+          | { input?: { messages?: unknown } }
+          | undefined;
+        const raw = data?.input?.messages;
+        const groups = Array.isArray(raw) ? raw : [];
+        // 有的版本给 [[messages]]（批量），有的给 [messages]——两种都摊平
+        const flat = groups.flatMap((group) =>
+          Array.isArray(group) ? group : [group],
+        );
+        composition = mergeComposition([
+          ...measureMessages(flat),
+          ...(options.toolComposition ?? []),
+        ]);
+
+        continue;
+      }
 
       // Per-token streaming from the chat model
       if (evt.event === "on_chat_model_stream") {
         const chunk = evt.data?.chunk;
         if (!chunk) continue;
+        // 子代理的流：usage 照算（归父 run，DEC-6），文本打标路由不进主消息流
+        const streamingSubagent =
+          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
+        const streamingCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
 
         // Skip chunks that are tool calls (no text to emit)
         if (
@@ -110,20 +420,6 @@ export async function* adaptDeepAgentStream(
         ) {
           const msg = chunk as AIMessageChunk | AIMessage;
           if ((msg.tool_calls?.length ?? 0) > 0) continue;
-          const usageMeta = (
-            msg as unknown as {
-              usage_metadata?: {
-                input_tokens?: number;
-                output_tokens?: number;
-              };
-            }
-          ).usage_metadata;
-          if (usageMeta && options.onUsage) {
-            options.onUsage({
-              inputTokens: usageMeta.input_tokens ?? 0,
-              outputTokens: usageMeta.output_tokens ?? 0,
-            });
-          }
         }
 
         const messageId =
@@ -143,13 +439,26 @@ export async function* adaptDeepAgentStream(
               typeof part.thinking === "string" &&
               part.thinking
             ) {
-              yield {
-                type: "thinking.delta" as const,
-                runId: options.runId,
-                messageId,
-                delta: part.thinking,
-                timestamp: now(),
-              };
+              if (streamingSubagent) {
+                // 子代理思考：打标下发（前端路由进子代理视图），不进主对话
+                yield {
+                  type: "thinking.delta" as const,
+                  runId: options.runId,
+                  messageId,
+                  delta: part.thinking,
+                  agentName: streamingSubagent,
+                  agentCallId: streamingCallId,
+                  timestamp: now(),
+                };
+              } else {
+                yield {
+                  type: "thinking.delta" as const,
+                  runId: options.runId,
+                  messageId,
+                  delta: part.thinking,
+                  timestamp: now(),
+                };
+              }
             } else {
               const text =
                 typeof part === "string"
@@ -161,14 +470,27 @@ export async function* adaptDeepAgentStream(
                     ? (part as { text: string }).text
                     : "";
               if (text) {
-                seenStreamedMessageIds.add(messageId);
-                yield {
-                  type: "message.delta" as const,
-                  runId: options.runId,
-                  messageId,
-                  delta: text,
-                  timestamp: now(),
-                };
+                if (streamingSubagent) {
+                  // 子代理正文：打标下发（前端路由进子代理视图），不进主对话
+                  yield {
+                    type: "message.delta" as const,
+                    runId: options.runId,
+                    messageId,
+                    delta: text,
+                    agentName: streamingSubagent,
+                    agentCallId: streamingCallId,
+                    timestamp: now(),
+                  };
+                } else {
+                  seenStreamedMessageIds.add(messageId);
+                  yield {
+                    type: "message.delta" as const,
+                    runId: options.runId,
+                    messageId,
+                    delta: text,
+                    timestamp: now(),
+                  };
+                }
               }
             }
           }
@@ -178,6 +500,20 @@ export async function* adaptDeepAgentStream(
         // String content (normal text)
         const delta = extractChunkText(chunk);
         if (!delta) continue;
+
+        if (streamingSubagent) {
+          // 子代理正文：打标下发，不进主对话（同上）
+          yield {
+            delta,
+            messageId,
+            runId: options.runId,
+            agentName: streamingSubagent,
+            agentCallId: streamingCallId,
+            timestamp: now(),
+            type: "message.delta",
+          } as never;
+          continue;
+        }
 
         seenStreamedMessageIds.add(messageId);
         yield {
@@ -194,6 +530,7 @@ export async function* adaptDeepAgentStream(
       if (evt.event === "on_chat_model_end") {
         const output = evt.data?.output;
         if (!output) continue;
+        if (readSubagentName(evt, mainAgentName)) continue;
 
         if (
           AIMessageClass.isInstance(output) ||
@@ -241,12 +578,33 @@ export async function* adaptDeepAgentStream(
           activeSubAgentRuns.add(toolCallId);
         }
 
+        const subagentName = readSubagentName(evt, mainAgentName);
+        const subagentCallId = readSubagentCallId(evt);
+        // 派发工具压栈（DEC-19 栈归因）：子代理嵌套事件的兜底归属来源
+        const isDispatchTool =
+          toolName === "subagent_task" || toolName === "subagent_background";
+        if (isDispatchTool) {
+          const dispatchType = (
+            toolInput as { subagent_type?: string } | undefined
+          )?.subagent_type;
+          dispatchStack.push({
+            callId: toolCallId,
+            name: dispatchType ?? toolName,
+          });
+        }
+        // 派发行本身是父调用：不继承子代理归因（否则被路由进子代理视图）
+        const inherited = isDispatchTool ? undefined : dispatchStack.at(-1);
         yield {
           runId: options.runId,
           timestamp: now(),
           toolCallId,
           toolName,
           ...(toolInput ? { input: toolInput } : {}),
+          ...(subagentName ? { agentName: subagentName } : {}),
+          ...(subagentCallId ? { agentCallId: subagentCallId } : {}),
+          ...(!subagentName && inherited
+            ? { agentName: inherited.name, agentCallId: inherited.callId }
+            : {}),
           type: "tool.started",
         };
         continue;
@@ -262,6 +620,11 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const output = evt.data?.output;
+        const outputText = ToolMessageClass.isInstance(output)
+          ? extractChunkText(output)
+          : typeof output === "string"
+            ? output
+            : undefined;
 
         // When an inner tool runs inside an active sub-agent parent,
         // suppress its artifacts because the parent will re-emit them.
@@ -274,14 +637,48 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
+        const completedIsDispatch =
+          toolName === "subagent_task" || toolName === "subagent_background";
+        const completedSubagent =
+          readSubagentName(evt, mainAgentName) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.name);
+        const completedCallId =
+          readSubagentCallId(evt) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.callId);
+        if (completedIsDispatch) {
+          let stackIdx = -1;
+          for (let i = dispatchStack.length - 1; i >= 0; i -= 1) {
+            if (dispatchStack[i]?.callId === toolCallId) {
+              stackIdx = i;
+              break;
+            }
+          }
+          if (stackIdx >= 0) dispatchStack.splice(stackIdx, 1);
+        }
+        const inheritedDone = completedIsDispatch
+          ? undefined
+          : dispatchStack.at(-1);
         yield {
           output: extractedOutput,
+          ...(outputText !== undefined ? { outputText } : {}),
+          status:
+            ToolMessageClass.isInstance(output) && output.status === "error"
+              ? "error"
+              : "success",
           outputSummary: summarizeOutput(output),
           artifacts: extractedArtifacts,
           runId: options.runId,
           timestamp: now(),
           toolCallId,
           toolName,
+          ...(completedSubagent ? { agentName: completedSubagent } : {}),
+          ...(completedCallId ? { agentCallId: completedCallId } : {}),
+          ...(!completedSubagent && inheritedDone
+            ? {
+                agentName: inheritedDone.name,
+                agentCallId: inheritedDone.callId,
+              }
+            : {}),
           type: "tool.completed",
         };
 
@@ -296,6 +693,47 @@ export async function* adaptDeepAgentStream(
             runId: options.runId,
             timestamp: now(),
           } satisfies StreamEvent;
+        }
+      }
+
+      /**
+       * 工具抛错（LangChain 发 on_tool_error，不发 on_tool_end）。
+       *
+       * 没有这一支时，工具块在客户端永远停在 `status: "running"`——用户看到
+       * 一个转圈的工具调用，既不知道它失败了、也不知道为什么失败（GUI 实测：
+       * web_search 打真实秘塔端点、Key 无效，块停在 running，run 只报通用文案）。
+       * 用 `tool.completed` 收尾（契约里工具块只有 running/completed 两态），
+       * 把可读原因放进 outputSummary，失败的块因此变成「有结论」而不是「卡住」。
+       */
+      if (evt.event === "on_tool_error" || evt.event === "on_tool_cancelled") {
+        const toolName = evt.name ?? "unknown_tool";
+        const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
+        if (seenCompletedToolCalls.has(toolCallId)) continue;
+        seenCompletedToolCalls.add(toolCallId);
+
+        const cancelled = evt.event === "on_tool_cancelled";
+        const reason = describeToolError(evt.data?.error);
+        const errorSubagent =
+          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
+        const errorCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
+        yield {
+          ...(cancelled ? {} : { output: { error: reason } }),
+          status: cancelled ? "cancelled" : "error",
+          outputSummary: cancelled
+            ? TOOL_INTERRUPTION_SUMMARY
+            : `失败：${reason}`,
+          runId: options.runId,
+          timestamp: now(),
+          toolCallId,
+          toolName,
+          ...(errorSubagent ? { agentName: errorSubagent } : {}),
+          ...(errorCallId ? { agentCallId: errorCallId } : {}),
+          type: "tool.completed",
+        };
+
+        if (SUB_AGENT_PARENT_TOOLS.has(toolName)) {
+          activeSubAgentRuns.delete(toolCallId);
         }
       }
     }
@@ -339,6 +777,7 @@ export async function* adaptDeepAgentStream(
     runId: options.runId,
     timestamp: now(),
     type: "run.completed",
+    stopReason: outputLimited ? "output_limit" : "completed",
   };
 }
 
@@ -360,7 +799,7 @@ function unwrapCommandOutput(
 ): Record<string, unknown> {
   if (record.lg_name !== "Command") return record;
   try {
-    const messages = (record.update as any)?.messages;
+    const messages = (record.update as { messages?: unknown })?.messages;
     if (!Array.isArray(messages) || messages.length === 0) return record;
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
@@ -384,7 +823,6 @@ const ARTIFACT_KEYS = new Set([
   "height",
   "placement",
 ]);
-const OUTPUT_SIZE_LIMIT = 10240; // 10KB
 
 function extractOutput(
   output: unknown,
@@ -392,7 +830,16 @@ function extractOutput(
 ): Record<string, unknown> | undefined {
   let text = "";
   if (ToolMessageClass.isInstance(output)) {
-    text = extractChunkText(output);
+    const canonical =
+      output.artifact && typeof output.artifact === "object"
+        ? (output.artifact as { canonicalOutput?: unknown }).canonicalOutput
+        : undefined;
+    text =
+      canonical === undefined
+        ? extractChunkText(output)
+        : typeof canonical === "string"
+          ? canonical
+          : JSON.stringify(canonical);
   } else if (typeof output === "string") {
     text = output;
   } else if (output && typeof output === "object") {
@@ -414,10 +861,6 @@ function extractOutput(
 
   // Skip if empty after stripping
   if (Object.keys(result).length === 0) return undefined;
-
-  // Size limit check
-  const serialized = JSON.stringify(result);
-  if (serialized.length > OUTPUT_SIZE_LIMIT) return undefined;
 
   return result;
 }
@@ -448,8 +891,9 @@ function extractArtifacts(output: unknown): ToolArtifact[] | undefined {
       type: "image" as const,
       url: record.url,
       mimeType: (record.mimeType as string) ?? "image/png",
-      width: (record.placement as any)?.width ?? 512,
-      height: (record.placement as any)?.height ?? 512,
+      width: (record.placement as { width?: number } | undefined)?.width ?? 512,
+      height:
+        (record.placement as { height?: number } | undefined)?.height ?? 512,
     };
     if (typeof record.title === "string" && record.title.length > 0) {
       candidate.title = record.title;
@@ -613,6 +1057,39 @@ function isAbortError(error: unknown) {
     (error.name === "AbortError" ||
       error.message === "This operation was aborted")
   );
+}
+
+/**
+ * 从工具错误里取一句可读原因（面向用户）。
+ *
+ * LangChain 会把工具抛的错包一层（`ToolNode` 的包装错误 + `cause` 链），直接取
+ * `error.message` 有时只剩包装文案；故沿 `cause` 链找**最深**的一条消息。
+ *
+ * 另外 LangChain 的 `message` 常把堆栈一起带上（`Error.message + "\n at …"`），
+ * 直接透出会把内部路径摊给用户看——只取首行，并按长度收敛（工具报错都短；
+ * 超过 200 字的当噪声，退回顶层消息）。
+ */
+function describeToolError(error: unknown): string {
+  const firstLine = (value: unknown): string => {
+    const raw = value instanceof Error ? value.message : String(value ?? "");
+    return (raw.split("\n")[0] ?? "").trim();
+  };
+
+  const messages: string[] = [];
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 5) {
+    const line = firstLine(current);
+    if (line) messages.push(line);
+    current = (current as { cause?: unknown }).cause;
+    depth += 1;
+  }
+  const deepest = messages[messages.length - 1];
+  const readable =
+    deepest && deepest.length <= 200
+      ? deepest
+      : (messages[0] ?? "工具执行失败");
+  return readable.length > 200 ? `${readable.slice(0, 200)}…` : readable;
 }
 
 function isStreamEvent(value: unknown): value is LangChainStreamEvent {

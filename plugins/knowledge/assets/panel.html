@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识库</title>
+<style>
+  :root{
+    color-scheme:light dark;
+    --bg:#f8f8f8;--fg:#0d0d0d;--muted:rgba(13,13,13,.6);--line:rgba(13,13,13,.1);--line2:rgba(13,13,13,.15);
+    --card:#fff;--hover:rgba(13,13,13,.05);--sel:rgba(13,13,13,.06);--primary:#0d0d0d;
+    --side:#f8f8f8;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#161616;--fg:#e6e6e6;--muted:rgba(230,230,230,.6);--line:rgba(255,255,255,.1);--line2:rgba(255,255,255,.15);
+      --card:#2b2b2b;--hover:rgba(255,255,255,.06);--sel:rgba(255,255,255,.13);--primary:#e6e6e6;--side:#161616;}
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);display:flex;
+    font:13px/1.55 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+
+  /* 左栏：分类树（网盘经典结构） */
+  .side{width:172px;flex:none;background:var(--side);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:10px 8px}
+  .side .grp{padding:10px 8px 4px;color:var(--muted);font-size:10.5px;letter-spacing:.04em}
+  .nav{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;
+    color:var(--fg);cursor:pointer;font-size:12.5px;transition:.12s}
+  .nav:hover{background:var(--hover)}
+  .nav.on{background:var(--sel);color:var(--primary);font-weight:600}
+  .nav svg{width:15px;height:15px;flex:none;opacity:.85}
+  .nav .cnt{margin-left:auto;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+  .nav.on .cnt{color:var(--primary);opacity:.8}
+
+  /* 右栏：工具栏 + 网格 */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .tool{display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid var(--line)}
+  .tool .searchbox{position:relative;flex:1;min-width:0;max-width:420px}
+  .tool .searchbox svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);
+    width:14px;height:14px;color:var(--muted);pointer-events:none}
+  .tool input{width:100%;padding:7px 10px 7px 30px;border:1px solid var(--line2);border-radius:8px;
+    background:var(--card);color:var(--fg);font:inherit;font-size:12.5px}
+  .tool input:focus{outline:none;border-color:var(--primary);background:var(--bg)}
+  .tool .sp{flex:1}
+  .btn{height:29px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--fg);
+    font:inherit;font-size:12px;cursor:pointer;transition:.14s;white-space:nowrap}
+  .btn:hover{background:var(--hover)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:var(--bg)}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn svg{width:14px;height:14px}
+
+  .body{flex:1;min-height:0;overflow-y:auto;padding:14px 16px 20px}
+  .sechead{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
+  .sechead b{font-size:12.5px;font-weight:600}
+  .sechead span{color:var(--muted);font-size:11px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:11px}
+  .tile{border:1px solid var(--line);border-radius:12px;background:var(--card);
+    padding:13px 10px 10px;cursor:pointer;transition:.16s;display:flex;flex-direction:column;
+    align-items:center;gap:7px}
+  .tile:hover{border-color:var(--line2);background:var(--hover);transform:translateY(-1px);
+    box-shadow:0 6px 18px rgba(16,24,40,.08)}
+  .tile .thumb{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+  .tile .thumb svg{width:20px;height:20px}
+  .tile .nm{width:100%;text-align:center;font-size:11.5px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
+  .tile .sz{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .c-doc,.c-code,.c-sheet,.c-slide,.c-image,.c-other{background:var(--hover);color:var(--muted)}
+
+  .hits{margin-top:16px}
+  .hit{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);
+    margin-bottom:8px;cursor:pointer;transition:.14s}
+  .hit:hover{border-color:var(--line2);background:var(--hover)}
+  .hit .hl{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .hit .hl b{color:var(--fg);font-weight:600;font-size:11.5px}
+  .hit .bodytxt{font-size:12px;color:var(--fg);white-space:pre-wrap;word-break:break-word;
+    max-height:70px;overflow:hidden}
+
+  .blank{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:9px;color:var(--muted);padding:52px 20px;text-align:center}
+  .blank svg{width:46px;height:46px;opacity:.4}
+  .blank b{font-size:12.5px;font-weight:600;color:var(--fg)}
+  .blank span{font-size:11.5px}
+  .err{margin:0 0 12px;padding:7px 10px;border-radius:8px;background:rgba(239,68,68,.1);
+    color:#dc2626;font-size:11.5px}
+  @media (prefers-color-scheme:dark){.err{color:#fca5a5}}
+
+  /* 预览弹窗 */
+  .sheet{position:fixed;inset:0;background:rgba(15,18,25,.45);display:flex;align-items:center;
+    justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .18s;z-index:9}
+  .sheet.on{opacity:1;pointer-events:auto}
+  .sheet .panel{width:100%;max-width:820px;max-height:78%;background:var(--bg);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    display:flex;flex-direction:column;transform:scale(.985);transition:transform .18s}
+  .sheet.on .panel{transform:scale(1)}
+  .sheet .hd{display:flex;align-items:center;gap:9px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .sheet .hd .t{flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .sheet pre{margin:0;padding:14px 16px;overflow:auto;flex:1;
+    font:12px/1.65 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+  <aside class="side">
+    <div class="grp">分类</div>
+    <div id="nav"></div>
+  </aside>
+
+  <div class="main">
+    <div class="tool">
+      <div class="searchbox">
+        <span id="search-icon"></span>
+        <input id="q" type="search" placeholder="搜索文件或内容" autocomplete="off">
+      </div>
+      <span class="sp"></span>
+      <button class="btn" id="refresh" title="刷新"></button>
+      <label class="btn primary" id="upload-btn">
+        <input type="file" id="file" multiple accept=".md,.markdown,.docx,.pdf,.xlsx,.xls,.csv,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.ico" style="display:none">
+        <span id="upload-icon"></span>
+        上传
+      </label>
+    </div>
+    <div class="body" id="dropzone">
+      <p class="err" id="err" hidden></p>
+      <div class="sechead"><b id="sechead-label">全部文件</b><span id="sechead-count"></span></div>
+      <div class="grid" id="grid"></div>
+      <div id="hits"></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="panel">
+      <div class="hd"><span class="t" id="sheet-title"></span><button class="btn" id="sheet-close">关闭</button></div>
+      <pre id="sheet-body"></pre>
+    </div>
+  </div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SVG = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
+  all: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+  word: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="m8.5 12.5 1 4.5L11 13.5l1.5 3.5 1-4.5"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/></svg>',
+  sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
+  slide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M12 17v4M8 21h8"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>',
+  empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
+};
+$("search-icon").innerHTML = SVG.search;
+$("refresh").innerHTML = SVG.refresh;
+$("upload-icon").innerHTML = SVG.upload;
+
+const CATS = [
+  { key: "all", label: "全部文件", icon: "all" },
+  { key: "doc", label: "文档", icon: "doc" },
+  { key: "sheet", label: "表格", icon: "sheet" },
+  { key: "slide", label: "演示", icon: "slide" },
+  { key: "image", label: "图片", icon: "image" },
+];
+
+const state = { files: [], cat: "all", keyword: "", busy: false };
+let unauthorized = false;
+
+function text(node, value) { node.textContent = value == null ? "" : String(value); }
+function humanSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
+function showError(message) {
+  const node = $("err");
+  node.hidden = !message;
+  text(node, message || "");
+}
+
+async function api(path, options) {
+  const isForm = options && options.body instanceof FormData;
+  const response = await fetch(path, {
+    credentials: "include",
+    ...(options || {}),
+    ...(isForm ? {} : { headers: { "content-type": "application/json" } }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data && data.error && data.error.message) || "请求失败（" + response.status + "）");
+  }
+  return data;
+}
+
+function countOf(key) {
+  return key === "all" ? state.files.length : state.files.filter((f) => f.category === key).length;
+}
+
+function renderNav() {
+  const nav = $("nav");
+  nav.replaceChildren();
+  for (const cat of CATS) {
+    const n = countOf(cat.key);
+    if (cat.key !== "all" && n === 0 && state.cat !== cat.key) continue;
+    const item = document.createElement("div");
+    item.className = "nav" + (state.cat === cat.key ? " on" : "");
+    item.innerHTML = SVG[cat.icon] || SVG.other;
+    const label = document.createElement("span");
+    text(label, cat.label);
+    const cnt = document.createElement("span");
+    cnt.className = "cnt";
+    text(cnt, n > 0 ? String(n) : "");
+    item.append(label, cnt);
+    item.addEventListener("click", () => {
+      state.cat = cat.key;
+      renderAll();
+    });
+    nav.append(item);
+  }
+}
+
+function visibleFiles() {
+  const kw = state.keyword.trim().toLowerCase();
+  return state.files.filter((file) => {
+    if (state.cat !== "all" && file.category !== state.cat) return false;
+    if (kw && !file.path.toLowerCase().includes(kw)) return false;
+    return true;
+  });
+}
+
+function renderGrid() {
+  const grid = $("grid");
+  grid.replaceChildren();
+  const files = visibleFiles();
+  const catLabel = (CATS.find((c) => c.key === state.cat) || CATS[0]).label;
+  text($("sechead-label"), state.keyword.trim() ? "搜索结果" : catLabel);
+  text($("sechead-count"), files.length ? files.length + " 项" : "");
+  if (files.length === 0) {
+    const blank = document.createElement("div");
+    blank.className = "blank";
+    blank.innerHTML = SVG.empty;
+    const b = document.createElement("b");
+    const s = document.createElement("span");
+    if (unauthorized) {
+      text(b, "未连接");
+      text(s, "刷新页面即可重新连接");
+    } else if (state.files.length === 0) {
+      text(b, "还没有文件");
+      text(s, "点右上角上传，或把文件拖进来");
+    } else {
+      text(b, "没有匹配的文件");
+      text(s, "换个分类或关键词试试");
+    }
+    blank.append(b, s);
+    grid.append(blank);
+    return;
+  }
+  for (const file of files) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const thumb = document.createElement("div");
+    thumb.className = "thumb c-" + (file.category || "other");
+    thumb.innerHTML = SVG[/.docx?$/i.test(file.path) ? "word" : file.category] || SVG.other;
+    const name = document.createElement("div");
+    name.className = "nm";
+    text(name, file.path);
+    name.title = file.path;
+    const size = document.createElement("div");
+    size.className = "sz";
+    text(size, humanSize(file.sizeBytes));
+    tile.append(thumb, name, size);
+    tile.addEventListener("click", () => openFile(file));
+    grid.append(tile);
+  }
+}
+
+/**
+ * 预览交给宿主：正文由本页用服务端接口取到（路径授权仍只在服务端一处），
+ * 再随消息带给父窗口，由宿主用同一套 markdown 渲染。独立打开时才用自己的弹窗。
+ */
+async function openFile(file) {
+  const embedded = window.parent && window.parent !== window;
+  if (!embedded) {
+    text($("sheet-title"), file.path);
+    text($("sheet-body"), "读取中…");
+    $("sheet").classList.add("on");
+  }
+  let body;
+  try {
+    const payload = await api("/api/knowledge/read?path=" + encodeURIComponent(file.absolutePath));
+    body = payload.content || "（空文件）";
+  } catch (error) {
+    body = error.message;
+  }
+  if (embedded) {
+    window.parent.postMessage(
+      {
+        type: "kenfutwork:knowledge-preview",
+        name: file.path,
+        path: file.absolutePath,
+        content: body,
+      },
+      window.location.origin,
+    );
+    return;
+  }
+  text($("sheet-body"), body);
+}
+
+async function loadLibrary() {
+  try {
+    const payload = await api("/api/knowledge/library");
+    state.files = payload.files || [];
+    unauthorized = false;
+    renderAll();
+    showError("");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // 会话过期是「重连」而不是「报错」：给出可操作指引，别只抛服务端原文。
+    unauthorized = /凭据|unauthor|401/iu.test(message);
+    showError(
+      unauthorized ? "连接已过期，请刷新页面重新连接" : message,
+    );
+    renderAll();
+  }
+}
+
+function renderAll() { renderNav(); renderGrid(); }
+
+async function upload(files) {
+  if (!files || files.length === 0 || state.busy) return;
+  state.busy = true;
+  showError("");
+  for (const file of files) {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    try { await api("/api/knowledge/library", { method: "POST", body: form }); }
+    catch (error) { showError(file.name + "：" + error.message); }
+  }
+  state.busy = false;
+  await loadLibrary();
+}
+
+let searchTimer;
+async function searchContent() {
+  const query = state.keyword.trim();
+  const hits = $("hits");
+  if (!query) { hits.replaceChildren(); return; }
+  try {
+    const payload = await api("/api/knowledge/search", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+    hits.replaceChildren();
+    const results = payload.results || [];
+    if (results.length === 0) return;
+    const head = document.createElement("div");
+    head.className = "sechead";
+    const b = document.createElement("b");
+    text(b, "内容命中");
+    const s = document.createElement("span");
+    text(s, results.length + " 项");
+    head.append(b, s);
+    hits.append(head);
+    for (const item of results) {
+      const hit = document.createElement("div");
+      hit.className = "hit";
+      const hl = document.createElement("div");
+      hl.className = "hl";
+      const name = String(item.path || "").replace(/^.*[\\/]/u, "");
+      const strong = document.createElement("b");
+      text(strong, name);
+      const meta = document.createElement("span");
+      text(meta, item.startLine + "-" + item.endLine);
+      hl.append(strong, meta);
+      const bodytxt = document.createElement("div");
+      bodytxt.className = "bodytxt";
+      text(bodytxt, item.content || "");
+      hit.append(hl, bodytxt);
+      hit.addEventListener("click", () => openFile({ path: name, absolutePath: item.absolutePath }));
+      hits.append(hit);
+    }
+  } catch (error) { showError(error.message); }
+}
+
+// 拖放
+const zone = $("dropzone");
+["dragenter", "dragover"].forEach((type) =>
+  zone.addEventListener(type, (event) => { event.preventDefault(); }));
+zone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  void upload(event.dataTransfer && event.dataTransfer.files);
+});
+
+$("file").addEventListener("change", (event) => {
+  void upload(event.target.files);
+  event.target.value = "";
+});
+$("refresh").addEventListener("click", () => { void loadLibrary(); });
+$("sheet-close").addEventListener("click", () => $("sheet").classList.remove("on"));
+$("sheet").addEventListener("click", (event) => {
+  if (event.target === $("sheet")) $("sheet").classList.remove("on");
+});
+$("q").addEventListener("input", () => {
+  state.keyword = $("q").value;
+  renderGrid();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { void searchContent(); }, 450);
+});
+
+void loadLibrary();
+</script>
+</body>
+</html>

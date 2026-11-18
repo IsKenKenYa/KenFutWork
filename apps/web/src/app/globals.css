@@ -1,12 +1,34 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "tailwind-scrollbar-hide/v4";
 @import "shadcn/tailwind.css";
+@import "katex/dist/katex.min.css";
+
+/* streamdown 的运行时类名不在本仓源码里，显式扫描防 Tailwind 漏编（照搬 zcode styles.css 的接法） */
+@source "../../node_modules/streamdown/dist/*.js";
+/* 共享语音包（@kenfutwork/voice-ui）的状态行在画布助手里渲染，显式补扫描面防漏编 */
+@source "../../../../packages/voice-ui/src/**/*.{ts,tsx}";
+
+/**
+ * 字标字体：Momo Trust Display（Google Fonts，OFL 免费可商用）——自托管一份
+ * （只取 latin 子集，24 KB），离线环境也能用（打包后的桌面端没有外网）。
+ * 用途收敛为「字标」：侧栏品牌名、落地页标题、启动页；正文一律走系统字体。
+ */
+@font-face {
+    font-family: "Momo Trust Display";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/fonts/momo-trust-display.woff2") format("woff2");
+}
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: var(--font-sans);
+    /* 字标（KenFutWork）专用字体：与正文解耦，改字标不动正文 */
+    --font-wordmark: "Momo Trust Display", var(--font-sans);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -36,6 +58,7 @@
     --color-input-border: var(--input-border);
     --color-muted-foreground: var(--muted-foreground);
     --color-muted: var(--muted);
+    --color-brand: var(--brand);
     --color-secondary-foreground: var(--secondary-foreground);
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
@@ -55,7 +78,84 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ── zcode 设计 token（照搬 references/zcode/packages/ui/src/styles.css 的 @theme 与 :root/.dark）──
+   只搬 light/dark 两套（zai 变体不搬）。与本仓既有 token 同名的（foreground-subtle/subtlest、
+   background-alt、markdown-inline-code）以 zcode 定义为准；palette 变量（--color-neutral-* 等）
+   用 Tailwind v4 默认主题色。滚动条例外：保留本仓细滚动条（用户点名的全项目偏好，见下文滚动条段）。 */
+@theme {
+    /* Windows 的 Consolas 不含中文字形，Tailwind 默认栈最终会让中文落到宋体。
+       保留各平台西文等宽字体，并在通用 monospace 前显式加入各平台 CJK 无衬线字体。 */
+    --font-mono:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+        "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+    --text-ui-xl: calc(var(--ui-font-size) + 4px);
+    --text-ui-lg: calc(var(--ui-font-size) + 2px);
+    --text-ui-base: var(--ui-font-size);
+    --text-ui-caption: calc(var(--ui-font-size) - 1px);
+    --text-ui-sm: calc(var(--ui-font-size) - 2px);
+    --text-ui-xs: calc(var(--ui-font-size) - 4px);
+    /* iOS Safari 会缩放小于 16px 的聚焦输入；该平台下限不能跟随界面字号降低。 */
+    --text-mobile-input-safe: 16px;
+    --animated-gradient-text-strong: rgba(10, 10, 10, 1);
+    --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
+    --color-background-alt: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
+    --color-icon-blue: var(--color-sky-500);
+    --color-border-hover: color-mix(in oklab, var(--color-neutral-950) 20%, transparent);
+    --color-hover: var(--color-neutral-200);
+    --color-selected: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+    --color-header: var(--color-neutral-100);
+    --color-panel: var(--color-neutral-100);
+    --color-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
+    --color-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+    --color-markdown-inline-code: var(--color-tag);
+    --color-card-selected: var(--color-neutral-200);
+    --color-card-border: var(--color-border);
+    --color-popover-header: var(--color-neutral-100);
+    --color-popover-border: var(--color-border);
+    --color-input-focused: var(--color-neutral-50);
+    --color-input-border-hover: var(--color-border-hover);
+    --color-input-border-focused: var(--color-brand);
+    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
+    --color-foreground-inverse: var(--color-white);
+    --color-idle-task: var(--color-violet-600);
+    --color-idle-task-surface: var(--color-violet-50);
+    --color-diff-added: var(--color-green-600);
+    --color-diff-added-foreground: var(--color-foreground-inverse);
+    --color-diff-removed: var(--color-red-600);
+    --color-diff-removed-foreground: var(--color-foreground-inverse);
+    --color-toast: var(--color-white);
+    --color-tooltip: var(--color-neutral-100);
+    --color-tooltip-foreground: var(--color-neutral-950);
+    --color-tag: var(--color-neutral-200);
+    --color-menu: var(--color-white);
+    --color-menu-hover: var(--color-neutral-100);
+    --color-interaction-ask-surface: var(--color-sky-50);
+    --color-interaction-ask-foreground: var(--color-sky-700);
+    --color-interaction-confirmation-surface: var(--color-green-50);
+    --color-interaction-confirmation-foreground: var(--color-green-700);
+    --color-file-node: color-mix(in oklab, var(--color-sky-600) 14%, transparent);
+    --color-file-node-hover: color-mix(in oklab, var(--color-sky-600) 20%, transparent);
+    --color-file-node-foreground: var(--color-sky-600);
+    --color-skill-node: color-mix(in oklab, var(--color-violet-600) 14%, transparent);
+    --color-skill-node-hover: color-mix(in oklab, var(--color-violet-600) 20%, transparent);
+    --color-skill-node-foreground: var(--color-violet-600);
+    --color-command-node: color-mix(in oklab, var(--color-slate-500) 14%, transparent);
+    --color-command-node-hover: color-mix(in oklab, var(--color-slate-500) 20%, transparent);
+    --color-command-node-foreground: var(--color-slate-600);
+    --color-subagent-node: color-mix(in oklab, #6f7a2f 14%, transparent);
+    --color-subagent-node-hover: color-mix(in oklab, #6f7a2f 20%, transparent);
+    --color-subagent-node-foreground: #6f7a2f;
+    --color-session-node: color-mix(in oklab, var(--color-teal-600) 14%, transparent);
+    --color-session-node-hover: color-mix(in oklab, var(--color-teal-600) 20%, transparent);
+    --color-session-node-foreground: var(--color-teal-600);
+    --color-plugin-node: color-mix(in oklab, var(--color-amber-600) 14%, transparent);
+    --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-600) 20%, transparent);
+    --color-plugin-node-foreground: var(--color-amber-600);
+}
+
 :root {
+    --ui-font-size: 14px;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -96,6 +196,26 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /**
+     * 品牌色：与**当前应用图标**的蓝渐变一致（`docs/design/logo/GPT生成.png` →
+     * `apps/desktop/src-tauri/icons/`，取色 #2e63fa → #214ada，这里用其浅端）。
+     * 用途收敛为「需要品牌感的前景元素」——链接（对话内 markdown / 画布内超链接）
+     * 与画布框选矩形。深色下换亮一档，保证在深底上仍读得清。
+     */
+    --brand: #2e63fa;
+    /**
+     * 字标渐变（**三色**，显式 sRGB 插值）。
+     *
+     * 为什么不是两色：Tailwind v4 的渐变默认在 **oklab** 里插值，纯蓝从深到浅时中段会往灰里走，
+     * 看起来「脏」（用户 2026-09-19 两次反馈）。这里显式写死三站 + sRGB：
+     * 深靛 → 图标同源的饱和蓝（中段不再掉饱和度）→ 浅蓝。
+     */
+    --wordmark-gradient: linear-gradient(
+        90deg,
+        #1c2f74 0%,
+        #2c4fcb 45%,
+        #5c82ec 100%
+    );
 }
 
 .dark {
@@ -105,12 +225,15 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    /* 主按钮原来是近纯白实底，在深底上过曝刺眼。换成品牌浅岚实底 + 深色字，
+       既保持足够对比度，也让暗色主操作有品牌识别度，不再是一块白板。 */
+    --primary: oklch(0.78 0.09 260);
+    --primary-foreground: oklch(0.145 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
+    /* 图标与次要文字：0.708 在深底上偏灰，提到 0.76 让线性图标轮廓更清楚。 */
+    --muted-foreground: oklch(0.76 0 0);
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
@@ -120,9 +243,12 @@
     --warning-foreground: oklch(0.145 0 0);
     --info: oklch(0.70 0.08 250);
     --info-foreground: oklch(0.145 0 0);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    /* 深色边框/输入框边界原先 10%/15% 在 #0a0a0a 上只有约 1.3:1，控件轮廓读不出；
+       提到 16% 保装饰线轻量，输入类单独再提亮到 34% 达到 3:1。 */
+    --border: oklch(1 0 0 / 16%);
+    --input: oklch(1 0 0 / 22%);
+    /* 焦点环与 hover 也跟品牌色走，键盘导航在暗色下更容易定位。 */
+    --ring: oklch(0.72 0.1 260);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -134,8 +260,127 @@
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(1 0 0 / 16%);
     --sidebar-ring: oklch(0.556 0 0);
+    /* 品牌色浅色端 #575E96 在深底上过暗，深色模式换浅岚（与暗色字标同色） */
+    --brand: #7ea2ff;
+    --wordmark-gradient: linear-gradient(
+        90deg,
+        #7f96ea 0%,
+        #9db3f7 45%,
+        #bccfff 100%
+    );
+    /* ── zcode 暗色 token 覆盖（照搬 styles.css .dark）── */
+    --animated-gradient-text-strong: rgba(255, 255, 255, 1);
+    --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
+    --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+    /* sky-600 在深底上过暗，图标蓝改用 sky-400。 */
+    --color-icon-blue: var(--color-sky-400);
+    --color-border: color-mix(in oklab, var(--color-neutral-50) 16%, transparent);
+    --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 38%, transparent);
+    /* 控件轮廓需要 3:1：16% 只够装饰分隔，交互边界单独提亮。 */
+    --color-input-border: color-mix(in oklab, var(--color-neutral-50) 34%, transparent);
+    --color-input-border-hover: color-mix(in oklab, var(--color-neutral-50) 42%, transparent);
+    --color-hover: var(--color-surface-hover);
+    --color-selected: color-mix(in oklab, var(--color-white) 14%, transparent);
+    --color-header: var(--color-neutral-900);
+    --color-panel: var(--color-neutral-900);
+    --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
+    --color-surface-hover: color-mix(in oklab, var(--color-white) 12%, transparent);
+    --color-card-selected: var(--color-neutral-700);
+    --color-popover-header: var(--color-neutral-700);
+    --color-input-focused: var(--color-neutral-950);
+    /* 60%/30% 在深底上分别只有约 4.3:1 / 2.2:1；图标与次要文字要能读，提到 68%/42%。 */
+    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 68%, transparent);
+    /* 42% 在深底上约 2.2:1，暗色图标/三级文字读到但吃力；提到 55%。 */
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 55%, transparent);
+    --color-idle-task: var(--color-violet-400);
+    --color-idle-task-surface: color-mix(in oklab, var(--color-violet-950) 50%, transparent);
+    --color-diff-added: var(--color-green-500);
+    --color-diff-removed: var(--color-red-500);
+    --color-toast: var(--color-neutral-900);
+    --color-tooltip: var(--color-neutral-900);
+    --color-tooltip-foreground: var(--color-neutral-50);
+    --color-tag: var(--color-neutral-700);
+    --color-menu: var(--color-neutral-950);
+    --color-menu-hover: var(--color-neutral-900);
+    --color-interaction-ask-surface: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
+    --color-interaction-ask-foreground: var(--color-sky-300);
+    --color-interaction-confirmation-surface: color-mix(in oklab, var(--color-green-950) 45%, transparent);
+    --color-interaction-confirmation-foreground: var(--color-green-300);
+    --color-file-node: color-mix(in oklab, var(--color-sky-400) 18%, transparent);
+    --color-file-node-hover: color-mix(in oklab, var(--color-sky-400) 24%, transparent);
+    --color-file-node-foreground: var(--color-sky-300);
+    --color-skill-node: color-mix(in oklab, var(--color-violet-400) 18%, transparent);
+    --color-skill-node-hover: color-mix(in oklab, var(--color-violet-400) 24%, transparent);
+    --color-skill-node-foreground: var(--color-violet-300);
+    --color-command-node: color-mix(in oklab, var(--color-slate-300) 16%, transparent);
+    --color-command-node-hover: color-mix(in oklab, var(--color-slate-300) 22%, transparent);
+    --color-command-node-foreground: var(--color-slate-300);
+    --color-subagent-node: color-mix(in oklab, #b7bd75 18%, transparent);
+    --color-subagent-node-hover: color-mix(in oklab, #b7bd75 24%, transparent);
+    --color-subagent-node-foreground: #b7bd75;
+    --color-session-node: color-mix(in oklab, var(--color-teal-400) 18%, transparent);
+    --color-session-node-hover: color-mix(in oklab, var(--color-teal-400) 24%, transparent);
+    --color-session-node-foreground: var(--color-teal-300);
+    --color-plugin-node: color-mix(in oklab, var(--color-amber-400) 18%, transparent);
+    --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-400) 24%, transparent);
+    --color-plugin-node-foreground: var(--color-amber-300);
+}
+
+/**
+ * 品牌标：随主题黑白（用户口径「深色模式 logo 改成白色」）。
+ * 浅色 = 纯黑墨迹（brightness(0)，与旧版一致）；深色 = 纯白剪影（brightness(0) invert(1)），
+ * 形状与浅色完全一致，不做染色、不靠白底贴片撑对比。
+ */
+.brand-mark {
+    filter: brightness(0);
+}
+
+.dark .brand-mark {
+    filter: brightness(0) invert(1);
+}
+
+/**
+ * 侧栏 / 顶栏 / 关于页的彩色品牌标：浅色保留蓝色原标不动，
+ * 深色统一转纯白，保证全站深色模式下的 logo 口径一致。
+ */
+.dark .brand-mark-on-dark {
+    filter: brightness(0) invert(1);
+}
+
+/**
+ * 滚动条：全局更细 + 半透明（用户点名「整个项目的滚动条改得更细，添加透明度」）。
+ * 用 color-mix 基于前景色取低比例，随主题明暗自动适配；track 透明、thumb 内缩 2px
+ * 看起来更轻。Firefox 走 scrollbar-width/color 两个标准属性。
+ */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 16%, transparent)
+      transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--foreground) 16%, transparent);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 28%, transparent);
+    background-clip: content-box;
+  }
 }
 
 @layer base {
@@ -148,6 +393,15 @@
   html {
     @apply font-sans;
     }
+  /*
+   * 单选/勾选框一律用前景色（浅色主题即黑色）：用户口径 2026-09-27——
+   * 浏览器默认的蓝色强调色与全站黑白风格不搭，且各页（权限/通用/语音…）不一致。
+   * 一处收口，全站同色。
+   */
+  input[type="radio"],
+  input[type="checkbox"] {
+    accent-color: var(--foreground);
+  }
 }
 
 /* ── Shadow utilities ── */
@@ -180,30 +434,6 @@
 
 .animate-bounce-dot {
   animation: bounce-dot 1.4s infinite ease-in-out both;
-}
-
-/* Loading screen — logo float + breathing */
-@keyframes logo-float {
-  0%, 100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-10px) scale(1.04);
-  }
-}
-
-.animate-logo-float {
-  animation: logo-float 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-}
-
-/* Loading dots pulse */
-@keyframes loading-dot {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 0.9; }
-}
-
-.animate-loading-dot {
-  animation: loading-dot 1.2s ease-in-out infinite;
 }
 
 /* Star eye — rotate sparkle */
@@ -312,8 +542,10 @@
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
 }
+/* 链接用品牌色。此前是 var(--color-accent)——那是「浅灰 hover 底」令牌（oklch(0.93 0 0)），
+   当文字色用在浅灰气泡上几乎看不见（用户反馈「url 颜色看不清楚」）。 */
 .markdown-content a {
-  color: var(--color-accent);
+  color: var(--brand);
   text-decoration: underline;
 }
 .markdown-content table {
@@ -333,15 +565,69 @@
   font-weight: 600;
 }
 
+/* ── Excalidraw：品牌色（链接 / 框选矩形） ── */
+/* 两处默认值都是 Excalidraw 的紫（--link-color #1c7ed6 蓝、--color-selection #6965db 紫），
+   改成 logo 背景渐变浅端的岚色。框选矩形（selectionElement）与选中框的描边在 0.18 里
+   读的就是容器上的 --color-selection（`cE(state.selectionElement, ctx, appState,
+   renderConfig.selectionColor)`）。
+   选择器写成双类 `.excalidraw.excalidraw`：Excalidraw 自己的 index.css 后于本文件加载，
+   同特异性会由它胜出（与上一节 context-menu 同一个坑）；深色态它用 `.excalidraw.theme--dark`，
+   故再叠一层三类选择器把深色下的值也钉住。 */
+.excalidraw.excalidraw {
+  --link-color: var(--brand);
+  --color-selection: var(--brand);
+}
+
+.excalidraw.excalidraw.theme--dark {
+  --link-color: var(--brand);
+  --color-selection: var(--brand);
+}
+
 /* ── Excalidraw UI overrides (aligned with Jaaz) ── */
 
-/* Hide left menu button — replaced by CanvasLogoMenu */
-.excalidraw .App-menu_top__left {
+/* Hide the native main-menu (hamburger) button — replaced by CanvasLogoMenu.
+   注意**不能隐藏整个 `.App-menu_top__left` 容器**：「画布与元素属性」（stats）面板
+   也渲染在这个容器里（与主菜单按钮并列），整块隐藏会导致点菜单项只有 ✓、面板永不出现。*/
+.excalidraw .App-menu_top__left [data-testid="main-menu-trigger"] {
   display: none !important;
 }
 
-/* Hide top-right buttons (Library, Share, Export) */
-.excalidraw .layer-ui__wrapper__top-right {
+/* 「画布与元素属性」面板：居中 + 藏掉英文默认体，内容换成自己的中文版
+   （components/canvas-stats-panel.tsx 经 renderCustomStats 注入；该口子是**追加**，
+   故默认那份必须藏：折叠头 General/箭头 + 行表 Shapes/Canvas/Grid step 等）。 */
+.excalidraw .exc-stats {
+  /* 居中要相对**画布列**，不是窗口：画布页里右侧还有一块面板，用 fixed 会按整个视口居中，
+     结果整体右偏半个面板宽（实测：视口中心 672 / 画布列中心 472，用户看到的就是偏右）。
+     `absolute` 的包含块是最近的定位祖先 `.layer-ui__wrapper`——它正好是画布列；
+     同时不用 left/top:50%+translate：该祖先带 transform，那样算会偏。 */
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 280px;
+  height: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-float, 0 12px 32px rgba(15, 23, 42, 0.18));
+}
+.excalidraw .exc-stats h3,
+.excalidraw .exc-stats h3 + span,
+.excalidraw .exc-stats .exc-stats__rows {
+  display: none !important;
+}
+
+/* 菜单里的勾选符：Excalidraw 用 `.context-menu-item.checkmark:before` 画 ✓；
+   这两项一个开关一个面板入口，挂着勾只会让人以为「点了没生效」，按用户要求去掉。 */
+.context-menu li[data-testid="gridMode"] .context-menu-item.checkmark:before,
+.context-menu li[data-testid="stats"] .context-menu-item.checkmark:before {
+  display: none !important;
+}
+
+
+/* Hide the native Library (素材库) trigger — we don't ship Excalidraw's library UI.
+   同样**不能整块隐藏 `.layer-ui__wrapper__top-right`**：「画布与元素属性」（stats）面板
+   就渲染在这个容器里，整块隐藏会让它点开也永远看不见（实测：面板在 DOM 里、父容器
+   display:none）。只藏素材库那个 label 即可。*/
+.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
   display: none !important;
 }
 
@@ -504,7 +790,12 @@
 .context-menu li[data-testid="linkToElement"],
 .context-menu li[data-testid="copyElementLink"],
 .context-menu li[data-testid="wrapSelectionInFrame"],
-.context-menu li[data-testid="toggleLinearEditor"] {
+.context-menu li[data-testid="toggleLinearEditor"],
+/* 「吸附至对象」：当前 Excalidraw（0.18）里这个开关**不驱动任何行为**——
+   objectsSnapModeEnabled 全库只在「动作/菜单勾选态/属性透传」出现，拖拽与渲染路径
+   一处都不读（对齐参考线另有其路径）。用户实测「点了只多个 ✓」，故按「假开关不留」
+   隐藏；真要对齐吸附得另找实现。 */
+.context-menu li[data-testid="objectsSnapMode"] {
   display: none;
 }
 
@@ -614,4 +905,391 @@
 ::selection {
   background-color: var(--primary);
   color: var(--primary-foreground);
+}
+
+/* 文件预览的高亮主题（highlight.js 输出的类名）。只认扩展名的那些语言会走到这里；
+   颜色用项目自己的 token，深浅色各一套 */
+.hljs {
+  color: var(--foreground);
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-name {
+  color: #8250df;
+}
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-name {
+  color: #d2a8ff;
+}
+.hljs-string,
+.hljs-doctag,
+.hljs-regexp {
+  color: #0a3069;
+}
+.dark .hljs-string,
+.dark .hljs-doctag,
+.dark .hljs-regexp {
+  color: #a5d6ff;
+}
+.hljs-title,
+.hljs-section,
+.hljs-title.function_ {
+  color: #6639ba;
+}
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr,
+.hljs-attribute {
+  color: #953800;
+}
+.dark .hljs-number,
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-attr,
+.dark .hljs-attribute {
+  color: #ffa657;
+}
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #0550ae;
+}
+.dark .hljs-built_in,
+.dark .hljs-type,
+.dark .hljs-class .hljs-title {
+  color: #79c0ff;
+}
+.hljs-meta {
+  color: var(--muted-foreground);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* ── zcode 对话流 UI 照搬层（references/zcode packages/ui/src/styles.css）──────────────
+   动画与工具类逐段照搬；字号阶梯 text-ui-* 已由上方 @theme token 生成（zcode 原版不带行高）。 */
+
+/* 中文模板描述按单字断行会拆开词组；Chromium 支持时启用短语级换行。 */
+.text-wrap-phrase {
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-break: strict;
+  text-wrap: pretty;
+}
+
+@supports (word-break: auto-phrase) {
+  .text-wrap-phrase {
+    word-break: auto-phrase;
+  }
+}
+
+@layer utilities {
+  /* zcode 运行态文案扫光（ToolSummaryRow kindLabel / Reasoning「思考中」同款） */
+  .animated-gradient-text {
+    display: inline-block;
+    background: linear-gradient(
+      90deg,
+      var(--animated-gradient-text-strong) 0%,
+      var(--animated-gradient-text-strong) 34%,
+      var(--animated-gradient-text-soft) 50%,
+      var(--animated-gradient-text-strong) 66%,
+      var(--animated-gradient-text-strong) 100%
+    );
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: gradient-flow 4s linear infinite;
+    will-change: background-position;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .animated-gradient-text-subtle {
+    --animated-gradient-text-strong: var(--color-foreground-subtle);
+  }
+
+  @keyframes gradient-flow {
+    0% {
+      background-position: 100% 0;
+    }
+
+    50% {
+      background-position: 0% 0;
+    }
+
+    100% {
+      background-position: 0% 0;
+    }
+  }
+}
+
+@keyframes zcode-stream-text-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes zcode-draft-prompt-waterfall {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-12px);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+}
+
+.zcode-draft-prompt-waterfall {
+  animation: zcode-draft-prompt-waterfall 260ms cubic-bezier(0.22, 1, 0.36, 1)
+    var(--zcode-draft-prompt-waterfall-delay, 0ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-draft-prompt-waterfall {
+    animation: none;
+  }
+}
+
+@keyframes markdown-image-loading-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.markdown-image-loading-shimmer {
+  background-color: var(--color-card);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-card) 0%,
+    var(--color-background) 50%,
+    var(--color-card) 100%
+  );
+  background-size: 240% 100%;
+  animation: markdown-image-loading-shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-image-loading-shimmer {
+    animation: none;
+  }
+}
+
+@keyframes zcode-stream-marker-in {
+  0% {
+    color: transparent;
+  }
+
+  100% {
+    color: var(--color-foreground-subtlest);
+  }
+}
+
+[data-zcode-stream-animate="true"] {
+  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
+    var(--zcode-stream-animation-delay, 0ms) both;
+  will-change: opacity;
+}
+
+[data-zcode-stream-marker-animate="true"]::marker {
+  animation: zcode-stream-marker-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
+    var(--zcode-stream-animation-delay, 0ms) both;
+}
+
+[data-zcode-tool-stream-animate="true"],
+[data-zcode-chat-loading-animate="true"] {
+  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity;
+}
+
+/*  Collapsible 在测量 closed 高度时会写入 inline animation-name:none。
+   自动结束收起需要在延迟卸载期间继续播放高度动画，
+   所以这里用 !important 覆盖 inline style，只作用于显式标记的收起窗口。 */
+[data-zcode-collapsible-animate-close="true"][data-state="closed"] {
+  animation: zcode-collapsible-up 300ms ease-in-out forwards !important;
+}
+
+[data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
+  animation: zcode-collapsible-fade-out 300ms ease-in-out forwards !important;
+}
+
+@keyframes zcode-collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+
+  to {
+    height: 0;
+  }
+}
+
+@keyframes zcode-collapsible-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-zcode-stream-animate="true"],
+  [data-zcode-stream-marker-animate="true"]::marker,
+  [data-zcode-tool-stream-animate="true"],
+  [data-zcode-chat-loading-animate="true"],
+  [data-zcode-collapsible-animate-close="true"][data-state="closed"],
+  [data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
+    animation: none;
+  }
+}
+
+/* 点赞/点踩选中时的反馈动画：图标回弹 + 细小粒子飞散两段，
+   粒子用 box-shadow 画在 ::after 上且跟随 currentColor，零额外 DOM、不引入新颜色。 */
+.zcode-reaction-burst {
+  position: relative;
+  display: inline-flex;
+}
+
+.zcode-reaction-burst > svg {
+  animation: zcode-reaction-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.zcode-reaction-burst::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  animation: zcode-reaction-particles 560ms cubic-bezier(0.16, 1, 0.3, 1) 60ms forwards;
+}
+
+@keyframes zcode-reaction-pop {
+  0% {
+    transform: scale(0);
+  }
+
+  45% {
+    transform: scale(1.3);
+  }
+
+  70% {
+    transform: scale(0.95);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes zcode-reaction-particles {
+  0% {
+    opacity: 0;
+    box-shadow:
+      7.7px 2.1px 0 0,
+      2.1px 7.7px 0 0,
+      -5.7px 5.7px 0 0,
+      -7.7px -2.1px 0 0,
+      -2.1px -7.7px 0 0,
+      5.7px -5.7px 0 0;
+  }
+
+  20% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 0;
+    box-shadow:
+      15.5px 4.1px 0 -1px,
+      4.1px 15.5px 0 -1px,
+      -11.3px 11.3px 0 -1px,
+      -15.5px -4.1px 0 -1px,
+      -4.1px -15.5px 0 -1px,
+      11.3px -11.3px 0 -1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-reaction-burst > svg,
+  .zcode-reaction-burst::after {
+    animation: none;
+  }
+}
+
+@keyframes zcode-task-interaction-countdown {
+  from {
+    transform: scaleX(var(--zcode-interaction-progress, 1));
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.zcode-task-interaction-countdown-fill {
+  animation: zcode-task-interaction-countdown var(--zcode-interaction-remaining-ms, 240000ms) linear
+    forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-task-interaction-countdown-fill {
+    animation: none;
+    transform: scaleX(var(--zcode-interaction-progress, 1));
+  }
+}
+
+/* Mention 图标不进入 TextNode DOM，避免首部 img/svg 截断 Lexical 原生选区映射。 */
+.prompt-mention::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  background: var(--mention-icon-color, transparent) var(--mention-image, none) center / contain
+    no-repeat;
+  mask: var(--mention-mask, none) center / contain no-repeat;
+}
+
+.prompt-mention[data-mention-category="plugins"]::before {
+  border-radius: var(--radius-sm);
 }

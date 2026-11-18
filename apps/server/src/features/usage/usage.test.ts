@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerRepository } from "../bootstrap/repository.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -9,15 +10,10 @@ import {
 import { createUsageRepository, type UsageRepository } from "./repository.js";
 import { createUsageService } from "./usage-service.js";
 
-const USER_ID = "user-1";
-const WORKSPACE_ID = "ws-1";
+const CLIENT_ID = "client-1";
+const INSTANCE_ID = "instance-1";
 
-const USER: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: USER_ID,
-  userMetadata: {},
-};
+const USER: LocalActor = { instanceId: INSTANCE_ID, accessClientId: CLIENT_ID };
 
 type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
 
@@ -48,6 +44,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -58,19 +57,16 @@ function createRunner(
   };
 }
 
-const WORKSPACES_STUB: ViewerRepository = {
-  bootstrap: async () => {},
-  findMembership: async () => null,
-  findPersonalWorkspace: async () => ({
-    id: WORKSPACE_ID,
-    name: "Personal Workspace",
-    ownerUserId: USER_ID,
-    type: "personal",
-  }),
-  findProfile: async () => null,
-  findPlatformRole: async () => null,
-  updatePlatformRole: async () => 0,
-  updateDisplayName: async () => null,
+const INSTANCE_STUB: LocalInstanceService = {
+  getContext: async () => ({ instanceId: INSTANCE_ID, dataDir: "/data" }),
+  resolve: async () => ({ instanceId: INSTANCE_ID, dataDir: "/data" }),
+  serviceActor: async () => ({ instanceId: INSTANCE_ID, accessClientId: null }),
+  isDraining: () => false,
+  assertReady() {},
+  beginAdmission: () => () => {},
+  activeAdmissionCount: () => 0,
+  beginMaintenance: async () => {},
+  cancelMaintenance() {},
 };
 
 function createFakeRepository(
@@ -79,16 +75,21 @@ function createFakeRepository(
   return {
     insert: async () => {},
     listRecent: async () => [],
+    longestSessionSeconds: async () => 0,
+    appUsageDaily: async () => [],
+    appUsageRunCount: async () => 0,
+    runSummary: async () => null,
+    runSummaryBySession: async () => null,
     ...overrides,
   };
 }
 
 describe("usage repository（workspace 作用域 + 驱动数值归一）", () => {
-  it("写入按工作区绑定，缺省可选字段落 NULL、token 缺省落 0", async () => {
+  it("写入按实例绑定，缺省可选字段落 NULL、token 缺省落 0", async () => {
     const { calls, runner } = createRunner();
 
     await createUsageRepository(createPersistenceFromRunner(runner)).insert({
-      workspaceId: WORKSPACE_ID,
+      instanceId: INSTANCE_ID,
       provider: "openai",
       model: "gpt-4.1",
       capability: "chat",
@@ -111,7 +112,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       0,
       null,
       null,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
@@ -119,8 +120,8 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     const { calls, runner } = createRunner();
 
     await createUsageRepository(createPersistenceFromRunner(runner)).insert({
-      workspaceId: WORKSPACE_ID,
-      userId: USER_ID,
+      instanceId: INSTANCE_ID,
+      accessClientId: CLIENT_ID,
       provider: "anthropic",
       model: "claude",
       capability: "image",
@@ -134,7 +135,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     });
 
     expect(calls[0]?.values).toEqual([
-      USER_ID,
+      CLIENT_ID,
       "anthropic",
       "claude",
       "image",
@@ -145,11 +146,11 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       20,
       30,
       0.5,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
-  it("读取按工作区限定，bigint/numeric 字符串归一为 number", async () => {
+  it("读取按实例限定，bigint/numeric 字符串归一为 number，occurred_at 归一为 ISO", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 2,
       rows: [
@@ -161,6 +162,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
           input_tokens: "120",
           output_tokens: "80",
           cost_usd: "0.0123",
+          occurred_at: "2026-09-14 12:00:00+00",
         },
         {
           provider: "openai",
@@ -169,30 +171,141 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
           input_tokens: "1",
           output_tokens: "2",
           cost_usd: null,
+          occurred_at: new Date("2026-09-15T08:00:00Z"),
         },
       ],
     }));
 
     const rows = await createUsageRepository(
       createPersistenceFromRunner(runner),
-    ).listRecent(WORKSPACE_ID, 10000);
+    ).listRecent(INSTANCE_ID, 10000);
 
-    expect(rows[0]).toEqual({
-      provider: "openai",
-      model: "gpt-4.1",
-      capability: "chat",
-      input_tokens: 120,
-      output_tokens: 80,
-      cost_usd: 0.0123,
-    });
+    expect(rows[0]?.input_tokens).toBe(120);
+    expect(rows[0]?.output_tokens).toBe(80);
+    expect(rows[0]?.cost_usd).toBe(0.0123);
+    expect(rows[0]?.occurred_at).toBe("2026-09-14 12:00:00+00");
     expect(typeof rows[0]?.input_tokens).toBe("number");
     expect(rows[1]?.cost_usd).toBeNull();
+    expect(rows[1]?.occurred_at).toBe("2026-09-15T08:00:00.000Z");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
-    expect(sql).toContain("where workspace_id = $2");
+    expect(sql).toContain("where instance_id = $2");
     expect(sql).toContain("order by occurred_at desc");
     expect(sql).toContain("limit $1");
-    expect(calls[0]?.values).toEqual([10000, WORKSPACE_ID]);
+    expect(calls[0]?.values).toEqual([10000, INSTANCE_ID]);
+  });
+
+  /**
+   * 最长聊天时长（R4-2 剩下的卡）。这条口径最容易写错成「所有消息的首尾差」——
+   * 那会把跨天的多条对话算成一条。这里锁死「先按会话分组取跨度、再取最大值」，
+   * 以及 FORM-9 的父链谓词（chat_sessions 没有 instance_id 列）。
+   */
+  it("最长聊天时长：按会话分组取首尾跨度，谓词走 canvases → projects 父链", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ seconds: "42300" }],
+    }));
+
+    const seconds = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).longestSessionSeconds(INSTANCE_ID);
+
+    expect(seconds).toBe(42300);
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("max(m.created_at) - min(m.created_at)");
+    expect(sql).toContain("group by s.id");
+    expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
+    // `:instance` 由 persistence 层重写成位置参数；本条语句只有它一个参数，故是 $1
+    expect(sql).toContain("p.instance_id = $1");
+    expect(calls[0]?.values).toEqual([INSTANCE_ID]);
+    // 没有任何会话时 coalesce 兜 0，而不是把 null 透出去
+    expect(sql).toContain("coalesce(max(span_seconds), 0)");
+  });
+
+  it("最长聊天时长：NULL / 负值 / 非数字一律归 0（统计页不该出现 -1 秒）", async () => {
+    for (const raw of [null, "-5", "abc"]) {
+      const { runner } = createRunner(() => ({
+        rowCount: 1,
+        rows: [{ seconds: raw }],
+      }));
+      const seconds = await createUsageRepository(
+        createPersistenceFromRunner(runner),
+      ).longestSessionSeconds(INSTANCE_ID);
+      expect(seconds).toBe(0);
+    }
+  });
+
+  it("单轮用量汇总按实例 + run_id 限定，聚合列归一为 number", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          input_tokens: "1200",
+          output_tokens: "300",
+          cost_usd: "0.045",
+          calls: "2",
+        },
+      ],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummary(INSTANCE_ID, "run-1");
+
+    expect(summary).toEqual({
+      inputTokens: 1200,
+      outputTokens: 300,
+      costUsd: 0.045,
+      calls: 2,
+    });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("where instance_id = $2 and run_id = $1");
+    expect(calls[0]?.values).toEqual(["run-1", INSTANCE_ID]);
+  });
+
+  it("没有记账行时单轮汇总返回 null（不把「没调用」伪装成 0 次）", async () => {
+    const { runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ input_tokens: 0, output_tokens: 0, cost_usd: null, calls: "0" }],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummary(INSTANCE_ID, "run-missing");
+
+    expect(summary).toBeNull();
+  });
+
+  it("会话用量汇总只取该会话最近创建的一轮 Run，并同时用实例谓词收窄", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          input_tokens: "80",
+          output_tokens: "20",
+          cost_usd: null,
+          calls: "1",
+        },
+      ],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummaryBySession(INSTANCE_ID, "child-session-1");
+
+    expect(summary).toEqual({
+      inputTokens: 80,
+      outputTokens: 20,
+      costUsd: null,
+      calls: 1,
+    });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("join public.chat_sessions s on s.id = r.session_id");
+    expect(sql).toContain("where s.instance_id = $2 and r.session_id = $1");
+    expect(sql).toContain("order by r.created_at desc limit 1");
+    // 外层 usage 行与内层会话都必须落在同一实例
+    expect(sql).toContain("u.instance_id = $2");
+    expect(calls[0]?.values).toEqual(["child-session-1", INSTANCE_ID]);
   });
 });
 
@@ -208,6 +321,7 @@ describe("usage service", () => {
             input_tokens: 100,
             output_tokens: 50,
             cost_usd: 0.25,
+            occurred_at: "2026-09-15T10:00:00.000Z",
           },
           {
             provider: "openai",
@@ -216,6 +330,7 @@ describe("usage service", () => {
             input_tokens: 20,
             output_tokens: 10,
             cost_usd: null,
+            occurred_at: "2026-09-15T10:01:00.000Z",
           },
           {
             provider: "google",
@@ -224,10 +339,11 @@ describe("usage service", () => {
             input_tokens: 5,
             output_tokens: 0,
             cost_usd: 0,
+            occurred_at: "2026-09-15T10:02:00.000Z",
           },
         ],
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     const summary = await service.summarize(USER);
@@ -256,39 +372,18 @@ describe("usage service", () => {
     ]);
   });
 
-  it("工作区解析不到时汇总报错（不静默返回空）", async () => {
+  it("实例解析不到时汇总报错（不静默返回空）", async () => {
     const service = createUsageService({
       repository: createFakeRepository(),
-      workspaces: {
-        ...WORKSPACES_STUB,
-        findPersonalWorkspace: async () => null,
+      localInstance: {
+        ...INSTANCE_STUB,
+        resolve: async () => {
+          throw new Error("本地实例不可用");
+        },
       },
     });
 
-    await expect(service.summarize(USER)).rejects.toThrow(
-      /summary query failed/,
-    );
-  });
-
-  it("resolveWorkspaceIdByUser 复用 workspaces 域查询（worker 无 auth 也能用）", async () => {
-    const service = createUsageService({
-      repository: createFakeRepository(),
-      workspaces: WORKSPACES_STUB,
-    });
-    await expect(service.resolveWorkspaceIdByUser(USER_ID)).resolves.toBe(
-      WORKSPACE_ID,
-    );
-
-    const missing = createUsageService({
-      repository: createFakeRepository(),
-      workspaces: {
-        ...WORKSPACES_STUB,
-        findPersonalWorkspace: async () => null,
-      },
-    });
-    await expect(
-      missing.resolveWorkspaceIdByUser(USER_ID),
-    ).resolves.toBeUndefined();
+    await expect(service.summarize(USER)).rejects.toThrow(/本地实例不可用/);
   });
 
   it("落账失败只告警不抛错（计量是旁路，不阻断主链路）", async () => {
@@ -298,12 +393,12 @@ describe("usage service", () => {
           throw new Error("connection reset");
         },
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     await expect(
       service.record({
-        workspaceId: WORKSPACE_ID,
+        instanceId: INSTANCE_ID,
         provider: "openai",
         model: "gpt-4.1",
         capability: "chat",
@@ -318,11 +413,334 @@ describe("usage service", () => {
           throw new Error("permission denied");
         },
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     await expect(service.summarize(USER)).rejects.toThrow(
       /summary query failed: permission denied/,
     );
+  });
+
+  it("单轮用量在库字段之上补 totalTokens；无记账行时返回 null", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        runSummary: async (_instanceId, runId) =>
+          runId === "run-1"
+            ? { inputTokens: 120, outputTokens: 30, costUsd: 0.02, calls: 2 }
+            : null,
+      }),
+      localInstance: INSTANCE_STUB,
+    });
+
+    await expect(service.runSummary(INSTANCE_ID, "run-1")).resolves.toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      costUsd: 0.02,
+      calls: 2,
+    });
+    await expect(
+      service.runSummary(INSTANCE_ID, "run-missing"),
+    ).resolves.toBeNull();
+  });
+
+  it("按会话查询把最近一轮的汇总原样归因（区分零成本与未上报成本）", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        runSummaryBySession: async () => ({
+          inputTokens: 0,
+          outputTokens: 0,
+          costUsd: null,
+          calls: 1,
+        }),
+      }),
+      localInstance: INSTANCE_STUB,
+    });
+
+    await expect(
+      service.runSummaryBySession(INSTANCE_ID, "child-session-1"),
+    ).resolves.toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: null,
+      calls: 1,
+    });
+  });
+});
+
+describe("usage stats（R4-2 用户侧使用统计）", () => {
+  const NOW = new Date("2026-09-15T12:00:00Z");
+  const day = (offsetFromToday: number, hour = 12) =>
+    new Date(
+      Date.parse("2026-09-15T00:00:00Z") +
+        offsetFromToday * 86_400_000 +
+        hour * 3_600_000,
+    ).toISOString();
+
+  function rowsFor(
+    entries: Array<{
+      offsetFromToday: number;
+      model: string;
+      input: number;
+      output: number;
+      /** 供应商回传的成本；不传表示未上报。 */
+      costUsd?: number | null;
+    }>,
+  ) {
+    return entries.map((entry) => ({
+      provider: "openai",
+      model: entry.model,
+      capability: "chat" as const,
+      input_tokens: entry.input,
+      output_tokens: entry.output,
+      cost_usd: entry.costUsd ?? null,
+      occurred_at: day(entry.offsetFromToday),
+    }));
+  }
+
+  function createStatsService(listRecent: () => ReturnType<typeof rowsFor>) {
+    return createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => listRecent(),
+      }),
+      localInstance: INSTANCE_STUB,
+      now: () => NOW,
+    });
+  }
+
+  it("按天聚合补零成连续序列，给峰值与总量（R4-2 汇总卡）", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "gpt-4.1", input: 300, output: 100 },
+        { offsetFromToday: -2, model: "gpt-4.1", input: 1000, output: 500 },
+        { offsetFromToday: -2, model: "gemini", input: 50, output: 10 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+
+    expect(stats.rangeDays).toBe(7);
+    expect(stats.daily).toHaveLength(7);
+    expect(stats.daily[6]).toEqual({ date: "2026-09-15", tokens: 400 });
+    expect(stats.daily[4]).toEqual({ date: "2026-09-13", tokens: 1560 });
+    expect(stats.daily[5]?.tokens).toBe(0);
+    expect(stats.totals).toEqual({
+      tokens: 1960,
+      inputTokens: 1350,
+      outputTokens: 610,
+      costUsd: null,
+    });
+    expect(stats.peakDayTokens).toBe(1560);
+  });
+
+  /** 成本只累加供应商回传的行；窗口外的花费不计入；全未回传时如实给 null。 */
+  it("花费只累计窗口内已回传的行，未回传时给 null 而不是 0", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        {
+          offsetFromToday: 0,
+          model: "gpt-4.1",
+          input: 10,
+          output: 5,
+          costUsd: 0.75,
+        },
+        {
+          offsetFromToday: -1,
+          model: "gpt-4.1",
+          input: 1,
+          output: 1,
+          costUsd: 0,
+        },
+        { offsetFromToday: 0, model: "gpt-4.1", input: 1, output: 1 },
+        // 窗口外的成本不应计入 7 日统计
+        {
+          offsetFromToday: -20,
+          model: "gpt-4.1",
+          input: 100,
+          output: 100,
+          costUsd: 9.5,
+        },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.totals.costUsd).toBe(0.75);
+  });
+
+  it("窗口内没有任何成本回传时 totals.costUsd 为 null（不把未知成本当成零）", async () => {
+    const stats = await createStatsService(() =>
+      rowsFor([{ offsetFromToday: 0, model: "m", input: 10, output: 5 }]),
+    ).stats(USER, 7);
+    expect(stats.totals.costUsd).toBeNull();
+  });
+
+  it("窗口外（30 天前）的记录不计入 7 日统计", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: -20, model: "gpt-4.1", input: 9, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.totals.tokens).toBe(0);
+    expect(stats.byModel).toEqual([]);
+  });
+
+  it("连续天数：今天有活动从今天倒数；今天没有则从昨天起算；最长段取窗口内最大", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -1, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -2, model: "m", input: 1, output: 1 },
+        // -3、-4 空档
+        { offsetFromToday: -5, model: "m", input: 1, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.currentStreakDays).toBe(3);
+    expect(stats.longestStreakDays).toBe(3);
+  });
+
+  it("今天没活动时当前连续天数从昨天起算（不打断昨天刚跑完的用户）", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: -1, model: "m", input: 1, output: 1 },
+        { offsetFromToday: -2, model: "m", input: 1, output: 1 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.currentStreakDays).toBe(2);
+  });
+
+  it("按模型聚合降序排列", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "small", input: 10, output: 0 },
+        { offsetFromToday: 0, model: "big", input: 500, output: 0 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.byModel.map((entry) => entry.model)).toEqual(["big", "small"]);
+  });
+
+  it("逐日 × 模型序列：与 daily 等长对齐、按用量降序、缺数据的天补 0", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "small", input: 10, output: 0 },
+        { offsetFromToday: -2, model: "big", input: 500, output: 0 },
+        { offsetFromToday: 0, model: "big", input: 90, output: 0 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.daily).toHaveLength(7);
+    expect(stats.dailyByModel.map((entry) => entry.model)).toEqual([
+      "big",
+      "small",
+    ]);
+    const big = stats.dailyByModel[0];
+    expect(big?.tokens).toHaveLength(stats.daily.length);
+    // big：今天 90，前天 500，其余天 0
+    const todayTokens = big?.tokens[6] ?? -1;
+    const twoDaysAgo = big?.tokens[4] ?? -1;
+    expect(todayTokens).toBe(90);
+    expect(twoDaysAgo).toBe(500);
+    expect(big?.tokens.filter((tokens) => tokens === 0)).toHaveLength(5);
+    // small：只有今天 10
+    expect(stats.dailyByModel[1]?.tokens[6]).toBe(10);
+    expect(stats.dailyByModel[1]?.tokens.filter((t) => t === 0)).toHaveLength(
+      6,
+    );
+  });
+
+  it("最长聊天时长透出到响应（来自会话表的第二个数据源）", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => [],
+        longestSessionSeconds: async () => 42_300,
+      }),
+      localInstance: INSTANCE_STUB,
+      now: () => NOW,
+    });
+
+    expect((await service.stats(USER, 7)).longestSessionSeconds).toBe(42_300);
+  });
+
+  /**
+   * 会话表那条查询失败时，**不该把整页统计打成 500**：token 数字仍然有效，
+   * 缺的只是那一张卡。这里锁「其余字段照常给 + 该字段回落 0」。
+   */
+  it("最长聊天时长查询失败：统计仍返回，该字段回落 0", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () =>
+          rowsFor([{ offsetFromToday: 0, model: "m", input: 10, output: 5 }]),
+        longestSessionSeconds: async () => {
+          throw new Error("relation does not exist");
+        },
+      }),
+      localInstance: INSTANCE_STUB,
+      now: () => NOW,
+    });
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.longestSessionSeconds).toBe(0);
+    expect(stats.totals.tokens).toBe(15);
+  });
+});
+
+/**
+ * 热力图窗口（用户反馈「格子要显示全，而不是就一点点」）。
+ *
+ * 与 7/30 天的 `daily` 分开：热力图是「一年活动全貌」，固定 365 天、缺数据补 0，
+ * 不随范围切换变窄。这里锁「长度恒为 365、末位是今天、窗口外的旧数据不计入」。
+ */
+describe("usage stats 热力图窗口", () => {
+  const NOW = new Date("2026-09-15T12:00:00Z");
+  const dayIso = (offset: number) =>
+    new Date(
+      Date.parse("2026-09-15T00:00:00Z") + offset * 86_400_000,
+    ).toISOString();
+
+  it("恒为 365 天、末位是今天；一年内的量进图、去年的不进", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        listRecent: async () => [
+          {
+            provider: "openai",
+            model: "m",
+            capability: "chat",
+            input_tokens: 100,
+            output_tokens: 0,
+            cost_usd: null,
+            occurred_at: dayIso(-200),
+          },
+          {
+            provider: "openai",
+            model: "m",
+            capability: "chat",
+            input_tokens: 999,
+            output_tokens: 0,
+            cost_usd: null,
+            occurred_at: dayIso(-400),
+          },
+        ],
+      }),
+      localInstance: INSTANCE_STUB,
+      now: () => NOW,
+    });
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.heatmap).toHaveLength(365);
+    expect(stats.heatmap.at(-1)?.date).toBe("2026-09-15");
+    expect(stats.heatmap.map((d) => d.tokens).reduce((a, b) => a + b, 0)).toBe(
+      100,
+    );
+    // 7 天窗口里没有这些天 → daily 全 0（两条都在窗口外）
+    expect(stats.daily.every((d) => d.tokens === 0)).toBe(true);
   });
 });

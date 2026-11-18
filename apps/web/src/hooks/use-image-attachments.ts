@@ -40,7 +40,10 @@ const ALLOWED_TYPES = new Set([
   "image/gif",
 ]);
 
-export function useImageAttachments(accessToken: string, projectId?: string) {
+export function useImageAttachments(
+  accessToken: string | null,
+  projectId?: string,
+) {
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
@@ -227,15 +230,19 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
 
   const isUploading = attachments.some((a) => a.uploading);
 
-  const readyAttachments = attachments
-    .filter((a) => a.assetId && a.url && !a.error)
-    .map((a) => ({
-      assetId: a.assetId!,
-      url: a.url!,
-      mimeType: a.mimeType,
-      source: a.source,
-      ...(a.name ? { name: a.name } : {}),
-    }));
+  const readyAttachments = attachments.flatMap((a) =>
+    a.assetId && a.url && !a.error
+      ? [
+          {
+            assetId: a.assetId,
+            url: a.url,
+            mimeType: a.mimeType,
+            source: a.source,
+            ...(a.name ? { name: a.name } : {}),
+          },
+        ]
+      : [],
+  );
 
   return {
     attachments,

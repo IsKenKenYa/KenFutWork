@@ -1,0 +1,42 @@
+diff --git a/apps/lightcraft-web/src/web.rs b/apps/lightcraft-web/src/web.rs
+index 14a5d05..caab6b5 100644
+--- a/apps/lightcraft-web/src/web.rs
++++ b/apps/lightcraft-web/src/web.rs
+@@ -449,12 +449,6 @@ impl WebApp {
+                 });
+             }
+         }
+-        if backend.is_some() {
+-            notice(
+-                "LightCraft in the browser is experimental. Your library is kept in this browser's storage: keep your original photos \
+-                 elsewhere and back up with File ▸ Back Up Library….",
+-            );
+-        }
+         // previews are large (≤ 2560 px, f32): keep few in a 32-bit address space
+         session.media.preview_capacity = 3;
+         // nothing is saved while the stored library couldn't be read
+@@ -466,6 +460,12 @@ impl WebApp {
+             app.ui = ui;
+         }
+         app.ui = app.ui.sanitized();
++        if backend.is_some() {
++            let storage_notice =
++                app.ui.language.tr("LightCraft in the browser is experimental. Your library is kept in this browser's storage: keep your original photos \
++                 elsewhere and back up with File ▸ Back Up Library….");
++            notice(storage_notice);
++        }
+         app.library_problem = problem;
+         let n = opts.workers.unwrap_or_else(|| {
+             let cores = window().map_or(1, |w| w.navigator().hardware_concurrency() as usize);
+diff --git a/crates/ui-egui/locales/zh-hans.json b/crates/ui-egui/locales/zh-hans.json
+index 4a2ebaa..9dad590 100644
+--- a/crates/ui-egui/locales/zh-hans.json
++++ b/crates/ui-egui/locales/zh-hans.json
+@@ -566,6 +566,7 @@
+   "Library saved": "图库已保存",
+   "Licence:": "许可证：",
+   "LightCraft could not start": "LightCraft 无法启动",
++  "LightCraft in the browser is experimental. Your library is kept in this browser's storage: keep your original photos elsewhere and back up with File ▸ Back Up Library….": "照片 Web 版（实验）· 图库存于此浏览器 · 保留原片 · 文件 ▸ 备份图库…",
+   "Lightroom Classic Catalog": "Lightroom Classic 目录",
+   "Lightroom import cancelled": "已取消 Lightroom 导入",
+   "Lightroom inspection cancelled": "已取消 Lightroom 检查",

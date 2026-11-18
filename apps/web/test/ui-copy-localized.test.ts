@@ -17,20 +17,17 @@ const ROOT = join(import.meta.dirname, "..", "src", "components");
 
 const FILES = [
   "canvas-editor.tsx",
-  "canvas-ai-toolbar.tsx",
+
   "canvas-bottom-bar.tsx",
   "canvas-files-panel.tsx",
-  "canvas-image-gen-panel.tsx",
+
   "canvas-layers-panel.tsx",
-  "canvas-empty-hint.tsx",
   "canvas-tool-menu.tsx",
-  "chat-input.tsx",
-  "chat-sidebar.tsx",
-  "session-selector.tsx",
   join("canvas", "image-generator-panel.tsx"),
   join("canvas", "video-generator-panel.tsx"),
   join("brand-kit", "brand-kit-editor.tsx"),
   join("brand-kit", "brand-kit-sidebar.tsx"),
+  join("brand-kit", "asset-card.tsx"),
   join("brand-kit", "color-section.tsx"),
   join("brand-kit", "font-section.tsx"),
   join("brand-kit", "image-section.tsx"),
@@ -74,6 +71,28 @@ const FORBIDDEN = [
   'label="Upload"',
   "No brand kits yet",
   "Create Brand Kit",
+  "New Kit",
+  "Extract from URL",
+  ">Default<",
+  "aria-label={`Delete ",
+  "Fit All",
+  // 转录里的工具行 / 思考行（2026-09-27 真机截图时发现仍是英文）
+  "<span>Thinking...</span>",
+  "<span>Thought for a moment</span>",
+  '"AI is thinking"',
+  '"Toggle thinking content"',
+  'aria-label="Image viewer"',
+  'title="Image failed to load"',
+  '?? "Generated image"',
+  // 额度不足弹窗整块英文（2026-09-27 扫描发现）
+  "Not Enough Credits",
+  "This generation requires",
+  ">Required<",
+  ">Available<",
+  ">Needed<",
+  "Claim Daily Credits",
+  "Upgrade Plan",
+  ">Cancel<",
 ];
 
 describe("画布与对话区文案已汉化", () => {

@@ -1,7 +1,13 @@
 "use client";
 
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import {
   Copy,
+  Download,
   ImagePlus,
   Maximize2,
   Menu,
@@ -21,20 +27,24 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useCreateProject } from "@/hooks/use-create-project";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
-import { deleteProject } from "@/lib/server-api";
+import { exportCanvasAssets, restoreCanvasAssets } from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
-  accessToken: string;
-  projectId: string;
+  accessToken: string | null;
   canvasId: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any | null;
+  onCanvasSync: () => Promise<void>;
+  prepareCanvas: () => Promise<string | null>;
+  /** 建/删画布由宿主工作台执行（见 `canvas-editor-bridge`）。 */
+  onNewCanvas: () => void;
+  onDeleteCanvas: () => void;
+  /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
+  projectName?: string | undefined;
+  excalidrawApi: ExcalidrawImperativeAPI | null;
 }
 
 function dispatchKeyToExcalidraw(
@@ -64,11 +74,15 @@ function generateFileId(): string {
 
 export function CanvasLogoMenu({
   accessToken,
-  projectId,
+  canvasId,
+  onCanvasSync,
+  prepareCanvas,
+  onNewCanvas,
+  onDeleteCanvas,
+  projectName,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
   const { error: toastError } = useToast();
-  const { create: createNewProject } = useCreateProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -80,49 +94,96 @@ export function CanvasLogoMenu({
       appState.selectedElementIds ?? {};
     const allElements = excalidrawApi.getSceneElements();
     const selected = allElements.filter(
-      (el: any) => selectedIds[el.id] && !el.isDeleted,
+      (el) => selectedIds[el.id] && !el.isDeleted,
     );
 
     if (!selected.length) return;
 
     const OFFSET = 10;
-    const newSelectedIds: Record<string, boolean> = {};
-    const clones = selected.map((el: any) => {
+    const newSelectedIds: Record<string, true> = {};
+    const clones = selected.map((el) => {
       const newId = generateFileId();
       newSelectedIds[newId] = true;
       return { ...el, id: newId, x: el.x + OFFSET, y: el.y + OFFSET };
     });
 
     excalidrawApi.updateScene({
-      elements: [...allElements, ...clones],
+      // 克隆体由原场景元素展开而来，仍是同一批元素类型，故按元素类型收窄。
+      elements: [...allElements, ...clones] as ExcalidrawElement[],
       appState: { selectedElementIds: newSelectedIds },
       captureUpdate: "IMMEDIATELY",
     });
   }, [excalidrawApi]);
 
-  const handleDeleteProject = useCallback(async () => {
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
-      return;
-    }
+  /**
+   * 导出画布：用 Excalidraw 官方的 `serializeAsJSON` 产出 **.excalidraw 原生文件**
+   * （就是本项目画布组件的存储格式：type/version/source/elements/appState/files），
+   * 下载到本地后可以直接拖回 Excalidraw / 本画布继续编辑。
+   *
+   * 注意与「保存画布」的区别：保存是写服务端数据库（Ctrl+S），导出是落一个可带走、
+   * 可再导入的文件——用户要的「保存成 ex 啥的文件」说的是后者。
+   */
+  const handleExportCanvas = useCallback(async () => {
+    if (!excalidrawApi) return;
     try {
-      await deleteProject(accessToken, projectId);
-      if (window.parent !== window) {
-        // 嵌入工作台 iframe：回传宿主清选中并刷新项目列表
-        window.parent.postMessage(
-          { type: "workbench:project-deleted", projectId },
-          window.location.origin,
-        );
-      } else {
-        window.location.replace("/workbench");
-      }
+      const { serializeAsJSON } = await import("@excalidraw/excalidraw");
+      const json = serializeAsJSON(
+        excalidrawApi.getSceneElements(),
+        excalidrawApi.getAppState(),
+        excalidrawApi.getFiles(),
+        "local",
+      );
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectName || "canvas"}.excalidraw`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      console.warn("Failed to delete project:", err);
-      toastError("项目删除失败");
-    } finally {
-      setConfirmingDelete(false);
+      console.warn("Export canvas failed:", err);
+      toastError("导出画布失败");
     }
-  }, [accessToken, projectId, confirmingDelete, toastError]);
+  }, [excalidrawApi, projectName, toastError]);
+
+  const handleExportAssets = useCallback(async () => {
+    try {
+      const currentRevision = await prepareCanvas();
+      if (!currentRevision) {
+        toastError("画布保存失败，未导出素材");
+        return;
+      }
+      const blob = await exportCanvasAssets(
+        accessToken,
+        canvasId,
+        currentRevision,
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${projectName || "canvas"}-assets.tar`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("Export canvas assets failed:", err);
+      toastError("导出素材失败");
+    }
+  }, [accessToken, canvasId, prepareCanvas, projectName, toastError]);
+
+  const handleRestoreAssets = useCallback(async () => {
+    try {
+      const currentRevision = await prepareCanvas();
+      if (!currentRevision) {
+        toastError("画布保存失败，未恢复素材");
+        return;
+      }
+      await restoreCanvasAssets(accessToken, canvasId, currentRevision);
+      await onCanvasSync();
+    } catch (err) {
+      console.warn("Restore canvas assets failed:", err);
+      toastError(err instanceof Error ? err.message : "恢复素材失败");
+    }
+  }, [accessToken, canvasId, onCanvasSync, prepareCanvas, toastError]);
 
   const handleFileImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,9 +199,12 @@ export function CanvasLogoMenu({
 
           excalidrawApi.addFiles([
             {
-              id: fileId,
-              dataURL,
-              mimeType: file.type || "image/png",
+              // id/dataURL/mimeType 在 Excalidraw 类型里是品牌字符串，这里的数据源是
+              // 本地文件与 FileReader 产物，故在边界处断言。
+              id: fileId as BinaryFileData["id"],
+              dataURL: dataURL as BinaryFileData["dataURL"],
+              mimeType: (file.type ||
+                "image/png") as BinaryFileData["mimeType"],
               created: Date.now(),
             },
           ]);
@@ -160,7 +224,11 @@ export function CanvasLogoMenu({
           });
 
           excalidrawApi.updateScene({
-            elements: [...excalidrawApi.getSceneElements(), element],
+            // lib 生成器产出的是不透明记录（服务端契约口径），入场景时按官方元素类型收窄
+            elements: [
+              ...excalidrawApi.getSceneElements(),
+              element as unknown as ExcalidrawElement,
+            ],
             captureUpdate: "IMMEDIATELY",
           });
         };
@@ -191,11 +259,11 @@ export function CanvasLogoMenu({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
-          {/* Group 1 — Project actions */}
+          {/* Group 1 — Canvas actions */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => createNewProject()}>
+            <DropdownMenuItem onClick={onNewCanvas}>
               <Plus className="size-4" />
-              新建项目
+              新建画布
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -206,21 +274,34 @@ export function CanvasLogoMenu({
                   return;
                 }
                 setMenuOpen(false);
-                void handleDeleteProject();
+                onDeleteCanvas();
               }}
             >
               <Trash2 className="size-4" />
-              {confirmingDelete ? "确认删除?" : "删除当前项目"}
+              {confirmingDelete ? "确认删除?" : "删除画布"}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
 
-          {/* Group 2 — Canvas import */}
+          {/* Group 2 — Canvas import / export */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
               <ImagePlus className="size-4" />
               导入图片
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleExportCanvas()}>
+              <Download className="size-4" />
+              导出画布
+              <DropdownMenuShortcut>.excalidraw</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleExportAssets()}>
+              <Download className="size-4" />
+              导出素材包
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleRestoreAssets()}>
+              <ImagePlus className="size-4" />
+              恢复素材索引
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

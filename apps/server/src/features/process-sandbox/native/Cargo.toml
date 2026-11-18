@@ -1,0 +1,26 @@
+[package]
+name = "kenfutwork-process-broker"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+# 独立进程 adapter，不加入桌面壳/AgentCore 的装配与生命周期。
+[workspace]
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+appcontainer_common = { git = "https://github.com/microsoft/mxc", rev = "6cd3d58f05d3447e67109cfb75e042803b843ca4" }
+learning_mode_windows = { git = "https://github.com/microsoft/mxc", rev = "6cd3d58f05d3447e67109cfb75e042803b843ca4" }
+wxc_common = { git = "https://github.com/microsoft/mxc", rev = "6cd3d58f05d3447e67109cfb75e042803b843ca4" }
+# 同 Codex 的固定依赖，避免 Windows GNU 链接 OneCore_apiset 的版本。
+tracelogging = "=1.2.3"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_Security", "Win32_System_Console", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_UI_Shell"] }
+
+[profile.release]
+lto = "thin"
+strip = true

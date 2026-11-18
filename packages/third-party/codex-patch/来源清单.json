@@ -1,0 +1,31 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "commit": "e53e932dc855927afb1cafab5f1ae6edf2695e81",
+  "license": "Apache-2.0",
+  "sources": [
+    {
+      "path": "codex-rs/apply-patch/src/parser.rs",
+      "sha256": "6b8086467d0500f4fc9aa9a35cd33a0bce53c01bcb74b915b9efc6fcf187f7ce"
+    },
+    {
+      "path": "codex-rs/apply-patch/src/streaming_parser.rs",
+      "sha256": "5f4b8e60fd24ada7c1b6a696155de3da2b946f7b5436da90e377c9de04b1e578"
+    },
+    {
+      "path": "codex-rs/apply-patch/src/seek_sequence.rs",
+      "sha256": "5eced89191977d6b53b1b770ccaad6cafa2fb3ecbcd4839a88318f75e4a620e4"
+    },
+    {
+      "path": "codex-rs/apply-patch/src/file_update.rs",
+      "sha256": "f954105ba036f1c3748fc2ed605ce9a677d619e56ce25f89bffdcad3377734f9"
+    },
+    {
+      "path": "codex-rs/apply-patch/src/text_file.rs",
+      "sha256": "35cbbdeb91e86780d99fccd097a5dba2772f048730556b73d685e94658ddc6e3"
+    }
+  ],
+  "target": "apply-patch.ts",
+  "currentSha256": "44bdc58f5e4a559a9be227be8fc0bc40f308791b3dea5b1cceeaa3a8a9de0440",
+  "modifications": "Rust parser/seek/source-line transformation adapted to independent TypeScript. Host handles scope/version/atomic publication. Environment ID rejected; whole patch parsed before mutation; failures report partial commits.",
+  "consumer": "apps/server/src/features/code-tools/file-mutations.ts"
+}

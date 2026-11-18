@@ -38,7 +38,9 @@ describe("deriveSessionTitle", () => {
   it("带目录提示的 prompt 派生出正文标题（历史泄漏场景）", () => {
     const prompt =
       "【目录名称：test（仅用户标注的命名提示；本机路径对服务端不可达，读写发生在沙箱工作区，路径以工具返回为准）】\n\n在当前工作目录创建 Python 项目 kfw-demo";
-    expect(deriveSessionTitle(prompt)).toBe("在当前工作目录创建 Python 项目 kfw-");
+    expect(deriveSessionTitle(prompt)).toBe(
+      "在当前工作目录创建 Python 项目 kfw-",
+    );
   });
 
   it("普通 prompt 取前 24 字", () => {
@@ -47,7 +49,9 @@ describe("deriveSessionTitle", () => {
   });
 
   it("剥完为空时回落缺省标题", () => {
-    expect(deriveSessionTitle("【思考强度：high】")).toBe(DEFAULT_SESSION_TITLE);
+    expect(deriveSessionTitle("【思考强度：high】")).toBe(
+      DEFAULT_SESSION_TITLE,
+    );
     expect(deriveSessionTitle("   ")).toBe(DEFAULT_SESSION_TITLE);
   });
 });

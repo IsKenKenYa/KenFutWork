@@ -1,0 +1,459 @@
+import { useEffect, useRef, useState } from "react";
+import type { McpSource, ZCodeMcpServer } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { Input } from "@zui/components/ui/input.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { PluginScopeMenu } from "@zui/settings/PluginScopeMenu.js";
+import type { WorkspaceTabState } from "@zui/store/tabStore.js";
+import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
+import { SettingsFormActions } from "@zui/settings/SettingsFormActions.js";
+import { ChevronDown, ChevronUpIcon as ChevronUp, Trash2 } from "lucide-react";
+import {
+  EMPTY_FORM,
+  formToJsonDraft,
+  jsonDraftToForm,
+  serverToForm,
+  type FormState,
+  type McpEditorMode,
+} from "./mcpSettingsShared.js";
+
+function McpFormFieldLabel({ children }: { children: import("react").ReactNode }) {
+  return (
+    <label className="mb-1 block text-ui-base font-medium text-foreground-subtle">{children}</label>
+  );
+}
+
+function McpScopeMenu({
+  disabled,
+  scopeKey,
+  workspaceTabs,
+  onChange,
+}: {
+  disabled: boolean;
+  scopeKey: string;
+  workspaceTabs: WorkspaceTabState[];
+  onChange: (scopeKey: string) => void;
+}) {
+  const { intl } = useZCodeIntl();
+  const scopeLabel = intl.formatMessage({ id: "settings.scope.label" });
+
+  return (
+    <label className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      <span className="shrink-0 text-ui-base text-foreground-subtle">{scopeLabel}</span>
+      <PluginScopeMenu
+        align="end"
+        disabled={disabled}
+        selectedScopeKey={scopeKey}
+        workspaceTabs={workspaceTabs}
+        onScopeKeyChange={onChange}
+      />
+    </label>
+  );
+}
+
+export function McpServerForm({
+  initial,
+  editingId,
+  editorMode,
+  onEditorModeChange,
+  onSave,
+  onCancel,
+  onDelete,
+  scopeKey,
+  workspaceTabs,
+  onScopeKeyChange,
+}: {
+  initial?: ZCodeMcpServer;
+  editingId?: string;
+  editorMode: McpEditorMode;
+  source?: McpSource;
+  scopeKey: string;
+  workspaceTabs: WorkspaceTabState[];
+  onScopeKeyChange: (scopeKey: string) => void;
+  onEditorModeChange: (mode: McpEditorMode) => void;
+  onSave: (form: FormState, prevServer?: ZCodeMcpServer) => void | Promise<void>;
+  onCancel: () => void;
+  onDelete?: (server: ZCodeMcpServer) => void | Promise<void>;
+}) {
+  const { intl } = useZCodeIntl();
+  const capabilities = usePlatform().mcpSettingsCapabilities;
+  const initialForm: FormState = initial
+    ? serverToForm(initial)
+    : {
+        ...EMPTY_FORM,
+        // 宿主没有项目级 MCP 时必须默认 user 档：默认 workspace 会让
+        // configurationUnavailable 恒真，而作用域选择器此时又被禁用，
+        // 新建表单会陷入「保存永远禁用」的死锁。
+        storageLevel:
+          scopeKey === "user" || capabilities?.projectScope === false
+            ? "user"
+            : "workspace",
+      };
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [jsonDraft, setJsonDraft] = useState<string>(() => formToJsonDraft(initialForm));
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
+  const [showEnv, setShowEnv] = useState(false);
+  const formRef = useRef(form);
+  const jsonDraftRef = useRef(jsonDraft);
+  const previousEditorModeRef = useRef(editorMode);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+
+  useEffect(() => {
+    jsonDraftRef.current = jsonDraft;
+  }, [jsonDraft]);
+
+  useEffect(() => {
+    const previousMode = previousEditorModeRef.current;
+    if (previousMode === editorMode) {
+      return;
+    }
+
+    try {
+      if (editorMode === "json") {
+        setJsonDraft(formToJsonDraft(formRef.current));
+      } else {
+        setForm(jsonDraftToForm(jsonDraftRef.current, formRef.current));
+      }
+      setJsonError(null);
+      previousEditorModeRef.current = editorMode;
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }));
+      setJsonError(
+        error instanceof Error
+          ? error.message
+          : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }),
+      );
+      onEditorModeChange(previousMode);
+    }
+  }, [editorMode, intl, onEditorModeChange]);
+
+  function update(patch: Partial<FormState>) {
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      if (editorMode === "json") {
+        setJsonDraft(formToJsonDraft(next));
+      }
+      return next;
+    });
+  }
+
+  function configurationUnavailable(next: FormState) {
+    return Boolean(
+      (capabilities?.projectScope === false && next.storageLevel === "workspace") ||
+      (capabilities?.oauth === false && next.oauth?.trim()) ||
+      (capabilities?.httpHeaders === false && next.headers.trim()) ||
+      (capabilities?.serverParameters === false && (next.timeoutMs.trim() || (next.protocolVersion && next.protocolVersion !== "auto"))) ||
+      (capabilities?.sse === false && next.type === "sse")
+    );
+  }
+  const currentForm = (() => {
+    try { return editorMode === "json" ? jsonDraftToForm(jsonDraft, form) : form; }
+    catch { return form; }
+  })();
+  const unavailable = configurationUnavailable(currentForm);
+
+  async function handleSaveClick() {
+    if (submitting.current || unavailable) return;
+    submitting.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (editorMode === "json") {
+        const parsedForm = jsonDraftToForm(jsonDraft, form);
+        setForm(parsedForm);
+        setJsonError(null);
+        await onSave(parsedForm, initial);
+      } else await onSave(form, initial);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }));
+    } finally {
+      submitting.current = false;
+      setSaving(false);
+    }
+  }
+
+  const canSave = (() => {
+    if (editorMode !== "json") {
+      return Boolean(
+        form.name.trim() && (form.type === "stdio" ? form.command.trim() : form.url.trim()),
+      );
+    }
+    if (!jsonDraft.trim()) return false;
+    try {
+      const parsedForm = jsonDraftToForm(jsonDraft, form);
+      return Boolean(
+        parsedForm.name.trim() &&
+        (parsedForm.type === "stdio" ? parsedForm.command.trim() : parsedForm.url.trim()),
+      );
+    } catch {
+      return false;
+    }
+  })();
+
+  const envToggleLabel =
+    form.type === "stdio"
+      ? intl.formatMessage({ id: "settings.mcp.form.envOptional" })
+      : intl.formatMessage({ id: "settings.mcp.form.headersOptional" });
+  const envValue = form.type === "stdio" ? form.env : form.headers;
+  const envPlaceholder =
+    form.type === "stdio"
+      ? '{\n  "MY_API_KEY": "your-key"\n}'
+      : '{\n  "Authorization": "Bearer your-token"\n}';
+  const updateEnvValue = (value: string) =>
+    update(form.type === "stdio" ? { env: value } : { headers: value });
+  // Radix Select 不接受空串 value；用 "auto" 作为哨兵值：表单里空串 = 未设置 = auto
+  // （配置文件不落多余字段），用户显式选 auto 时同样写回空串。
+  const updateProtocolVersion = (value: string) =>
+    update({ protocolVersion: value === "auto" ? "" : value });
+  const scopeSelect = (
+    <McpScopeMenu
+      disabled={!!initial || capabilities?.projectScope === false}
+      scopeKey={scopeKey}
+      workspaceTabs={workspaceTabs}
+      onChange={(nextScopeKey) => {
+        update({
+          storageLevel: nextScopeKey === "user" ? "user" : "workspace",
+        });
+        onScopeKeyChange(nextScopeKey);
+      }}
+    />
+  );
+
+  return (
+    <div className="space-y-4 rounded-xl border border-border p-4">
+      {editorMode === "json" ? (
+        <div className="space-y-3">
+          <div className="flex justify-end">{scopeSelect}</div>
+          <div className="space-y-1.5">
+            <McpFormFieldLabel>
+              {intl.formatMessage({ id: "settings.mcp.form.fullConfig" })}
+            </McpFormFieldLabel>
+            <SettingsFormTextarea
+              rows={16}
+              className="font-mono text-ui-base"
+              placeholder={
+                '{\n  "my-mcp-server": {\n    "type": "http",\n    "url": "https://example.com/mcp"\n  }\n}'
+              }
+              value={jsonDraft}
+              onChange={(e) => {
+                setJsonDraft(e.target.value);
+                if (jsonError) {
+                  setJsonError(null);
+                }
+              }}
+            />
+            <p className="text-ui-base text-foreground-subtle">
+              {intl.formatMessage({ id: "settings.mcp.form.pasteHintPrefix" })}{" "}
+              <code>{`{"server-name": {...}}`}</code>{" "}
+              {intl.formatMessage({ id: "settings.mcp.form.pasteHintMiddle" })}{" "}
+              <code>{`{"mcpServers": {"server-name": {...}}}`}</code>
+              {intl.formatMessage({ id: "settings.mcp.form.pasteHintSuffix" })}
+            </p>
+            {jsonError && <p className="text-ui-base text-destructive">{jsonError}</p>}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="w-full min-w-0 space-y-1.5 md:w-48">
+              <McpFormFieldLabel>
+                {intl.formatMessage({ id: "settings.mcp.form.name" })}
+              </McpFormFieldLabel>
+              <Input
+                size="lg"
+                placeholder="my-mcp-server"
+                value={form.name}
+                disabled={!!editingId}
+                onChange={(e) => update({ name: e.target.value })}
+              />
+            </div>
+            <div>{scopeSelect}</div>
+          </div>
+
+          <div className="space-y-1.5">
+            <McpFormFieldLabel>
+              {intl.formatMessage({ id: "settings.mcp.form.type" })}
+            </McpFormFieldLabel>
+            <Select
+              value={form.type}
+              onValueChange={(v) => update({ type: v as FormState["type"] })}
+            >
+              <SelectTrigger size="lg" className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="stdio">
+                  {intl.formatMessage({ id: "settings.mcp.form.type.stdio" })}
+                </SelectItem>
+                <SelectItem value="http">HTTP</SelectItem>
+                {/*
+                  Streamable HTTP 传输类型未启用。
+                  <SelectItem value="streamableHttp">Streamable HTTP</SelectItem>
+                */}
+                <SelectItem value="sse" disabled={capabilities?.sse === false}>
+                  {intl.formatMessage({ id: "settings.mcp.form.type.sse" })}
+                  {capabilities?.sse === false ? " · 未接入" : null}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-full space-y-1.5 md:w-48">
+            <McpFormFieldLabel>
+              {intl.formatMessage({ id: "settings.mcp.form.timeoutMs" })}
+              {capabilities?.serverParameters === false ? " · 未接入" : null}
+            </McpFormFieldLabel>
+            <Input
+              size="lg"
+              type="number"
+              min={1}
+              inputMode="numeric"
+              placeholder="30000"
+              disabled={capabilities?.serverParameters === false}
+              value={form.timeoutMs}
+              onChange={(e) => update({ timeoutMs: e.target.value })}
+            />
+          </div>
+
+          {/*
+            sse 形态不渲染该字段：deprecated SSE transport 固定走 legacy 协商，
+            该配置对其无效。
+          */}
+          {form.type !== "sse" && (
+            <div className="w-full space-y-1.5 md:w-48">
+              <McpFormFieldLabel>
+                {intl.formatMessage({ id: "settings.mcp.form.protocolVersion" })}
+              </McpFormFieldLabel>
+              <Select disabled={capabilities?.serverParameters === false} value={form.protocolVersion || "auto"} onValueChange={updateProtocolVersion}>
+                <SelectTrigger size="lg" className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.auto" })}
+                  </SelectItem>
+                  <SelectItem value="legacy">
+                    {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.legacy" })}
+                  </SelectItem>
+                  {/* 显示名用「v2」，但 value 必须保持协议正式版本号 " "（config/wire 值，不可随文案变）*/}
+                  <SelectItem value="2026-07-28">
+                    {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.modern" })}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {form.type === "stdio" ? (
+            <>
+              <div className="space-y-1.5">
+                <McpFormFieldLabel>
+                  {intl.formatMessage({ id: "settings.mcp.form.command" })}
+                </McpFormFieldLabel>
+                <Input
+                  size="lg"
+                  placeholder="npx"
+                  value={form.command}
+                  onChange={(e) => update({ command: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <McpFormFieldLabel>
+                  {intl.formatMessage({ id: "settings.mcp.form.args" })}
+                </McpFormFieldLabel>
+                <Input
+                  size="lg"
+                  placeholder="-y @modelcontextprotocol/server-memory"
+                  value={form.args}
+                  onChange={(e) => update({ args: e.target.value })}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <McpFormFieldLabel>URL</McpFormFieldLabel>
+              <Input
+                size="lg"
+                placeholder="https://mcp.example.com/mcp"
+                value={form.url}
+                onChange={(e) => update({ url: e.target.value })}
+              />
+            </div>
+          )}
+
+          <div>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-ui-base text-foreground-subtle hover:text-foreground"
+              disabled={form.type !== "stdio" && capabilities?.httpHeaders === false}
+              onClick={() => setShowEnv((v) => !v)}
+            >
+              {showEnv ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              {envToggleLabel}
+              {form.type !== "stdio" && capabilities?.httpHeaders === false ? " · 未接入" : null}
+            </button>
+            {showEnv && (
+              <div className="mt-2 space-y-1.5">
+                <SettingsFormTextarea
+                  rows={4}
+                  className="font-mono text-ui-base"
+                  placeholder={envPlaceholder}
+                  value={envValue}
+                  onChange={(e) => updateEnvValue(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {unavailable ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
+      {saveError ? <p role="alert" className="text-ui-base text-destructive">{saveError}</p> : null}
+      <SettingsFormActions
+        leadingAction={
+          initial && onDelete ? (
+            <Button
+              type="button"
+              variant="link"
+              size="lg"
+              className="px-0 text-destructive hover:text-destructive"
+              disabled={saving}
+              onClick={async () => {
+                if (submitting.current) return;
+                submitting.current = true;
+                setSaving(true);
+                try { await onDelete(initial); }
+                catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+                finally { submitting.current = false; setSaving(false); }
+              }}
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              {intl.formatMessage({ id: "common.delete" })}
+            </Button>
+          ) : undefined
+        }
+      >
+        <Button size="lg" disabled={!canSave || saving || unavailable} onClick={handleSaveClick}>
+          {intl.formatMessage({ id: "common.save" })}
+        </Button>
+        <Button variant="ghost" size="lg" onClick={onCancel}>
+          {intl.formatMessage({ id: "common.cancel" })}
+        </Button>
+      </SettingsFormActions>
+    </div>
+  );
+}

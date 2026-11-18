@@ -1,11 +1,18 @@
+import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
 
 /**
  * BYOK 供应商缝契约（《改造计划》§4.8 / §5）。
- * 红线：apiKey 只写不读——所有响应 schema 一律不含 apiKey 字段（由本文件测试锁死）。
+ * 本地 Key 明文保存在实例数据目录；授权设置可按需读取，普通目录/事件不携带 Key。
  */
 
-/** 线协议封闭集合：聊天 3 种 + 图视频 4 种；新增协议先扩这里再写适配器。 */
+/**
+ * 线协议封闭集合：聊天、媒体与Flow引擎；新增驱动先声明协议，再注册消费方。
+ *
+ * `dify-engine`（《flow 集成方案》P3 凭证缝）：Dify 引擎实例——**本仓不消费它的模型**，
+ * 唯一读出方是 flow 宿主凭证回调（`POST /api/flow/host/credentials`，服务端到服务端，
+ * 共享密钥门），把 `base_url + apiKey` 下发给 flow 网关；因此它不进任何本地适配器注册表。
+ */
 export const providerProtocolSchema = z.enum([
   "openai-compatible",
   "anthropic",
@@ -14,14 +21,125 @@ export const providerProtocolSchema = z.enum([
   "replicate",
   "volces",
   "metaso",
+  "grsai",
+  "apimart",
+  "dify-engine",
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
-export const modelCapabilitySchema = z.enum(["chat", "image", "video"]);
+/**
+ * 模型能力词汇表。`audio` 是语音助手插件的「听 / 说」段（ASR / TTS）：一个音频模型
+ * 只能被语音链路消费，与 chat/image/video 不通用，故独立成一档。
+ * 与 `providerProtocolSchema` 同规矩：封闭集合，新增先扩这里。
+ */
+export const modelCapabilitySchema = z.enum([
+  "chat",
+  "image",
+  "image-edit",
+  "video",
+  "audio",
+]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
+
+/**
+ * 模型级任务能力声明（实例主人对单个模型的可选细化，docs/future/05 §6）。
+ * 语义红线：**字段缺省 = 未知，不是不支持**——目录与 UI 不得把「没声明」当「肯定不行」
+ * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
+ */
+export const imageGenerationCapsSchema = z.object({
+  /** 允许的画幅比；缺省为未知，空数组为不支持。 */
+  aspectRatios: z.array(z.string().min(1)).optional(),
+  /** 原生质量值；不推导像素，空数组为不支持。 */
+  qualities: z.array(z.string().min(1)).optional(),
+  /** 像素尺寸（如 1024x1536）；空数组为不支持。 */
+  sizes: z.array(z.string().regex(/^[1-9]\d*x[1-9]\d*$/)).optional(),
+  /** 原生可选产物格式；空数组为不支持。 */
+  outputFormats: z.array(z.enum(["png", "jpg", "webp"])).optional(),
+  /** 已确认的原生单次多图上限；缺省按单图请求。 */
+  maxOutputs: z.number().int().positive().optional(),
+  /** 支持的生成模式（cherry 词表收窄版；缺省视为仅 generate）。 */
+  modes: z
+    .array(z.enum(["generate", "edit", "upscale", "remix", "merge"]))
+    .min(1)
+    .optional(),
+  /** false = 该模型不需要提示词（超分/去背景/图像翻译类），管线不得强制非空 prompt。 */
+  requirePrompt: z.boolean().optional(),
+  /** 单次调用允许的输入参考图上限。 */
+  maxInputImages: z.number().int().nonnegative().optional(),
+});
+export type ImageGenerationCaps = z.infer<typeof imageGenerationCapsSchema>;
+
+/** 仅明确声明无需提示词的参考图任务允许空提示词；未知能力仍要求文字输入。 */
+export function hasImageGenerationInput(
+  prompt: string,
+  inputImages: readonly string[] | undefined,
+  caps: ImageGenerationCaps | undefined,
+): boolean {
+  return (
+    prompt.trim().length > 0 ||
+    (caps?.requirePrompt === false &&
+      inputImages?.some((source) => source.trim().length > 0) === true)
+  );
+}
+
+/** 视频任务能力（fal per-model input schema 收窄版）。缺省字段同样 = 未知。 */
+export const videoGenerationCapsSchema = z.object({
+  /** 允许的时长取值（秒）。 */
+  durations: z.array(z.number().positive()).min(1).optional(),
+  /** 允许的画幅比取值（如 "16:9"）。 */
+  aspectRatios: z.array(z.string().min(1)).min(1).optional(),
+  /** 允许的分辨率取值（如 "720p"）。 */
+  resolutions: z.array(z.string().min(1)).min(1).optional(),
+  /** 是否支持首尾帧控制。 */
+  firstLastFrame: z.boolean().optional(),
+  /** 参考图数量上限。 */
+  referenceImages: z.number().int().nonnegative().optional(),
+  /** 是否支持负向提示词。 */
+  negativePrompt: z.boolean().optional(),
+  /** 是否支持生成/保留音频。 */
+  audio: z.boolean().optional(),
+});
+export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
+
+/** 原 Code 设置的安全元数据；连接与凭证仍由供应商实例持有。 */
+export const codeUiProviderMetadataSchema = z
+  .object({
+    templateId: z.string().min(1).optional(),
+    group: z
+      .enum(["standard-personal", "zai-family", "bigmodel-family"])
+      .optional(),
+    logo: z
+      .object({ type: z.literal("builtin"), key: z.string().min(1) })
+      .strict()
+      .optional(),
+    modelOrder: z.array(z.string().min(1)).optional(),
+    apiKeyManagementUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe("原供应商设置中的 API Key 管理链接，不包含凭据。"),
+    models: z
+      .record(
+        z.string().min(1),
+        z
+          .object({
+            config: modelConfigDataSchema,
+            useRecommendedConfig: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+export type CodeUiProviderMetadata = z.infer<
+  typeof codeUiProviderMetadataSchema
+>;
 
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
+  /** 显式线协议优先于探测结果；缺省才使用自动纠偏。 */
+  chatApi: z.enum(["completions", "responses"]).optional(),
+  codeUi: codeUiProviderMetadataSchema.optional(),
   supportsToolCalling: z.boolean().optional(),
   supportsJsonResponseFormat: z.boolean().optional(),
   supportsJsonSchemaResponseFormat: z.boolean().optional(),
@@ -40,7 +158,7 @@ export type ProviderHeaderPlaceholder =
 
 /**
  * 保留头（大小写不敏感）：由适配器/运行时按凭证与线协议持有，自定义头**不得覆盖**。
- * 不加这条，就能用自定义头顶掉凭证头，等于绕开「apiKey 只写不读」的整个模型。
+ * 凭证头由适配器统一生成，自定义头不能顶掉当前 Key 的授权。
  */
 export const reservedProviderHeaderNames = [
   // 凭证类：由 apiKey 解析生成，或线协议的 key 头
@@ -136,19 +254,55 @@ export const providerInstanceModelSchema = z.object({
   vision: z.boolean().optional(),
   /** 上下文窗口 token 数（前端按量级显示徽标，如 1M）。 */
   contextWindow: z.number().int().positive().optional(),
+  /**
+   * 单次回复的最大输出 token 数（模型声明的上限）。
+   *
+   * 用途：上下文条里「预留输出」段的**唯一真实来源**——为输出留出的窗口空间。
+   * 我们不编这个数（没声明就不画那一段），因为它决定「还剩多少可用」的读数。
+   * 此前该字段会被 schema 静默丢弃（用户写了也传不到前端）。
+   */
+  maxOutputTokens: z.number().int().positive().optional(),
+  /**
+   * 思考档位声明（deepseek-harness 的 reasoningEfforts 收窄版：键=档位名）。
+   * 声明后「思考强度」选择器只显示这些档位（+恒在的「默认」）；缺席 = 全档位。
+   */
+  reasoningEfforts: z.array(z.string().min(1)).optional(),
+  /**
+   * 模型级开关（供应商详情里的行开关）：false = 从目录与选择器隐藏。
+   * 缺省 = 启用（存量模型行无此字段照常可用）。
+   */
+  enabled: z.boolean().optional(),
+  /** 输入模态（参考系：text / image / video / pdf）；缺省 = 未知不展示。 */
+  inputModalities: z.array(z.string().min(1)).optional(),
+  /** 支持 JSON Schema 结构化输出。 */
+  structuredOutput: z.boolean().optional(),
+  /** 支持模型端口的原生联网搜索。 */
+  nativeWebSearch: z.boolean().optional(),
+  /** 支持对话中注入系统消息。 */
+  systemMessage: z.boolean().optional(),
+  /**
+   * 推理参数映射（模型级请求体注入，deepseek-harness 的「档位→线上参数」通用解）：
+   * 键值原样并入请求体顶层（如 {"thinking":{"type":"enabled"}}）。
+   * BYOK 红线不适用——这是模型行为参数，不是凭证。
+   */
+  extraBody: z.record(z.string(), z.unknown()).optional(),
+  /** 图像生成任务级能力（可选；缺省 = 未知，见上方语义红线）。 */
+  imageGeneration: imageGenerationCapsSchema.optional(),
+  /** 视频生成任务级能力（可选；缺省 = 未知）。 */
+  videoGeneration: videoGenerationCapsSchema.optional(),
 });
 export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
 const identifier = z.string().min(1);
 
-/** 用户供应商实例（BYOK 核心）：Key 以 apiKeyRef 间接引用，永不回传前端。 */
+/** 本地供应商配置：Key 以 apiKeyRef 引用凭据文件，普通目录不携带明文。 */
 export const providerInstanceConfigSchema = z.object({
   id: identifier,
-  workspaceId: identifier,
+  instanceId: identifier,
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
-  apiKeyRef: identifier,
+  apiKeyRef: identifier.nullable(),
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
   /** 自定义请求头（值含占位符，只写不读）。 */
@@ -165,9 +319,10 @@ export const providerInstanceCreateRequestSchema = z.object({
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
-  /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
-  apiKey: z.string().min(1),
-  models: z.array(providerInstanceModelSchema).min(1),
+  /** 创建时提交明文 Key；数据库仅存本地凭据文件的引用。 */
+  apiKey: z.string().min(1).optional(),
+  /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
+  models: z.array(providerInstanceModelSchema).default([]),
   compat: providerCompatSchema.optional(),
   /**
    * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
@@ -182,10 +337,13 @@ export type ProviderInstanceCreateRequest = z.infer<
 
 export const providerInstanceUpdateRequestSchema = z.object({
   name: z.string().min(1).optional(),
+  protocol: providerProtocolSchema.optional(),
   baseUrl: z.string().optional(),
-  /** 只写不读：更新即覆盖，永不回显旧值。 */
-  apiKey: z.string().min(1).optional(),
-  models: z.array(providerInstanceModelSchema).min(1).optional(),
+  /** undefined 保留旧值，null 真实清除，非空字符串更新凭据文件。 */
+  apiKey: z.string().min(1).nullable().optional(),
+  models: z.array(providerInstanceModelSchema).optional(),
+  /** 可选CAS；由响应configRevision取得，冲突返回409。 */
+  expectedRevision: z.number().int().positive().safe().optional(),
   compat: providerCompatSchema.optional(),
   /** 只写不读：更新即整体覆盖（`{}` = 清空）。 */
   headers: providerInstanceHeadersSchema.optional(),
@@ -195,14 +353,64 @@ export type ProviderInstanceUpdateRequest = z.infer<
   typeof providerInstanceUpdateRequestSchema
 >;
 
-/** 实例作用域：workspace = 用户自带（BYOK）；system = 平台池（管理员配置、分发给用户）。 */
-export const providerScopeSchema = z.enum(["workspace", "system"]);
+/** 供应商只属于当前本地实例，不存在平台池或账户作用域。 */
+export const providerScopeSchema = z.enum(["local"]);
 export type ProviderScope = z.infer<typeof providerScopeSchema>;
 
 /**
- * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
+ * 普通实例响应仅含 hasCredential 标记；授权设置明文读取走独立按需方法。
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
+/**
+ * models.dev 供应商预设（供应商设置的「从预设选择」，阶段：BYOK 预设选择器）。
+ * 非权威 UI 数据：capability 由模态推导，用户可在结构化编辑器里改。
+ */
+export const providerPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** 官方 API 网关（预填 Base URL；缺席 = 用户手填）。 */
+  api: z.string().optional(),
+  doc: z.string().optional(),
+  /** Key 环境变量名（展示用，BYOK 仍手填 Key）。 */
+  env: z.array(z.string()),
+  models: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      capability: z.enum(["chat", "image", "video"]),
+    }),
+  ),
+});
+export type ProviderPreset = z.infer<typeof providerPresetSchema>;
+
+export const providerPresetListResponseSchema = z.object({
+  presets: z.array(providerPresetSchema),
+});
+export type ProviderPresetListResponse = z.infer<
+  typeof providerPresetListResponseSchema
+>;
+
+/**
+ * 实例能力探测结果（阶段 E，docs/future/05 §6.2）。
+ * 三态语义：true = 探测到支持 / false = 探测到不支持 / 缺席 = 未探测该项。
+ * 消费方按 false 裁剪请求；true 与缺席都按全能力尝试（fail open）。
+ */
+export const providerProbeResultSchema = z.object({
+  /** 流式响应带 usage 统计（`stream_options.include_usage`）。P0：缺失则用量盲区。 */
+  streamUsage: z.boolean().optional(),
+  /** 工具 function.parameters 接受 strict JSON Schema（additionalProperties 等）。 */
+  strictToolSchema: z.boolean().optional(),
+  /** OpenAI Responses API（`POST /responses`）可用。 */
+  responsesApi: z.boolean().optional(),
+  /** Anthropic `cache_control` 提示词缓存可透传（anthropic 协议实例）。 */
+  cacheControl: z.boolean().optional(),
+  /** 探测时间（ISO 字符串）。 */
+  probedAt: z.string().min(1),
+  /** 未通过/未探测项的原因摘要（脱敏，不含 key）。 */
+  notes: z.array(z.string()).optional(),
+});
+export type ProviderProbeResult = z.infer<typeof providerProbeResultSchema>;
+
 export const providerInstanceResponseSchema = z.object({
   id: identifier,
   scope: providerScopeSchema,
@@ -210,10 +418,14 @@ export const providerInstanceResponseSchema = z.object({
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
   hasCredential: z.boolean(),
+  /** 服务端生成的只读修订号，更新时可作为 expectedRevision。 */
+  configRevision: z.number().int().positive().safe(),
   models: z.array(providerInstanceModelSchema),
   compat: providerCompatSchema.optional(),
   headerKeys: z.array(z.string()),
   enabled: z.boolean(),
+  /** 最近一次能力探测结果（显式触发探测后才有；字段缺省 = 未探测 = 不裁剪）。 */
+  probe: providerProbeResultSchema.optional(),
 });
 export type ProviderInstanceResponse = z.infer<
   typeof providerInstanceResponseSchema
@@ -228,17 +440,38 @@ export type ProviderInstanceListResponse = z.infer<
 
 // --- 模型目录（modelCatalog 从用户实例推导） ---
 
+/**
+ * 目录条目的能力 hints（models.dev 快照，docs/future/05 §4）。
+ * 非权威 UI 提示：**只携带用户模型行上未声明的字段**（声明过的绝不进 hints，
+ * 避免「同一字段两个来源」的歧义）；条目上缺 hints = 快照未收录该模型——
+ * 语义是「未知」，不是「不支持」，消费方不得据此降级。
+ */
+export const modelCatalogHintsSchema = z.object({
+  source: z.literal("models-dev"),
+  /** 快照内的 provider 键（同 id 多 provider 时按协议偏好命中，出处透出便于复核）。 */
+  snapshotProvider: z.string().min(1),
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  /** 快照输入模态含 image（vision 徽标的补缺来源）。 */
+  imageInput: z.boolean().optional(),
+  toolCall: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+});
+export type ModelCatalogHints = z.infer<typeof modelCatalogHintsSchema>;
+
 export const modelCatalogEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   capability: modelCapabilitySchema,
   /** 原始实例模型（vision / contextWindow 透传用）。 */
   model: providerInstanceModelSchema,
+  /** models.dev 快照补缺（可选；用户声明永远优先，见 modelCatalogHintsSchema）。 */
+  hints: modelCatalogHintsSchema.optional(),
   provider: z.object({
     instanceId: identifier,
     name: z.string().min(1),
     protocol: providerProtocolSchema,
-    /** workspace = 用户自带（不计费）；system = 平台池（按 token 计费）。 */
+    /** 本地实例的 BYOK 供应商。 */
     scope: providerScopeSchema,
   }),
 });
@@ -248,3 +481,23 @@ export const modelCatalogResponseSchema = z.object({
   models: z.array(modelCatalogEntrySchema),
 });
 export type ModelCatalogResponse = z.infer<typeof modelCatalogResponseSchema>;
+
+/** 解析 instance specifier；非实例 specifier（内置目录/裸模型名）返回 undefined。 */
+export function parseInstanceSpecifier(
+  specifier: string,
+): { instanceId: string; model: string } | undefined {
+  const separatorIndex = specifier.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex >= specifier.length - 1) {
+    return undefined;
+  }
+  const instanceId = specifier.slice(0, separatorIndex);
+  // 内置目录用 "openai:"/"google:" 等协议词前缀，实例 id 是 uuid（含连字符）。
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      instanceId,
+    )
+  ) {
+    return undefined;
+  }
+  return { instanceId, model: specifier.slice(separatorIndex + 1) };
+}

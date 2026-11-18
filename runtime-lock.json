@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "pythonPackages": [
+    "pytest==9.1.1",
+    "pluggy==1.6.0",
+    "iniconfig==2.3.1",
+    "packaging==26.3",
+    "Pygments==2.21.0",
+    "colorama==0.4.6"
+  ],
+  "targets": {
+    "darwin-arm64": {
+      "node": {
+        "version": "22.23.4",
+        "fileName": "node-v22.23.4-darwin-arm64.tar.gz",
+        "sha256": "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428",
+        "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz"
+      },
+      "python": {
+        "version": "3.12",
+        "fileName": "cpython-3.12.15+20261009-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "83dcb04777c798bd95f3687acf9ae84b09860272ee6bdfb05be8bcf9447f75b8",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.12.15%2B20261009-aarch64-apple-darwin-install_only.tar.gz"
+      },
+      "uv": {
+        "version": null,
+        "fileName": "uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "0c4346de7abdb49495b393b9ec809fe387aa43e586be20fecb972216c1e71732",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-aarch64-apple-darwin.tar.gz"
+      },
+      "jdk": {
+        "version": "21",
+        "fileName": "OpenJDK21U-jre_aarch64_mac_hotspot_21.0.12.1_1.tar.gz",
+        "sha256": "dec50fc6f9fcd4fe3ae8cabf5a5fa68f6afc48841f7698e468e9aa5d54beed84",
+        "url": "https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jre/hotspot/normal/eclipse"
+      }
+    }
+  }
+}

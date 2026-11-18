@@ -1,20 +1,27 @@
-import type { UsageSummaryResponse } from "@loomic/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerRepository } from "../bootstrap/repository.js";
+import type {
+  UsageStatsResponse,
+  UsageSummaryResponse,
+} from "@kenfutwork/shared";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { UsageRecordRow, UsageRepository } from "./repository.js";
 
 /**
- * usage 缝（DEC-6）：token/成本计量，按 workspace/provider/model/run 落账。
- * 写入与读取都经 `persistence` 缝的工作区作用域（隔离口径与其它聚合一致）。
+ * usage 缝（DEC-6）：token/成本计量，按 instance/provider/model/run 落账。
+ * 写入与读取都经 `persistence` 缝的实例作用域（隔离口径与其它聚合一致）。
  */
 
 const SUMMARY_ROW_LIMIT = 10000;
+const STATS_ROW_LIMIT = 20000;
+/** 热力图窗口：一整年（参考图铺满 12 个月）。 */
+const HEATMAP_DAYS = 365;
 
 export interface UsageEntry {
-  workspaceId: string;
-  /** 归属用户：平台池计费与管理后台按用户聚合都需要。 */
-  userId?: string;
+  instanceId: string;
+  /** 发起接入客户端只作为可选遥测，稳定归属始终是实例。 */
+  accessClientId?: string | null;
   provider: string;
   model: string;
   capability: "chat" | "image" | "video";
@@ -29,9 +36,28 @@ export interface UsageEntry {
 
 export interface UsageService {
   record(entry: UsageEntry): Promise<void>;
-  summarize(user: AuthenticatedUser): Promise<UsageSummaryResponse>;
-  /** agent 链路结算：run 只有 userId，落账前解析个人工作区。 */
-  resolveWorkspaceIdByUser(userId: string): Promise<string | undefined>;
+  summarize(user: LocalActor): Promise<UsageSummaryResponse>;
+  /** 用户侧使用统计（R4-2）：按天活动/连续天数/按模型，窗口 rangeDays 天。 */
+  stats(user: LocalActor, rangeDays: number): Promise<UsageStatsResponse>;
+  /** 单轮 Run 的用量汇总（子代理结果归因用）；没有记账行时返回 null。 */
+  runSummary(
+    instanceId: string,
+    runId: string,
+  ): Promise<RunUsageSummary | null>;
+  /** 会话最近一轮 Run 的用量汇总；调用方只有 childSessionId 时使用。 */
+  runSummaryBySession(
+    instanceId: string,
+    sessionId: string,
+  ): Promise<RunUsageSummary | null>;
+}
+
+/** 对外暴露的用量汇总形状：在库字段之上补上 totalTokens，便于卡片直接显示。 */
+export interface RunUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number | null;
+  calls: number;
 }
 
 type ModelBucket = {
@@ -45,10 +71,11 @@ type ModelBucket = {
 
 export function createUsageService(options: {
   repository: UsageRepository;
-  /** 复用 workspaces 域的数据访问（worker 进程无 auth，故不经 viewer 服务）。 */
-  workspaces: ViewerRepository;
+  localInstance: LocalInstanceService;
+  /** 可注入时钟（测试固定「今天」）；缺省真实时间。 */
+  now?: () => Date;
 }): UsageService {
-  const { repository, workspaces } = options;
+  const { repository, localInstance } = options;
 
   function aggregate(rows: UsageRecordRow[]) {
     const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -78,23 +105,143 @@ export function createUsageService(options: {
     return { byModel, totals };
   }
 
-  async function resolveWorkspaceIdByUser(
-    userId: string,
-  ): Promise<string | undefined> {
-    const workspace = await workspaces
-      .findPersonalWorkspace(userId)
-      .catch(() => null);
-    return workspace?.id;
+  /** UTC 日期口径（YYYY-MM-DD）；usage 行的 occurred_at 已归一为 ISO 字符串。 */
+  function utcDateOf(iso: string): string {
+    return new Date(iso).toISOString().slice(0, 10);
+  }
+
+  function addUtcDays(date: string, delta: number): string {
+    const ms = Date.parse(`${date}T00:00:00Z`) + delta * 86_400_000;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  /**
+   * 统计窗口派生（纯函数）：连续序列、峰值、当前/最长连续天数、按模型聚合。
+   * 当前连续天数：从今天往回数，今天没活动则从昨天起算（半开口径，不打断昨天刚跑完的用户）。
+   */
+  function buildStats(
+    rows: UsageRecordRow[],
+    rangeDays: number,
+    now: Date,
+    /**
+     * 最长聊天时长来自**另一个数据源**（会话/消息表），故由调用方传入而不是在函数里兜默认值：
+     * 类型上强制调用方显式提供，避免「忘了查」被静默成 0。
+     */
+    longestSessionSeconds: number,
+  ): UsageStatsResponse {
+    const today = now.toISOString().slice(0, 10);
+    const windowStart = addUtcDays(today, -(rangeDays - 1));
+
+    const dailyTotals = new Map<string, number>();
+    const modelTotals = new Map<string, { provider: string; tokens: number }>();
+    /** 逐日 × 模型：趋势图按模型画多条线（与 daily 同窗口、按下标对齐）。 */
+    const modelDaily = new Map<string, Map<string, number>>();
+    const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
+    /** 成本单独累计并记录「是否有供应商回传」：全都没回传时对外如实给 null。 */
+    const cost = { usd: 0, reported: false };
+
+    // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
+    const heatmapStart = addUtcDays(today, -(HEATMAP_DAYS - 1));
+    const heatmapTotals = new Map<string, number>();
+
+    for (const row of rows) {
+      const date = utcDateOf(row.occurred_at);
+      const tokens = row.input_tokens + row.output_tokens;
+      if (date >= heatmapStart && date <= today) {
+        heatmapTotals.set(date, (heatmapTotals.get(date) ?? 0) + tokens);
+      }
+      if (date < windowStart || date > today) continue;
+      totals.tokens += tokens;
+      totals.inputTokens += row.input_tokens;
+      totals.outputTokens += row.output_tokens;
+      if (row.cost_usd !== null) {
+        cost.usd += row.cost_usd;
+        cost.reported = true;
+      }
+      dailyTotals.set(date, (dailyTotals.get(date) ?? 0) + tokens);
+      const bucket = modelTotals.get(row.model) ?? {
+        provider: row.provider,
+        tokens: 0,
+      };
+      bucket.tokens += tokens;
+      modelTotals.set(row.model, bucket);
+      const perDay = modelDaily.get(row.model) ?? new Map<string, number>();
+      perDay.set(date, (perDay.get(date) ?? 0) + tokens);
+      modelDaily.set(row.model, perDay);
+    }
+
+    const heatmap: UsageStatsResponse["heatmap"] = [];
+    for (let i = 0; i < HEATMAP_DAYS; i += 1) {
+      const date = addUtcDays(heatmapStart, i);
+      heatmap.push({ date, tokens: heatmapTotals.get(date) ?? 0 });
+    }
+
+    const daily: UsageStatsResponse["daily"] = [];
+    for (let i = 0; i < rangeDays; i += 1) {
+      const date = addUtcDays(windowStart, i);
+      daily.push({ date, tokens: dailyTotals.get(date) ?? 0 });
+    }
+
+    const active = new Set(
+      daily.filter((d) => d.tokens > 0).map((d) => d.date),
+    );
+    let longestStreakDays = 0;
+    let runLength = 0;
+    for (const day of daily) {
+      runLength = active.has(day.date) ? runLength + 1 : 0;
+      longestStreakDays = Math.max(longestStreakDays, runLength);
+    }
+    let currentStreakDays = 0;
+    let cursor = active.has(today) ? today : addUtcDays(today, -1);
+    while (active.has(cursor)) {
+      currentStreakDays += 1;
+      cursor = addUtcDays(cursor, -1);
+    }
+
+    const byModel = [...modelTotals.entries()]
+      .map(([model, bucket]) => ({
+        provider: bucket.provider,
+        model,
+        tokens: bucket.tokens,
+      }))
+      .sort((a, b) => b.tokens - a.tokens);
+
+    // 逐日 × 模型：与 byModel 同序（用量降序），逐日数组与 daily 按下标对齐
+    const dailyByModel: UsageStatsResponse["dailyByModel"] = byModel.map(
+      (entry) => {
+        const perDay = modelDaily.get(entry.model);
+        return {
+          model: entry.model,
+          tokens: daily.map((day) => perDay?.get(day.date) ?? 0),
+        };
+      },
+    );
+
+    return {
+      rangeDays,
+      totals: {
+        ...totals,
+        costUsd: cost.reported ? cost.usd : null,
+      },
+      peakDayTokens: daily.reduce((peak, day) => Math.max(peak, day.tokens), 0),
+      currentStreakDays,
+      longestStreakDays,
+      longestSessionSeconds,
+      daily,
+      heatmap,
+      byModel,
+      dailyByModel,
+    };
   }
 
   return {
-    resolveWorkspaceIdByUser,
-
     async record(entry) {
       try {
         await repository.insert({
-          workspaceId: entry.workspaceId,
-          ...(entry.userId ? { userId: entry.userId } : {}),
+          instanceId: entry.instanceId,
+          ...(entry.accessClientId
+            ? { accessClientId: entry.accessClientId }
+            : {}),
           provider: entry.provider,
           model: entry.model,
           capability: entry.capability,
@@ -111,22 +258,20 @@ export function createUsageService(options: {
           ...(entry.costUsd != null ? { costUsd: entry.costUsd } : {}),
         });
       } catch (error) {
-        // 计量失败不阻断主链路（「有剑不用」：usage 是旁路观测，不是主链路）
+        // 媒体Job由持久检查点续写；不能把数据库写入失败确认成已记账。
         console.warn(
           "[usage] failed to record usage:",
           error instanceof Error ? error.message : error,
         );
+        if (entry.jobId) throw error;
       }
     },
 
     async summarize(user): Promise<UsageSummaryResponse> {
-      const workspaceId = await resolveWorkspaceIdByUser(user.id);
-      if (!workspaceId) {
-        throw new Error("[usage] summary query failed: workspace not found");
-      }
+      const { instanceId } = await localInstance.resolve(user);
 
       const rows = await repository
-        .listRecent(workspaceId, SUMMARY_ROW_LIMIT)
+        .listRecent(instanceId, SUMMARY_ROW_LIMIT)
         .catch((error: unknown) => {
           throw new Error(
             `[usage] summary query failed: ${
@@ -153,5 +298,63 @@ export function createUsageService(options: {
         })),
       };
     },
+
+    async stats(user, rangeDays): Promise<UsageStatsResponse> {
+      const { instanceId } = await localInstance.resolve(user);
+      const rows = await repository
+        .listRecent(instanceId, STATS_ROW_LIMIT)
+        .catch((error: unknown) => {
+          throw new Error(
+            `[usage] stats query failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+      // 最长聊天时长来自会话/消息表（与 usage_records 无关的第二个数据源）：
+      // 它失败不该把整页统计打成 500 —— 卡片显示 0 并在日志留痕，其余数字照常给。
+      const longestSessionSeconds = await repository
+        .longestSessionSeconds(instanceId)
+        .catch((error: unknown) => {
+          console.error(
+            "[usage] longestSessionSeconds query failed:",
+            error instanceof Error ? error.message : error,
+          );
+          return 0;
+        });
+      return buildStats(
+        rows,
+        rangeDays,
+        (options.now ?? (() => new Date()))(),
+        longestSessionSeconds,
+      );
+    },
+
+    async runSummary(instanceId, runId) {
+      const aggregate = await repository.runSummary(instanceId, runId);
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+
+    async runSummaryBySession(instanceId, sessionId) {
+      const aggregate = await repository.runSummaryBySession(
+        instanceId,
+        sessionId,
+      );
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+  };
+}
+
+function toRunUsageSummary(aggregate: {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  calls: number;
+}): RunUsageSummary {
+  return {
+    inputTokens: aggregate.inputTokens,
+    outputTokens: aggregate.outputTokens,
+    totalTokens: aggregate.inputTokens + aggregate.outputTokens,
+    costUsd: aggregate.costUsd,
+    calls: aggregate.calls,
   };
 }

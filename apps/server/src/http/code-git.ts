@@ -1,15 +1,34 @@
 import {
   applicationErrorResponseSchema,
+  codeFilesResponseSchema,
+  codeGitBranchCreateRequestSchema,
+  codeGitChangesResponseSchema,
   codeGitCheckoutRequestSchema,
+  codeGitCommitRequestSchema,
+  codeGitDiffResponseSchema,
+  codeGitDiffStatResponseSchema,
+  codeGitDiscardRequestSchema,
+  codeGitDiscardResponseSchema,
+  codeGitFileResponseSchema,
+  codeGitGraphResponseSchema,
+  codeGitStageHunkRequestSchema,
+  codeGitStageRequestSchema,
+  codeGitStageResponseSchema,
   codeGitStatusResponseSchema,
+  codeGitWorktreeCreateRequestSchema,
+  codeGitWorktreeDeleteRequestSchema,
+  codeGitWorktreeListResponseSchema,
+  codeShellsResponseSchema,
+  codeTerminalRequestSchema,
+  codeTerminalResponseSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   CodeGitError,
   type CodeGitService,
 } from "../features/code-git/code-git-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 
 /**
  * Code 模式 git 分支视图路由（工作目录=项目）。
@@ -18,23 +37,23 @@ import {
  */
 export async function registerCodeGitRoutes(
   app: FastifyInstance,
-  options: { auth: RequestAuthenticator; codeGitService: CodeGitService },
+  options: { localAccess: LocalAccessVerifier; codeGitService: CodeGitService },
 ) {
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       try {
-        const git = await options.codeGitService.status(user, canvasId);
+        const git = await options.codeGitService.status(user, taskId);
         return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -43,13 +62,13 @@ export async function registerCodeGitRoutes(
   );
 
   app.post("/api/code/git/checkout", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema.parse(request.body);
       const git = await options.codeGitService.checkout(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.branch,
       );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
@@ -57,7 +76,411 @@ export async function registerCodeGitRoutes(
       return sendCodeGitError(error, reply);
     }
   });
+
+  // --- R2-1：更改统计 / 提交 / 推送 / 新建分支（写操作纪律在 service 里） ---
+
+  app.get<{ Querystring: { taskId?: string } }>(
+    "/api/code/git/diff-stat",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 taskId。" },
+          }),
+        );
+      }
+      try {
+        const stat = await options.codeGitService.diffStat(user, taskId);
+        return reply
+          .code(200)
+          .send(codeGitDiffStatResponseSchema.parse({ stat }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/git/graph — git 图谱（R2-1 条目 6）。条数上限由查询给，
+  // 这里夹到 1..200：界面只画最近几十条，给个越界值不该让服务端去 log 十万行。
+  app.get<{ Querystring: { taskId?: string; limit?: string } }>(
+    "/api/code/git/graph",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 taskId。" },
+          }),
+        );
+      }
+      const limit = clampGraphLimit(request.query.limit);
+      try {
+        const graph = await options.codeGitService.graph(user, taskId, limit);
+        return reply
+          .code(200)
+          .send(codeGitGraphResponseSchema.parse({ graph }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/git/changes — 变更文件清单（R3-2）：逐文件增删行数与状态
+  app.get<{ Querystring: { taskId?: string } }>(
+    "/api/code/git/changes",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 taskId。" },
+          }),
+        );
+      }
+      try {
+        const changes = await options.codeGitService.changes(
+          user,
+          taskId,
+          MAX_CHANGED_FILES,
+        );
+        return reply
+          .code(200)
+          .send(codeGitChangesResponseSchema.parse({ changes }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/git/diff?path= — 单文件差异（R3-2「审查」）
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
+    "/api/code/git/diff",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      const path = request.query.path ?? "";
+      if (!taskId || !path) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "invalid_input",
+              message: "缺少 taskId 或 path。",
+            },
+          }),
+        );
+      }
+      try {
+        const diff = await options.codeGitService.fileDiff(user, taskId, path);
+        return reply.code(200).send(codeGitDiffResponseSchema.parse({ diff }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/file?path= — 工作目录里的单文件内容（R3-2「打开」/ R3-3「文档入口」）。
+  // 与 git 同一作用域（沙箱工作目录）+ 同一套归属校验，故并在这里注册；读取本身只是
+  // 受限的只读文本预览（路径必须落在工作目录内、只读前 256 KB、二进制只回元信息）。
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
+    "/api/code/file",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      const path = request.query.path ?? "";
+      if (!taskId || !path) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: {
+              code: "invalid_input",
+              message: "缺少 taskId 或 path。",
+            },
+          }),
+        );
+      }
+      try {
+        const file = await options.codeGitService.readFile(user, taskId, path);
+        return reply.code(200).send(codeGitFileResponseSchema.parse({ file }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // GET /api/code/files — 工作目录的文件目录（R3-1「文件目录」标签）：只列一层
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
+    "/api/code/files",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
+        return reply.code(400).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_input", message: "缺少 taskId。" },
+          }),
+        );
+      }
+      try {
+        const files = await options.codeGitService.listFiles(
+          user,
+          taskId,
+          request.query.path ?? "",
+        );
+        return reply.code(200).send(codeFilesResponseSchema.parse({ files }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  // POST /api/code/terminal — 在画布的工作目录里跑一条用户命令（R3-1「终端」标签）。
+  // 权限口径见 features/code-git/terminal-runner.ts（用户自己的操作，不套 agent 工具门；
+  // 但同样要求登录 + 画布归属，且固定 cwd、有超时与输出上限）。
+  app.post("/api/code/terminal", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeTerminalRequestSchema.parse(request.body);
+      const result = await options.codeGitService.runTerminal(
+        user,
+        payload.taskId,
+        payload.command,
+        payload.shell,
+      );
+      return reply.code(200).send(codeTerminalResponseSchema.parse({ result }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/stage — 暂存 / 取消暂存单个文件（参考图审查视图里的「暂存」）。
+  app.post("/api/code/git/stage", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitStageRequestSchema.parse(request.body);
+      const result = await options.codeGitService.setFileStaged(
+        user,
+        payload.taskId,
+        payload.path,
+        payload.staged,
+      );
+      return reply.code(200).send(codeGitStageResponseSchema.parse(result));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/stage-hunk — 暂存 / 取消暂存一个块（参考图的「暂存块」）。
+  app.post("/api/code/git/stage-hunk", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitStageHunkRequestSchema.parse(request.body);
+      const result = await options.codeGitService.applyFileHunk(
+        user,
+        payload.taskId,
+        payload.path,
+        payload.patch,
+        {
+          ...(payload.reverse !== undefined
+            ? { reverse: payload.reverse }
+            : {}),
+          ...(payload.target ? { target: payload.target } : {}),
+        },
+      );
+      return reply
+        .code(200)
+        .send(
+          codeGitStageResponseSchema.parse({ path: result.path, staged: true }),
+        );
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/discard — 撤销更改（单文件或全部）。**丢内容**，界面负责二次确认。
+  app.post("/api/code/git/discard", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitDiscardRequestSchema.parse(request.body);
+      if (payload.path) {
+        await options.codeGitService.discardFile(
+          user,
+          payload.taskId,
+          payload.path,
+          payload.untracked ?? false,
+        );
+      } else {
+        await options.codeGitService.discardAllChanges(user, payload.taskId);
+      }
+      return reply
+        .code(200)
+        .send(codeGitDiscardResponseSchema.parse({ ok: true }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // GET /api/code/shells — 本机可用的 shell + 工作区默认（终端下拉与设置页共用）。
+  // 只要求登录：清单里带可执行文件路径，而能开这个终端的人本来就能 `where bash` 问出来，
+  // 多藏一层只会让界面说不清「为什么这个选项不可用」。
+  app.get("/api/code/shells", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const shells = await options.codeGitService.listTerminalShells(user);
+      return reply.code(200).send(codeShellsResponseSchema.parse(shells));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
+  // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）
+  app.post("/api/code/git/init", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCheckoutRequestSchema
+        .pick({ taskId: true })
+        .parse(request.body);
+      const git = await options.codeGitService.init(user, payload.taskId);
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // --- G4 worktree 管理（Q10：新建/删除/列表；「绑为工作目录」由前端登记展示目录） ---
+
+  app.get<{ Querystring: { taskId?: string } }>(
+    "/api/code/git/worktrees",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      try {
+        const taskId = request.query.taskId ?? "";
+        const worktrees = await options.codeGitService.listWorktrees(
+          user,
+          taskId,
+        );
+        return reply
+          .code(200)
+          .send(codeGitWorktreeListResponseSchema.parse({ worktrees }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  app.post("/api/code/git/worktrees", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitWorktreeCreateRequestSchema.parse(request.body);
+      const worktree = await options.codeGitService.createWorktree(
+        user,
+        payload.taskId,
+        {
+          path: payload.path,
+          branch: payload.branch,
+          createBranch: payload.createBranch,
+        },
+      );
+      return reply.code(200).send({ worktree });
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/worktrees/delete", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitWorktreeDeleteRequestSchema.parse(request.body);
+      const git = await options.codeGitService.deleteWorktree(
+        user,
+        payload.taskId,
+        payload.path,
+      );
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/commit", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCommitRequestSchema.parse(request.body);
+      const git = await options.codeGitService.commit(
+        user,
+        payload.taskId,
+        payload.message,
+      );
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/push", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitCheckoutRequestSchema
+        .pick({ taskId: true })
+        .parse(request.body);
+      const git = await options.codeGitService.push(user, payload.taskId);
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/branch", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitBranchCreateRequestSchema.parse(request.body);
+      const git = await options.codeGitService.createBranch(
+        user,
+        payload.taskId,
+        payload.name,
+      );
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
 }
+
+/**
+ * 图谱条数上限：默认 30，非法值回落默认，越界夹到 1..200。
+ *
+ * 上限存在的意义不是性能（git log 很快），而是别让一个越界的 `limit` 把十万行
+ * 塞进 WS/HTTP 响应里。
+ */
+function clampGraphLimit(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(Math.max(parsed, 1), 200);
+}
+
+/** 变更清单一次最多列多少个文件（超出的截断并标注）。 */
+const MAX_CHANGED_FILES = 200;
 
 function sendUnauthorized(reply: FastifyReply) {
   return reply.code(401).send(

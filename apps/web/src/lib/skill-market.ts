@@ -1,4 +1,4 @@
-import type { MarketplaceSkill } from "@loomic/shared";
+import type { MarketplaceSkill } from "@kenfutwork/shared";
 
 /**
  * 技能市场的纯视图逻辑（搜索/安装面板用）。
@@ -55,7 +55,7 @@ export function describeInstallFailure(
   if (status === 409) {
     return "该技能已安装过（可在「技能库」里启用）。";
   }
-  if (message && message.trim()) {
+  if (message?.trim()) {
     return message;
   }
   return "安装失败，请稍后重试。";

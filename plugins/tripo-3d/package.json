@@ -1,0 +1,24 @@
+{
+  "name": "kenfutwork-tripo-3d",
+  "version": "0.1.4",
+  "description": "用文字或图片生成带贴图的 3D 模型，添加骨骼与动画、精简模型面数，导出用于游戏或 3D 打印的素材。需使用 Tripo 国内站账号。",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README_CN.md",
+    "README.md",
+    "hooks",
+    "skills",
+    "mcp.json"
+  ],
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Tripo 3D",
+    "category": "游戏与 3D"
+  },
+  "main": "index.js"
+}

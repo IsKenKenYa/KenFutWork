@@ -4,10 +4,10 @@
  * 对象存储的**唯一入口**：消费方（uploads / brand-kit / canvas / projects / agent 运行时 /
  * 生成 executor）只依赖本接口，不再直接触达 Supabase Storage 或任何具体实现。
  *
- * **只有一个作用域（系统）**：按 `FORM-9`，隔离由应用层承担——对象路径一律以
- * `workspaceId/`（或个人 `userId/`）开头，由调用方在服务端拼好且不接受客户端传入；
- * 存储侧不再依赖 RLS 判定（存量实现是用户 token + storage 策略）。这样 blob 缝天然
- * 适配桌面（无令牌）与自托管，不必把「用户令牌」这一 Supabase 概念渗进接口。
+ * **只有一个作用域（系统）**：按 `FORM-9`，实例隔离由应用层承担——对象路径一律以
+ * `instanceId/`开头，由调用方在服务端拼好且不接受客户端传入；
+ * 存储侧不依赖账户/RLS；本地读取路由另外验证本机接入。Blob签名密钥独立于接入凭据，
+ * 适配桌面与未来自部署存储，不把访问令牌渗进执行或存储接口。
  *
  * 桶名不是契约的一部分（Provider 自行解释）；`bucket()` 只做命名空间分组。
  */
@@ -23,11 +23,13 @@ export class BlobError extends Error {
     bucket: string,
     path: string,
     message: string,
+    cause?: unknown,
   ) {
     super(
       `[blob] ${operation} 失败（bucket=${bucket} path=${path}）：${message}`,
     );
     this.name = "BlobError";
+    this.cause = cause;
     this.bucket = bucket;
     this.operation = operation;
     this.path = path;
@@ -46,6 +48,7 @@ export function failBlob(
     bucket,
     path,
     error instanceof Error ? error.message : String(error),
+    error,
   );
 }
 
@@ -72,7 +75,8 @@ export type SignedUrlEntry = {
 /** 单桶句柄：方法与存量调用点一一对应，便于逐处替换。 */
 export type BlobBucket = {
   /**
-   * 桶是否公开可读。**消费方不应硬编码公开桶清单**——实际公开性由存储侧决定
+   * 默认桶是否公开可读；namespace可单独收窄，取对象URL应使用resolveUrl。
+   * **消费方不应硬编码公开桶清单**——实际公开性由存储侧决定
    * （迁移声明 public=true 也可能因环境状态不一致而未生效，实测踩过：
    * `project-assets` 在本地库里 public=false，公网路由会把非公开桶报成
    * 「Bucket not found」，于是硬编码假设会产出 400 的死链）。
@@ -99,7 +103,7 @@ export type BlobBucket = {
     expiresInSeconds: number,
   ): Promise<SignedUrlEntry[]>;
   /** 读回对象内容。 */
-  download(path: string): Promise<Uint8Array>;
+  download(path: string, options?: { maxBytes: number }): Promise<Uint8Array>;
   /** 桶内复制（源与目标同桶）。 */
   copy(fromPath: string, toPath: string): Promise<void>;
   /** 删除对象；不存在的路径不报错（幂等）。 */
@@ -108,6 +112,26 @@ export type BlobBucket = {
 
 export type BlobStore = {
   bucket(name: string): BlobBucket;
+  registerNamespace(registration: BlobNamespaceRegistration): void;
+  /** HTTP与Bucket共用的严格分派；命中后不得回退默认Provider。 */
+  resolveNamespace(
+    bucket: string,
+    path: string,
+  ): BlobNamespaceRegistration | null;
+};
+
+export type BlobNamespaceProvider = Pick<
+  BlobBucket,
+  "upload" | "download" | "copy" | "remove"
+> & {
+  contentType?(path: string): Promise<string | undefined>;
+};
+export type BlobNamespaceRegistration = {
+  bucket: string;
+  /** objectPath格式为instanceId/namespace/opaqueKey，传给Provider的是完整objectPath。 */
+  namespace: string;
+  provider: BlobNamespaceProvider;
+  publicRead: boolean;
 };
 
 /**

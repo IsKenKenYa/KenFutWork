@@ -1,0 +1,4 @@
+- insert:
+    - id: kenfutwork-knowledge
+      name: kenfutwork-knowledge
+      inject: [ui]

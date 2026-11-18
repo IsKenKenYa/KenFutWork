@@ -1,0 +1,93 @@
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import { isPackagedRuntime, resolveEntryRoot } from "./entry-root.js";
+
+const REPO = resolve("D:/repo");
+const SERVER_SRC = join(REPO, "apps", "server", "src", "server.ts");
+const SERVER_DIST = join(REPO, "apps", "server", "dist", "server.js");
+
+describe("入口资源根解析", () => {
+  it("源码态：<仓库根>/apps/server/{src,dist}/server.js 上四级到仓库根", () => {
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: pathToFileURL(SERVER_SRC).href,
+        execPath: process.execPath,
+      }),
+    ).toBe(REPO);
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: pathToFileURL(SERVER_DIST).href,
+        execPath: process.execPath,
+      }),
+    ).toBe(REPO);
+  });
+
+  /**
+   * 回归：曾经上三级得到 `apps/`，沙箱因此落到 `<仓库根>/apps/tmp/sandbox`、
+   * 随包运行时去 `apps/runtime`（真实位置在仓库根）——两条路径都静默错位。
+   */
+  it("回归：结果必须是仓库根，不是 apps/ 这一层", () => {
+    const root = resolveEntryRoot({
+      entryFileUrl: pathToFileURL(SERVER_SRC).href,
+      execPath: process.execPath,
+    });
+    expect(root).toBe(REPO);
+    expect(root).not.toBe(dirname(dirname(REPO)));
+    expect(root).toBe(dirname(dirname(dirname(dirname(SERVER_SRC)))));
+  });
+
+  it("打包态（SEA 下 import.meta.url 为空）回退到 exe 目录", () => {
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: undefined,
+        execPath: join(REPO, "release", "KenFutWorkServer.exe"),
+      }),
+    ).toBe(join(REPO, "release"));
+  });
+
+  it("非法 file URL 同样回退到 exe 目录", () => {
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: "not-a-file-url",
+        execPath: join(REPO, "app", "server.exe"),
+      }),
+    ).toBe(join(REPO, "app"));
+  });
+  it("SEA 单文件宿主：资源根是 exe 所在目录，不按源码层级上四级", () => {
+    // 打包 banner 会把 import.meta.url 定义成 <exe>/server.cjs；若按源码态上四级，
+    // D:/a/KenFutWork/KenFutWork/release/server.cjs 会得到 D:/a——迁移目录与随包运行时全找不到。
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: pathToFileURL(
+          "D:/a/KenFutWork/KenFutWork/release/server.cjs",
+        ).href,
+        execPath: join(
+          "D:/a/KenFutWork/KenFutWork/release",
+          "KenFutWork-server.exe",
+        ),
+        sea: true,
+      }),
+    ).toBe(join("D:/a/KenFutWork/KenFutWork/release"));
+  });
+});
+
+describe("打包态判定（isPackagedRuntime）", () => {
+  /**
+   * 回归：banner 会给 SEA 宿主灌入 <exe>/server.cjs 的**合法 file URL**，
+   * 「import.meta.url 为空 ⇒ SEA」判据已失效——flow 插件曾据此走成源码上溯分支，
+   * 把打包态资源根解析成盘符根，引擎页报「找不到 compose 文件 D:\dify\…」
+   * （2026-10-13 真机）。
+   */
+  it("回归：SEA 宿主即使拥有合法 import.meta.url 也算打包态", () => {
+    expect(isPackagedRuntime(pathToFileURL(SERVER_SRC).href, true)).toBe(true);
+  });
+
+  it("源码态（非 SEA、有合法 URL）不是打包态；空 URL 兜底仍视为打包", () => {
+    expect(isPackagedRuntime(pathToFileURL(SERVER_SRC).href, false)).toBe(
+      false,
+    );
+    expect(isPackagedRuntime(undefined, false)).toBe(true);
+  });
+});

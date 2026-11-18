@@ -1,4 +1,4 @@
-import type { McpCuratedServer } from "@loomic/shared";
+import type { McpCuratedServer } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import {

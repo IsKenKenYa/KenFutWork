@@ -1,13 +1,11 @@
-import { computeChatCreditCost } from "@loomic/shared";
-
 import { registerUsageRoutes } from "../../http/usage.js";
-import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
+import type { PluginDefinition } from "../../kernel/types.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
+import { createCodeUiUsageHost } from "./code-ui-host.js";
 import { createUsageRepository } from "./repository.js";
 import {
   createRunUsageAccumulator,
   type RunUsageAccumulator,
-  type RunUsageEntry,
 } from "./run-usage-accumulator.js";
 import { createUsageService } from "./usage-service.js";
 
@@ -25,15 +23,20 @@ export function createUsagePlugin(
   } = {},
 ): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
+  // apply 期构造、mounted 期复用（同一实例；与 skills 插件同款模式）
+  let usageRepository: ReturnType<typeof createUsageRepository> | undefined;
   return {
     name: "usage",
-    // worker 进程无 auth（与无 viewer 同因），故 persistence 是两侧共同依赖。
-    inject: withRoutes ? ["auth", "persistence"] : ["persistence"],
+    // 两个进程共享稳定实例归属；只有 HTTP 进程消费接入验证。
+    inject: withRoutes
+      ? ["localAccess", "persistence", "localInstance"]
+      : ["persistence", "localInstance"],
     apply(ctx) {
       const persistence = ctx.get("persistence");
+      usageRepository = createUsageRepository(persistence);
       const usageService = createUsageService({
-        repository: createUsageRepository(persistence),
-        workspaces: createViewerRepository(persistence),
+        repository: usageRepository,
+        localInstance: ctx.get("localInstance"),
       });
       ctx.register("usage", () => usageService);
       const accumulator: RunUsageAccumulator = createRunUsageAccumulator();
@@ -41,15 +44,12 @@ export function createUsagePlugin(
 
       // 事件缝职责：归属 + 收尾结算（DEC-1 turn-stopping）
       ctx.on("turn-stopping", async (payload, next) => {
-        const entry = accumulator.take(payload.runId);
-        if (entry) {
-          const workspaceId = await usageService.resolveWorkspaceIdByUser(
-            entry.userId,
-          );
-          if (!workspaceId) return;
+        for (const entry of accumulator.take(payload.runId)) {
           await usageService.record({
-            workspaceId,
-            userId: entry.userId,
+            instanceId: entry.instanceId,
+            ...(entry.accessClientId
+              ? { accessClientId: entry.accessClientId }
+              : {}),
             provider: entry.provider,
             model: entry.model,
             capability: "chat",
@@ -60,11 +60,8 @@ export function createUsagePlugin(
             inputTokens: entry.inputTokens,
             outputTokens: entry.outputTokens,
             totalTokens: entry.inputTokens + entry.outputTokens,
+            ...(entry.costUsd != null ? { costUsd: entry.costUsd } : {}),
           });
-
-          // 平台池计费（FORM-10）：只有走系统供应商（scope='system'）的运行
-          // 才扣额度——用户自带 Key（BYOK）不计费。计量失败不阻断主链路。
-          await chargePlatformPoolUsage(ctx, entry, workspaceId, payload.runId);
         }
         await next();
       });
@@ -74,44 +71,25 @@ export function createUsagePlugin(
         return;
       }
       void registerUsageRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         usage: ctx.get("usage"),
       });
+      // code-ui「使用统计」面板的数据宿主（替换此前的 501 兜底）
+      if (usageRepository) {
+        const repository = usageRepository;
+        for (const [id, value] of Object.entries(
+          createCodeUiUsageHost({
+            localInstance: ctx.get("localInstance"),
+            repository,
+          }),
+        )) {
+          ctx.effect(() =>
+            ctx
+              .get("capabilities")
+              .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+          );
+        }
+      }
     },
   };
-}
-
-/**
- * 平台池运行的费用结算：按 token 折算 credit 扣额度。
- *
- * 依赖用 tryGet 取（worker profile 无 credits/modelProviders，读到就跳过），
- * 任何失败只记警告——额度结算是旁路，不能反过来打断用户对话。
- */
-async function chargePlatformPoolUsage(
-  ctx: PluginContext,
-  entry: RunUsageEntry,
-  workspaceId: string,
-  runId: string,
-): Promise<void> {
-  if (!entry.providerInstanceId) return;
-  const modelProviders = ctx.tryGet("modelProviders");
-  const credits = ctx.tryGet("credits");
-  if (!modelProviders || !credits) return;
-  try {
-    const scope = await modelProviders.getInstanceScope(
-      entry.providerInstanceId,
-    );
-    if (scope !== "system") return;
-    const totalTokens = entry.inputTokens + entry.outputTokens;
-    const cost = computeChatCreditCost(totalTokens);
-    await credits.deductChatCredits(
-      workspaceId,
-      entry.userId,
-      cost,
-      runId,
-      `平台池对话 ${totalTokens} tokens`,
-    );
-  } catch (error) {
-    console.warn("[usage] platform pool charging failed:", error);
-  }
 }

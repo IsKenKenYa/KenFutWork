@@ -30,7 +30,7 @@ import {
 const NPM_REGISTRY_BASE = "https://registry.npmjs.org";
 const SKILLS_SH_BASE = "https://skills.sh";
 const SKILL_KEYWORD = "agent-skill";
-const USER_AGENT = "Loomic-Marketplace/1.0";
+const USER_AGENT = "KenFutWork-Marketplace/1.0";
 const MAX_PAGE_SIZE = 50;
 const FETCH_TIMEOUT_MS = 15_000;
 

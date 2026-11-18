@@ -1,4 +1,12 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,8 +16,13 @@ import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import {
   createPluginRegistryService,
+  type PluginRegistryDeps,
   PluginRegistryError,
 } from "./plugin-registry-service.js";
+import type {
+  PluginStateChangedEvent,
+  PluginStateRevokingEvent,
+} from "./state-lifecycle.js";
 
 /**
  * 插件注册表集成测试（真实内核注册表 + 真实落盘，不走网络）。
@@ -33,12 +46,70 @@ function makeEnv(): ServerEnv {
 
 let pluginsDir: string;
 const kernels: Array<{ dispose(): void }> = [];
+const tempDirs: string[] = [];
 
-function makeService() {
+/**
+ * 假插件存储：记录型内存实现，用来断言**内核侧绑定**（插件 id 由内核填、工作区由调用方传）
+ * 与卸载清理。真实加密与 SQL 形状见 `plugin-storage.test.ts`。
+ */
+function fakePluginStorage() {
+  const rows = new Map<string, string>();
+  const purged: string[] = [];
+  const rowKey = (instanceId: string, pluginId: string, key: string) =>
+    JSON.stringify([instanceId, pluginId, key]);
+  return {
+    rows,
+    purged,
+    storage: {
+      async get(instanceId: string, pluginId: string, key: string) {
+        return rows.get(rowKey(instanceId, pluginId, key)) ?? null;
+      },
+      async set(
+        instanceId: string,
+        pluginId: string,
+        key: string,
+        value: string,
+      ) {
+        rows.set(rowKey(instanceId, pluginId, key), value);
+      },
+      async remove(instanceId: string, pluginId: string, key: string) {
+        return rows.delete(rowKey(instanceId, pluginId, key));
+      },
+      async keys(instanceId: string, pluginId: string) {
+        return [...rows.keys()]
+          .map((raw) => JSON.parse(raw) as [string, string, string])
+          .filter(([ws, id]) => ws === instanceId && id === pluginId)
+          .map(([, , key]) => key)
+          .sort();
+      },
+      async purgePlugin(pluginId: string) {
+        purged.push(pluginId);
+        let removed = 0;
+        for (const raw of [...rows.keys()]) {
+          const [, id] = JSON.parse(raw) as [string, string, string];
+          if (id === pluginId) {
+            rows.delete(raw);
+            removed += 1;
+          }
+        }
+        return removed;
+      },
+    },
+  };
+}
+
+function makeService(
+  lifecycle: Pick<
+    PluginRegistryDeps,
+    "onStateRevoking" | "afterStateChanged"
+  > = {},
+) {
   const kernel = composePlugins(makeEnv(), []);
   kernels.push(kernel);
+  const fake = fakePluginStorage();
   return {
     kernel,
+    fake,
     service: createPluginRegistryService({
       pluginsDir,
       tools: kernel.get("tools"),
@@ -52,8 +123,18 @@ function makeService() {
           capabilities: ["tools"],
         },
       ],
+      storage: fake.storage,
+      ...lifecycle,
     }),
   };
+}
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 async function exists(target: string): Promise<boolean> {
@@ -67,7 +148,7 @@ async function exists(target: string): Promise<boolean> {
 
 /** 造一个注定被门禁拦下的 bundle（依赖 llm 能力）。 */
 async function writeIncompatibleBundle(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "loomic-bad-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-bad-"));
   await writeFile(
     path.join(dir, "package.json"),
     JSON.stringify({
@@ -92,15 +173,502 @@ async function writeIncompatibleBundle(): Promise<string> {
   return dir;
 }
 
+/**
+ * 造一个用 `ctx.storage` 的 bundle：用来验证内核侧的绑定——
+ * 插件 id 由内核填（插件无法读写别人的数据），工作区由调用方（工具执行上下文）传入。
+ */
+async function writeStorageBundle(): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-storage-"));
+  tempDirs.push(dir);
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({
+      name: "storage-probe-plugin",
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+      dsh: { bundle: { patch: "./cordis.patch.yml" } },
+    }),
+    "utf8",
+  );
+  await writeFile(
+    path.join(dir, "cordis.patch.yml"),
+    "- insert:\n    - id: storage-probe\n      name: storage-probe-plugin\n      inject: [tools, storage]\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(dir, "index.js"),
+    [
+      'export const name = "storage-probe-plugin";',
+      'export const inject = ["tools", "storage"];',
+      "export function apply(ctx) {",
+      "  ctx.tools.register({",
+      '    name: "storage_probe",',
+      '    description: "读写插件存储（工作区取自执行上下文）",',
+      '    parameters: { type: "object", properties: {} },',
+      "    async execute(_args, exec) {",
+      '      const before = await ctx.storage.get(exec.instanceId, "session");',
+      '      await ctx.storage.set(exec.instanceId, "session", "v:" + (before ?? "none"));',
+      "      return {",
+      "        before,",
+      '        after: await ctx.storage.get(exec.instanceId, "session"),',
+      "        keys: await ctx.storage.keys(exec.instanceId),",
+      "      };",
+      "    },",
+      "  });",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  return dir;
+}
+
+async function writeLifecycleBundle(options: {
+  version: string;
+  failApply?: boolean;
+  failAfterFirstApply?: boolean;
+}): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-lifecycle-"));
+  tempDirs.push(dir);
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({
+      name: "lifecycle-probe",
+      version: options.version,
+      type: "module",
+      main: "index.js",
+      dsh: { bundle: { patch: "./cordis.patch.yml" } },
+    }),
+  );
+  await writeFile(
+    path.join(dir, "cordis.patch.yml"),
+    "- insert:\n    - id: lifecycle-probe\n      name: lifecycle-probe\n      inject: [tools]\n",
+  );
+  await writeFile(
+    path.join(dir, "index.js"),
+    [
+      'export const name = "lifecycle-probe";',
+      'export const inject = ["tools"];',
+      "let applications = 0;",
+      "export function apply(ctx) {",
+      "  applications++;",
+      `  if (${Boolean(options.failApply)} || (${Boolean(options.failAfterFirstApply)} && applications > 1)) throw new Error("fixture apply failed");`,
+      '  ctx.tools.register({ name: "lifecycle_value", parameters: { type: "object", properties: {} },',
+      `    execute() { return ${JSON.stringify(options.version)}; }`,
+      "  });",
+      "}",
+    ].join("\n"),
+  );
+  return dir;
+}
+
 beforeEach(async () => {
-  pluginsDir = await mkdtemp(path.join(tmpdir(), "loomic-plugins-"));
+  pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-plugins-"));
 });
 
 afterEach(async () => {
   for (const kernel of kernels.splice(0)) {
     kernel.dispose();
   }
+  for (const dir of tempDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true });
+  }
   await rm(pluginsDir, { recursive: true, force: true });
+});
+
+describe("plugin-registry：可信安装态生命周期", () => {
+  it("重装装载失败真实恢复旧目录、代码与库存后才通知新激活，返回原安装失败", async () => {
+    const changed: PluginStateChangedEvent[] = [];
+    let blocked = false;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        blocked = true;
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+        blocked = false;
+      },
+    });
+    const original = await writeLifecycleBundle({ version: "1.0.0" });
+    const broken = await writeLifecycleBundle({
+      version: "2.0.0",
+      failApply: true,
+    });
+    const { installed } = await service.install({
+      url: original,
+      allowLifecycleScripts: false,
+    });
+    await expect(
+      service.install({ url: broken, allowLifecycleScripts: false }),
+    ).rejects.toMatchObject({ code: "install_failed" });
+
+    expect(blocked).toBe(false);
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "restore",
+    ]);
+    expect(changed[1]?.current).toEqual(installed);
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      installed,
+    );
+    expect(
+      JSON.parse(
+        await readFile(
+          path.join(pluginsDir, installed.id, "package.json"),
+          "utf8",
+        ),
+      ).version,
+    ).toBe("1.0.0");
+    expect(
+      await kernel.get("tools").require("lifecycle_value").execute({}, {}),
+    ).toBe("1.0.0");
+    await service.setEnabled(installed.id, true);
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "restore",
+    ]);
+  });
+
+  it("失败撤销后的显式启用先重试完整撤销与卸载，再发新激活；正常重复启用幂等", async () => {
+    const failure = new Error("暂时未退出");
+    const changed: string[] = [];
+    let attempts = 0;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        if (++attempts === 1) throw failure;
+      },
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const oldTool = kernel.get("tools").require("clock_now");
+    await expect(service.setEnabled(installed.id, false)).rejects.toBe(failure);
+    await service.restore();
+    expect(changed).toEqual(["install"]);
+    const enabled = await service.setEnabled(installed.id, true);
+    expect(attempts).toBe(2);
+    expect(enabled).toEqual(installed);
+    expect(kernel.get("tools").require("clock_now")).not.toBe(oldTool);
+    expect(changed).toEqual(["install", "enable"]);
+    await service.setEnabled(installed.id, true);
+    expect(attempts).toBe(2);
+    expect(changed).toEqual(["install", "enable"]);
+  });
+
+  it("停止持续未确认时，显式启用和恢复均不能绕过撤销屏障", async () => {
+    const failure = Object.assign(new Error("停止仍未确认"), {
+      code: "stop_unconfirmed",
+    });
+    const changed: string[] = [];
+    let attempts = 0;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        attempts++;
+        throw failure;
+      },
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const oldTool = kernel.get("tools").require("clock_now");
+    await expect(service.setEnabled(installed.id, false)).rejects.toBe(failure);
+    await expect(service.setEnabled(installed.id, true)).rejects.toBe(failure);
+    await service.restore();
+    await expect(service.setEnabled(installed.id, true)).rejects.toBe(failure);
+    expect(attempts).toBe(3);
+    expect(changed).toEqual(["install"]);
+    expect(kernel.get("tools").require("clock_now")).toBe(oldTool);
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      installed,
+    );
+  });
+
+  it("旧实现恢复也失败时明确持久停用，不发恢复或启用通知", async () => {
+    const changed: string[] = [];
+    const { service, kernel } = makeService({
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const original = await writeLifecycleBundle({
+      version: "1.0.0",
+      failAfterFirstApply: true,
+    });
+    const broken = await writeLifecycleBundle({
+      version: "2.0.0",
+      failApply: true,
+    });
+    const { installed } = await service.install({
+      url: original,
+      allowLifecycleScripts: false,
+    });
+    await expect(
+      service.install({ url: broken, allowLifecycleScripts: false }),
+    ).rejects.toThrow("旧版本恢复未完成");
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      { ...installed, enabled: false },
+    );
+    expect(kernel.get("tools").get("lifecycle_value")).toBeUndefined();
+    await expect(service.setEnabled(installed.id, true)).rejects.toMatchObject({
+      code: "install_failed",
+    });
+    expect(changed).toEqual(["install"]);
+  });
+
+  it("卸载先通知撤销并等待资源退出，随后才收回工具、删除文件和写入安装态", async () => {
+    const started = deferred();
+    const stopped = deferred();
+    const events: string[] = [];
+    let afterUninstallHadTool: boolean | null = null;
+    const { service, kernel, fake } = makeService({
+      async onStateRevoking(event) {
+        events.push(`before:${event.reason}`);
+        expect(event.current).toBeNull();
+        expect(kernel.get("tools").get("clock_now")).toBeDefined();
+        expect(await exists(path.join(pluginsDir, event.previous.id))).toBe(
+          true,
+        );
+        started.resolve();
+        await stopped.promise;
+        events.push("resources-stopped");
+      },
+      afterStateChanged(event) {
+        events.push(`after:${event.reason}`);
+        if (event.reason === "uninstall")
+          afterUninstallHadTool =
+            kernel.get("tools").get("clock_now") !== undefined;
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const uninstalling = service.uninstall(installed.id);
+    await started.promise;
+    expect((await service.readPackageInventory()).installed[0]?.record.id).toBe(
+      installed.id,
+    );
+    expect(fake.purged).toEqual([]);
+    expect(events).toEqual(["after:install", "before:uninstall"]);
+
+    stopped.resolve();
+    await uninstalling;
+    expect(events).toEqual([
+      "after:install",
+      "before:uninstall",
+      "resources-stopped",
+      "after:uninstall",
+    ]);
+    expect((await service.readPackageInventory()).installed).toEqual([]);
+    expect(afterUninstallHadTool).toBe(false);
+    expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
+    expect(fake.purged).toEqual([installed.id]);
+  });
+
+  it.each(["disable", "uninstall", "replace", "shutdown"] as const)(
+    "%s 的资源撤销失败时保留工具、目录和已安装记录，并且不通知状态完成",
+    async (reason) => {
+      const failure = new Error("外部资源仍在运行");
+      const changed: string[] = [];
+      const { service, kernel, fake } = makeService({
+        onStateRevoking(event) {
+          expect(event.reason).toBe(reason);
+          throw failure;
+        },
+        afterStateChanged(event) {
+          changed.push(event.reason);
+        },
+      });
+      const { installed } = await service.install({
+        url: EXAMPLE_PLUGIN,
+        allowLifecycleScripts: false,
+      });
+      const operations = {
+        disable: () => service.setEnabled(installed.id, false),
+        uninstall: () => service.uninstall(installed.id),
+        replace: () =>
+          service.install({
+            url: EXAMPLE_PLUGIN,
+            allowLifecycleScripts: false,
+          }),
+        shutdown: () => service.shutdown(),
+      };
+      await expect(operations[reason]()).rejects.toBe(failure);
+      expect(changed).toEqual(["install"]);
+      expect(kernel.get("tools").get("clock_now")).toBeDefined();
+      expect(await exists(path.join(pluginsDir, installed.id))).toBe(true);
+      expect(
+        (await service.readPackageInventory()).installed[0]?.record,
+      ).toEqual(installed);
+      expect(fake.purged).toEqual([]);
+    },
+  );
+
+  it("撤销等待包含在同一个库存事务内，重新启用在停用完成后获得独立激活通知", async () => {
+    const started = deferred();
+    const stopped = deferred();
+    const revoked: PluginStateRevokingEvent[] = [];
+    const changed: PluginStateChangedEvent[] = [];
+    const { service, kernel } = makeService({
+      async onStateRevoking(event) {
+        revoked.push(event);
+        started.resolve();
+        await stopped.promise;
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const disabling = service.setEnabled(installed.id, false);
+    await started.promise;
+    const enabling = service.setEnabled(installed.id, true);
+    expect(changed.map((event) => event.reason)).toEqual(["install"]);
+    expect(kernel.get("tools").get("clock_now")).toBeDefined();
+    stopped.resolve();
+    await disabling;
+    await enabling;
+    // 重复写相同启用态不能被消费者误认为一次新激活。
+    await service.setEnabled(installed.id, true);
+    await service.restore();
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "disable",
+      "enable",
+    ]);
+    expect(revoked).toEqual([
+      {
+        reason: "disable",
+        previous: installed,
+        current: { ...installed, enabled: false },
+      },
+    ]);
+    expect(changed[2]).toEqual({
+      reason: "enable",
+      previous: { ...installed, enabled: false },
+      current: installed,
+    });
+    expect(kernel.get("tools").get("clock_now")).toBeDefined();
+  });
+
+  it("停用、保留停用态重装、启用、卸载与重装均通知真实前后安装身份", async () => {
+    const revoked: PluginStateRevokingEvent[] = [];
+    const changed: PluginStateChangedEvent[] = [];
+    const { service } = makeService({
+      onStateRevoking(event) {
+        revoked.push(event);
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    const install = (activation?: "preserve") =>
+      service.install({
+        url: EXAMPLE_PLUGIN,
+        allowLifecycleScripts: false,
+        ...(activation ? { activation } : {}),
+      });
+    const first = await install();
+    const disabled = await service.setEnabled(first.installed.id, false);
+    await service.setEnabled(first.installed.id, false);
+    const replacement = await install("preserve");
+    expect(replacement.installed.enabled).toBe(false);
+    await service.setEnabled(first.installed.id, true);
+    await service.uninstall(first.installed.id);
+    const final = await install();
+
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "disable",
+      "replace",
+      "enable",
+      "uninstall",
+      "install",
+    ]);
+    expect(revoked.map((event) => event.reason)).toEqual([
+      "disable",
+      "replace",
+      "uninstall",
+    ]);
+    expect(revoked[1]).toEqual({
+      reason: "replace",
+      previous: disabled,
+      current: replacement.installed,
+    });
+    expect(changed[4]?.current).toBeNull();
+    expect(changed[5]).toEqual({
+      reason: "install",
+      previous: null,
+      current: final.installed,
+    });
+  });
+
+  it("持久写入后通知抛错仍返回实际提交结果，后续读盘与重启状态一致", async () => {
+    const { service } = makeService({
+      afterStateChanged() {
+        throw new Error("通知消费方故障");
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    await service.setEnabled(installed.id, false);
+    const persisted = JSON.parse(
+      await readFile(path.join(pluginsDir, "installed.json"), "utf8"),
+    );
+    expect(persisted.installed).toEqual([{ ...installed, enabled: false }]);
+    await service.uninstall(installed.id);
+    expect((await service.readPackageInventory()).installed).toEqual([]);
+  });
+
+  it("重启恢复只在首次装载后通知激活，关闭先撤销资源且保留安装记录", async () => {
+    const first = makeService();
+    const { installed } = await first.service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    await first.service.shutdown();
+    const changed: PluginStateChangedEvent[] = [];
+    const revoked: PluginStateRevokingEvent[] = [];
+    const second = makeService({
+      onStateRevoking(event) {
+        revoked.push(event);
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    await second.service.restore();
+    await second.service.restore();
+    await second.service.shutdown();
+    expect(changed.map((event) => event.reason)).toEqual([
+      "restore",
+      "shutdown",
+    ]);
+    expect(revoked).toEqual([
+      {
+        reason: "shutdown",
+        previous: installed,
+        current: installed,
+      },
+    ]);
+    expect(
+      (await second.service.readPackageInventory()).installed[0]?.record,
+    ).toEqual(installed);
+  });
 });
 
 describe("plugin-registry：安装并真的能用", () => {
@@ -113,7 +681,7 @@ describe("plugin-registry：安装并真的能用", () => {
 
     expect(report.compatible).toBe(true);
     expect(report.supportedCapabilities).toEqual(["tools"]);
-    expect(installed.name).toBe("loomic-example-clock");
+    expect(installed.name).toBe("kenfutwork-example-clock");
 
     const tool = kernel.get("tools").require("clock_now");
     expect(tool.scope).toBe("shared");
@@ -135,12 +703,37 @@ describe("plugin-registry：安装并真的能用", () => {
     });
 
     const entries = await service.list();
-    const mine = entries.find((entry) => entry.name === "loomic-example-clock");
+    const mine = entries.find(
+      (entry) => entry.name === "kenfutwork-example-clock",
+    );
     expect(mine).toBeDefined();
     expect(mine?.installed).toBe(true);
     expect(mine?.system).toBe(false);
     // 内置目录仍在列表里
     expect(entries.some((entry) => entry.source === "builtin")).toBe(true);
+  });
+
+  /**
+   * flow 插件（FORM-11 产品入口）：P2 只做入口门控，不声明能力。
+   * 这条回归守住的是「市场条目可装」——清单/补丁/入口文件任何一处写坏，
+   * 这里都会先红（而不是等到用户在市场里点安装才失败）。
+   */
+  it("flow 插件可安装：零能力、市场条目带标题与分类", async () => {
+    const { service } = makeService();
+    const { installed, report } = await service.install({
+      url: path.join(REPO_ROOT, "plugins", "flow"),
+      allowLifecycleScripts: false,
+    });
+
+    expect(report.compatible).toBe(true);
+    expect(report.supportedCapabilities).toEqual([]);
+    expect(installed.name).toBe("kenfutwork-flow");
+
+    const entries = await service.list();
+    const flow = entries.find((entry) => entry.name === "kenfutwork-flow");
+    expect(flow?.installed).toBe(true);
+    expect(flow?.title).toBe("Flow 工作流");
+    expect(flow?.category).toBe("工作流");
   });
 
   it("卸载后工具注销、落盘目录清除、列表不再有它", async () => {
@@ -154,9 +747,46 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
-      false,
+    expect(
+      entries.some((entry) => entry.name === "kenfutwork-example-clock"),
+    ).toBe(false);
+  });
+
+  it("卸载删除落盘 bundle 但保留 import 快照（dev --watch 不因删被监视文件而重启）", async () => {
+    const { service } = makeService();
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    // 装载即产生快照：快照在系统临时目录、按 installedAt 隔离，且不在落盘目录里
+    const snapshotDir = path.join(
+      tmpdir(),
+      "kenfutwork-plugin-runtime",
+      `${installed.id}-${encodeURIComponent(installed.installedAt)}`,
     );
+    expect(await exists(snapshotDir)).toBe(true);
+    expect(snapshotDir.startsWith(pluginsDir)).toBe(false);
+
+    await service.uninstall(installed.id);
+    expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
+    // 快照只增不删：卸载不触碰它——同进程 import 过的快照一旦删除，
+    // node --watch 照样把它当「被监视文件变更」而重启 dev 服务端
+    expect(await exists(snapshotDir)).toBe(true);
+
+    // 重装（新 installedAt）拿新快照目录，不与旧快照串包
+    const reinstalled = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const secondSnapshot = path.join(
+      tmpdir(),
+      "kenfutwork-plugin-runtime",
+      `${reinstalled.installed.id}-${encodeURIComponent(
+        reinstalled.installed.installedAt,
+      )}`,
+    );
+    expect(secondSnapshot).not.toEqual(snapshotDir);
+    expect(await exists(secondSnapshot)).toBe(true);
   });
 
   it("禁用注销工具，重新启用再注册（同一实例）", async () => {
@@ -173,6 +803,40 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeDefined();
   });
 
+  it("插件经 ctx.storage 读写：插件 id 由内核绑定、工作区由调用方传入，卸载清空数据", async () => {
+    const { kernel, service, fake } = makeService();
+    const dir = await writeStorageBundle();
+    const { installed, report } = await service.install({
+      url: dir,
+      allowLifecycleScripts: false,
+    });
+
+    expect(report.compatible).toBe(true);
+    expect(report.supportedCapabilities).toEqual(["tools", "storage"]);
+
+    const tool = kernel.get("tools").require("storage_probe");
+    const first = await tool.execute({}, { instanceId: "ws-1" });
+    expect(first).toEqual({ before: null, after: "v:none", keys: ["session"] });
+
+    // 同一工作区第二次读得到上次写的值
+    const second = await tool.execute({}, { instanceId: "ws-1" });
+    expect(second).toMatchObject({ before: "v:none" });
+
+    // 另一个工作区读不到（隔离），且数据各自落在「该插件 + 该工作区」名下
+    const other = await tool.execute({}, { instanceId: "ws-2" });
+    expect(other).toMatchObject({ before: null });
+    expect([...fake.rows.keys()].sort()).toEqual(
+      [
+        JSON.stringify(["ws-2", installed.id, "session"]),
+        JSON.stringify(["ws-1", installed.id, "session"]),
+      ].sort(),
+    );
+
+    // 卸载：数据一并清空（停用则保留，见上一个用例）
+    await service.uninstall(installed.id);
+    expect(fake.purged).toEqual([installed.id]);
+    expect(fake.rows.size).toBe(0);
+  });
   it("重启后 restore() 从落盘状态恢复装载（持久化生效）", async () => {
     const first = makeService();
     const { installed } = await first.service.install({
@@ -203,7 +867,7 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(kernel.get("tools").get("clock_now")).toBeDefined();
     const entries = await service.list();
     expect(
-      entries.filter((entry) => entry.name === "loomic-example-clock"),
+      entries.filter((entry) => entry.name === "kenfutwork-example-clock"),
     ).toHaveLength(1);
   });
 });
@@ -240,13 +904,13 @@ describe("plugin-registry：门禁拦截", () => {
     const { kernel, service } = makeService();
     const { manifest, report } = await service.inspect({ url: EXAMPLE_PLUGIN });
     expect(report.compatible).toBe(true);
-    expect(manifest.name).toBe("loomic-example-clock");
+    expect(manifest.name).toBe("kenfutwork-example-clock");
     // 没有装载，也没有落盘
     expect(kernel.get("tools").get("clock_now")).toBeUndefined();
     const entries = await service.list();
-    expect(entries.some((entry) => entry.name === "loomic-example-clock")).toBe(
-      false,
-    );
+    expect(
+      entries.some((entry) => entry.name === "kenfutwork-example-clock"),
+    ).toBe(false);
   });
 
   it("来源不可识别时报错而不是静默成功", async () => {
@@ -266,24 +930,31 @@ describe("plugin-registry：门禁拦截", () => {
     });
   });
 
-  it("系统插件不可卸载", async () => {
-    const { service } = makeService();
-    await expect(service.uninstall("canvas")).rejects.toMatchObject({
-      code: "system_plugin",
-    });
-  });
+  it.each(["model-providers", "agent-runs", "permissions", "canvas"])(
+    "系统插件 %s 不可卸载",
+    async (name) => {
+      const { service } = makeService();
+      await expect(service.uninstall(name)).rejects.toMatchObject({
+        code: "system_plugin",
+      });
+    },
+  );
 });
 
 describe("plugin-registry：导出", () => {
   it("内置插件可导出为双声明 bundle", async () => {
     const { service } = makeService();
     const artifact = service.exportPlugin("skills", "dsh");
-    const pkg = JSON.parse(artifact.files["package.json"]!) as {
+    const pkgJson = artifact.files["package.json"];
+    if (pkgJson === undefined) {
+      throw new Error("导出产物缺少 package.json");
+    }
+    const pkg = JSON.parse(pkgJson) as {
       dsh?: unknown;
-      loomic?: unknown;
+      kenfutwork?: unknown;
     };
     expect(pkg.dsh).toBeDefined();
-    expect(pkg.loomic).toBeDefined();
+    expect(pkg.kenfutwork).toBeDefined();
     expect(artifact.files["index.js"]).toBeDefined();
   });
 
@@ -293,8 +964,8 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
-    const indexJs = artifact.files["index.js"]!;
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
+    const indexJs = artifact.files["index.js"];
     expect(indexJs).toContain("clock_now");
   });
 
@@ -304,10 +975,10 @@ describe("plugin-registry：导出", () => {
       url: EXAMPLE_PLUGIN,
       allowLifecycleScripts: false,
     });
-    const artifact = service.exportPlugin("loomic-example-clock", "dsh");
+    const artifact = service.exportPlugin("kenfutwork-example-clock", "dsh");
 
     // 落盘为独立 bundle 后再走一次真实安装
-    const dir = await mkdtemp(path.join(tmpdir(), "loomic-roundtrip-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-roundtrip-"));
     try {
       await mkdir(dir, { recursive: true });
       for (const [relative, content] of Object.entries(artifact.files)) {
@@ -322,5 +993,356 @@ describe("plugin-registry：导出", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * 插件能力面 v1（用户拍板「插件拥有所有能力」后落地的一部分）：
+ * 提示段（systemPrompt）/ 自带路由（routes）/ UI 入口（ui）都要能注册、能派发、能收回。
+ */
+describe("插件贡献物：提示段 / 路由 / UI 入口", () => {
+  const CONTRIBUTOR = "loomic-contributor";
+
+  async function writeContributor(): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), "kfw-contributor-"));
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: CONTRIBUTOR,
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "cordis.patch.yml"),
+      `- insert:
+    - id: ${CONTRIBUTOR}
+      name: ${CONTRIBUTOR}
+      inject: [tools, systemPrompt, routes, ui]
+`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      `export const name = "${CONTRIBUTOR}";
+export const inject = ["tools", "systemPrompt", "routes", "ui"];
+export function apply(ctx) {
+  ctx.promptFragments.register({ id: "tone", text: "回答一律先给结论。" });
+  ctx.routes.register({
+    path: "panel",
+    public: true,
+    handler: async () => ({ status: 200, body: "<h1>panel</h1>" }),
+  });
+  ctx.routes.register({
+    path: "data",
+    handler: async (request) => ({ ok: true, query: request.query }),
+  });
+  ctx.ui.register({ id: "panel", title: "插件面板", url: "/api/plugins/${CONTRIBUTOR}/panel" });
+  ctx.ui.register({ id: "talk", title: "对话面板", slot: "conversation", url: "assets/talk.html" });
+  ctx.ui.register({ id: "cv", title: "画布面板", slot: "canvas", url: "assets/cv.html" });
+  ctx.ui.register({ id: "cfg", title: "设置面板", slot: "settings", url: "assets/cfg.html" });
+  ctx.ui.register({ id: "bad", title: "非法槽位", slot: "nope", url: "assets/bad.html" });
+}
+`,
+      "utf8",
+    );
+    return dir;
+  }
+
+  it("注册后：提示段可见、公开路由可匿名访问、私有路由要登录、UI 入口带出", async () => {
+    const { service } = makeService();
+    const source = await writeContributor();
+    const installed = await service.install({
+      allowLifecycleScripts: false,
+      url: source,
+    });
+    // 本机目录安装的 id 形如 local__<包名>：派发与卸载都用它
+    const pluginId = installed.installed.id;
+
+    expect(service.listPromptFragments()).toEqual(["回答一律先给结论。"]);
+    // 四个槽位各自带出（缺省 sidebar）；非法槽位落回 sidebar，不静默丢失面板
+    expect(
+      service.listUiEntries().map((item) => `${item.id}:${item.slot}`),
+    ).toEqual([
+      "panel:sidebar",
+      "talk:conversation",
+      "cv:canvas",
+      "cfg:settings",
+      "bad:sidebar",
+    ]);
+
+    // 公开路由：匿名可访问
+    const publicResult = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "panel",
+      query: {},
+      body: undefined,
+      headers: {},
+      isAuthenticated: false,
+    });
+    expect(publicResult?.status).toBe(200);
+    expect(publicResult?.body).toContain("panel");
+
+    // 私有路由：未登录 401，登录后带参派发
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "data",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: false,
+      }),
+    ).toMatchObject({ status: 401 });
+
+    const authed = await service.dispatchRoute({
+      pluginId,
+      method: "GET",
+      path: "data",
+      query: { q: "1" },
+      body: undefined,
+      headers: { authorization: "Bearer t" },
+      isAuthenticated: true,
+    });
+    expect(authed).toMatchObject({ status: 200, body: { ok: true } });
+
+    // 未注册路径 → undefined（路由层转 404）
+    expect(
+      await service.dispatchRoute({
+        pluginId,
+        method: "GET",
+        path: "nope",
+        query: {},
+        body: undefined,
+        headers: {},
+        isAuthenticated: true,
+      }),
+    ).toBeUndefined();
+
+    // 卸载后贡献物一并收回
+    await service.uninstall(pluginId);
+    expect(service.listPromptFragments()).toEqual([]);
+    expect(service.listUiEntries()).toEqual([]);
+    expect(
+      service.routeVisibility({
+        pluginId,
+        method: "GET",
+        path: "panel",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * 云端护栏：部署形态禁止第三方插件时，安装必须**显式拒绝**（不是 UI 隐藏）。
+ */
+describe("部署形态禁止第三方插件", () => {
+  it("allowThirdParty=false：install 拒绝并给出可读原因", async () => {
+    const kernel = composePlugins(makeEnv(), []);
+    kernels.push(kernel);
+    const service = createPluginRegistryService({
+      allowThirdParty: false,
+      pluginsDir,
+      tools: kernel.get("tools"),
+      subscribe: () => () => {},
+      hostNodeMajor: 22,
+      builtinCatalog: [],
+      storage: fakePluginStorage().storage,
+    });
+
+    await expect(
+      service.install({
+        allowLifecycleScripts: false,
+        url: EXAMPLE_PLUGIN,
+      }),
+    ).rejects.toThrow(/不允许安装第三方插件/);
+  });
+});
+
+describe("plugin-registry：同名插件只允许一份启用安装", () => {
+  /**
+   * 造历史残留：同一个 bundle 名以两个 id 各装一份。
+   * 真实成因是自带 bundle 落 `bundled__<包名>`、本地目录安装落 `local__<包名>`，
+   * 而安装只按 id 去重，于是两份同时启用 → 设置页出现两行一模一样的插件。
+   */
+  async function seedSameNameTwin(installedId: string, name: string) {
+    const stateFile = path.join(pluginsDir, "installed.json");
+    const state = JSON.parse(await readFile(stateFile, "utf8")) as {
+      installed: Array<{ id: string } & Record<string, unknown>>;
+    };
+    const original = state.installed.find((item) => item.id === installedId);
+    if (!original) throw new Error("夹具：未找到已安装记录");
+    const twinId = `bundled__${name}`;
+    const twin = {
+      ...structuredClone(original),
+      id: twinId,
+      // 双胞胎给更早的时间戳：收敛时保留本次安装的那一份
+      installedAt: "2026-01-01T00:00:00.000Z",
+    };
+    await writeFile(
+      stateFile,
+      JSON.stringify(
+        { version: 1, installed: [...state.installed, twin] },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await cp(
+      path.join(pluginsDir, installedId),
+      path.join(pluginsDir, twinId),
+      { recursive: true },
+    );
+    return twinId;
+  }
+
+  it("restore 装载前按包名收敛：只留最新一份并写回记录", async () => {
+    const { service } = makeService();
+    const { installed } = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+    const twinId = await seedSameNameTwin(installed.id, installed.name);
+
+    const rebooted = makeService();
+    await rebooted.service.restore();
+
+    const inventory = await rebooted.service.readPackageInventory();
+    expect(inventory.installed.map((item) => item.record.id)).toEqual([
+      installed.id,
+    ]);
+    const state = JSON.parse(
+      await readFile(path.join(pluginsDir, "installed.json"), "utf8"),
+    ) as { installed: Array<{ id: string }> };
+    expect(state.installed.map((item) => item.id)).toEqual([installed.id]);
+    // 收敛不是卸载：不清私有存储，也就不会触发依赖它的引擎 purge。
+    // 启动路径只改记录，不删目录（开机不做破坏性文件操作）；快照目录由安装路径负责清。
+    expect(rebooted.fake.purged).toEqual([]);
+    expect(twinId).toBe(`bundled__${installed.name}`);
+  });
+
+  it("再次安装同名插件时替换掉旧 id，而不是并存第二份", async () => {
+    const { service } = makeService();
+    const first = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+    const twinId = await seedSameNameTwin(
+      first.installed.id,
+      first.installed.name,
+    );
+
+    const { installed } = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+
+    const inventory = await service.readPackageInventory();
+    expect(inventory.installed.map((item) => item.record.id)).toEqual([
+      installed.id,
+    ]);
+    expect(installed.id).not.toBe(twinId);
+    // 双胞胎的贡献物要撤干净：同名工具不能注册两份
+    const tools = inventory.installed.flatMap((item) =>
+      item.record.manifest.name === installed.name ? [item.record.id] : [],
+    );
+    expect(tools).toEqual([installed.id]);
+    // 双胞胎那一行必须从列表里消失（list 按 id 出行；同名自带目录另按名字标已装，属既有语义）
+    const entries = await service.list();
+    expect(entries.filter((entry) => entry.id === twinId)).toHaveLength(0);
+  });
+});
+
+describe("插件贡献随启用态收敛", () => {
+  it("安装后可读 MCP/命令/Hook；停用与卸载后不再贡献", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-contrib-"));
+    tempDirs.push(dir);
+    await mkdir(path.join(dir, "commands"), { recursive: true });
+    await mkdir(path.join(dir, "hooks"), { recursive: true });
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "contrib-probe",
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      "export const inject = [];\nexport function apply() {}\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "cordis.patch.yml"),
+      "- insert:\n    - id: contrib-probe\n      name: contrib-probe\n      inject: []\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "probe-http": { type: "http", url: "https://example.com/mcp" },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "commands", "probe.md"),
+      "---\ndescription: Probe\n---\nRun $ARGUMENTS",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "hooks", "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              hooks: [
+                {
+                  type: "process",
+                  command: "node",
+                  args: ["${ZCODE_PLUGIN_ROOT}/hook.mjs"],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+
+    const { service } = makeService();
+    const { installed } = await service.install({
+      url: dir,
+      allowLifecycleScripts: false,
+    });
+
+    expect(
+      (await service.listMcpServers()).map((server) => server.name),
+    ).toEqual(["probe-http"]);
+    expect(
+      (await service.listCommands()).map((command) => command.name),
+    ).toEqual(["probe"]);
+    const hooks = await service.listHooks();
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0]?.event).toBe("turn-start");
+    expect(hooks[0]?.pluginRoot).toContain(installed.id);
+
+    await service.setEnabled(installed.id, false);
+    expect(await service.listMcpServers()).toEqual([]);
+    expect(await service.listCommands()).toEqual([]);
+    expect(await service.listHooks()).toEqual([]);
+
+    await service.setEnabled(installed.id, true);
+    await service.uninstall(installed.id);
+    expect(await service.listCommands()).toEqual([]);
   });
 });

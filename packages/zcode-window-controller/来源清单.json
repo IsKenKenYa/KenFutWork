@@ -1,0 +1,64 @@
+{
+  "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+  "upstreamRevision": "29628c9acdb81b703bbd4080c207a0e7ce5e276e",
+  "license": "Apache-2.0",
+  "records": [
+    {
+      "target": "packages/zcode-window-controller/LICENSE",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "550d8df4cfc74878663a511caa97852f15fd9592",
+      "copiedSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "upstreamSource": "references/zcode/LICENSE",
+      "upstreamSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "adaptations": []
+    },
+    {
+      "target": "packages/zcode-window-controller/package.json",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "335033b0eb4c249054b99632a87c83205a2185c3",
+      "copiedSha256": "a76f84a65fbb952db1393b800ce558a7dda43e19b18730b570e89d024a8153d2",
+      "origin": "e58 固定提交中的包导出与构建包装"
+    },
+    {
+      "target": "packages/zcode-window-controller/src/index.ts",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "b48487fb929472d4974a096d29e2ee3fc4e055f5",
+      "copiedSha256": "c8c994b0da3b4a1870fedc177c0c4f6a68ec6d706dec8532c44bb66d5daf39c1",
+      "origin": "e58 固定提交中的包导出与构建包装"
+    },
+    {
+      "target": "packages/zcode-window-controller/src/windowHostControllerProjection.ts",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "9a1b30d20fe292a681dcb1c1d67d5a2b327d7bdb",
+      "copiedSha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "upstreamSource": "references/zcode/packages/desktop/src/host/windowHostControllerProjection.ts",
+      "upstreamSha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "adaptations": []
+    },
+    {
+      "target": "packages/zcode-window-controller/src/windowHostControllerService.ts",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "6c53060eb2a8292dc84d8f32fe69cd53890e6731",
+      "copiedSha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "upstreamSource": "references/zcode/packages/desktop/src/host/windowHostControllerService.ts",
+      "upstreamSha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "adaptations": []
+    },
+    {
+      "target": "packages/zcode-window-controller/src/windowHostSessionsIndexObserver.ts",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "c4fcff1eed448eddecb76648972cba15eb001333",
+      "copiedSha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "upstreamSource": "references/zcode/packages/desktop/src/host/windowHostSessionsIndexObserver.ts",
+      "upstreamSha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "adaptations": []
+    },
+    {
+      "target": "packages/zcode-window-controller/tsconfig.json",
+      "fixedSourceRevision": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
+      "gitBlobSha1": "6e8bc9b69d4f1807fcbb786add54043a0b76d947",
+      "copiedSha256": "025e51722db44f98a8ad81711098502279e76ea828ec47c8a41b4892e4538585",
+      "origin": "e58 固定提交中的包导出与构建包装"
+    }
+  ]
+}

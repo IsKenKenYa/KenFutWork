@@ -2,7 +2,7 @@ import {
   findUnknownProviderHeaderPlaceholders,
   isReservedProviderHeaderName,
   providerHeaderPlaceholders,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 
 /**
  * 实例自定义请求头的**发送时刻**渲染（《改造计划》§4.8）。

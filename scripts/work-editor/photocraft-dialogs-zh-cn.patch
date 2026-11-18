@@ -1,0 +1,66 @@
+diff --git a/crates/ui-egui/src/color_range_ui.rs b/crates/ui-egui/src/color_range_ui.rs
+index 59b3bfe..f297168 100644
+--- a/crates/ui-egui/src/color_range_ui.rs
++++ b/crates/ui-egui/src/color_range_ui.rs
+@@ -501,15 +501,16 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
+         if let Some(e) = app.color_range.as_ref().and_then(|p| p.error.clone()) {
+             ui.painter().rect_filled(frame, 0.0, t.canvas);
+             let msg = format!(
+-                "Preview unavailable:
+-{e}"
++                "{}
++{e}",
++                tl!("Preview unavailable:")
+             );
+             let g = ui.painter().layout(msg, egui::FontId::proportional(11.0), t.text_faint, frame.width() - 16.0);
+             ui.painter().galley(frame.center() - g.size() / 2.0, g, t.text_faint);
+         }
+         ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
+         let label = match app.color_range.as_ref().and_then(|p| p.error.as_deref()) {
+-            Some(e) => format!("Color Range preview unavailable: {e}"),
++            Some(e) => crate::i18n::fmt(tl!("Color Range preview unavailable: {error}"), &[("error", e)]),
+             None => tl!("Color Range preview").to_string(),
+         };
+         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Image, ui.is_enabled(), &label));
+diff --git a/crates/ui-egui/src/i18n/zh-hans.tsv b/crates/ui-egui/src/i18n/zh-hans.tsv
+index 16cd47e..9118c4b 100644
+--- a/crates/ui-egui/src/i18n/zh-hans.tsv
++++ b/crates/ui-egui/src/i18n/zh-hans.tsv
+@@ -556,6 +556,7 @@
+ 	Match All	全部匹配
+ 	Last Filter	上次滤镜
+ 	Filter Gallery…	滤镜库…
++	Adaptive Wide Angle ({layer})	自适应广角 ({layer})
+ 	Adaptive Wide Angle…	自适应广角…
+ 	Camera Raw Filter…	Camera Raw 滤镜…
+ 	Liquify…	液化…
+@@ -999,6 +1000,7 @@
+ 	Color Mode	颜色模式
+ 	Color Priority	颜色优先
+ 	Color Range preview	色彩范围预览
++	Color Range preview unavailable: {error}	色彩范围预览不可用：{error}
+ 	Color:	颜色：
+ 	Colorize	着色
+ 	Colors	颜色
+@@ -1414,6 +1416,7 @@
+ 	Pressure for Size	用压感控制大小
+ 	Prevent auto-nesting in and out of Artboards and Frames	防止在画板和框架内外自动嵌套
+ 	Preview	预览
++	Preview unavailable:	预览不可用：
+ 	Previous frame	上一帧
+ 	Previous note	上一条注释
+ 	Print	打印
+diff --git a/crates/ui-egui/src/wide_angle_ui.rs b/crates/ui-egui/src/wide_angle_ui.rs
+index b577bf5..d1af078 100644
+--- a/crates/ui-egui/src/wide_angle_ui.rs
++++ b/crates/ui-egui/src/wide_angle_ui.rs
+@@ -272,7 +272,8 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+         painter.rect_filled(full, 0.0, t.chrome);
+         let title = ERect::from_min_size(full.min, vec2(full.width(), 30.0));
+         painter.rect_filled(title, 0.0, t.dock);
+-        painter.text(title.center(), Align2::CENTER_CENTER, format!("Adaptive Wide Angle ({})", d.layer_name), FontId::proportional(13.0), t.text);
++        let title_text = crate::i18n::fmt(tl!("Adaptive Wide Angle ({layer})"), &[("layer", d.layer_name.as_str())]);
++        painter.text(title.center(), Align2::CENTER_CENTER, title_text, FontId::proportional(13.0), t.text);
+         let footer_h = 48.0;
+         let body = ERect::from_min_max(pos2(full.left(), title.bottom()), pos2(full.right(), full.bottom() - footer_h));
+         let view = ERect::from_min_max(body.min, pos2(body.right() - PANEL_W, body.bottom())).shrink(16.0);

@@ -1,0 +1,62 @@
+version: 2
+updates:
+  # 前端/服务端/共享契约都在 pnpm workspace 根锁文件下（pnpm-lock.yaml 是唯一锁），
+  # 所以只声明根目录一条；子包 package.json 由 workspace 解析覆盖。
+  - package-ecosystem: npm_and_yarn
+    directory: /
+    schedule:
+      interval: weekly
+      time: '03:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    # 本仓对 LangChain / deepagents / Next 16 这类包的 majors 是「人为评估后再升」的口径，
+    # 自动 PR 只会制造必须手工回滚的合并压力。
+    ignore:
+      - dependency-name: langchain
+        update-types: [version-update:semver-major]
+      - dependency-name: deepagents
+        update-types: [version-update:semver-major]
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+
+  # 桌面壳（Tauri）：glib 之类是 tauri 带进来的传递依赖，Dependabot 解不动时会在
+  # update_not_possible 里报「无冲突却不可更新」——那种情况靠这里显式升 tauri 线解决。
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+      time: '03:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - desktop
+
+  # 进程沙箱 broker（独立 crate，独立 Cargo.lock）
+  - package-ecosystem: cargo
+    directory: /apps/server/src/features/process-sandbox/native
+    schedule:
+      interval: weekly
+      time: '03:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+
+  # workflow 自己引用的 action 版本也要盯（出包链的安全面之一）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      time: '03:00'
+      timezone: Asia/Shanghai
+    labels:
+      - dependencies
+      - ci

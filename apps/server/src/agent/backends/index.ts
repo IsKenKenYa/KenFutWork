@@ -8,6 +8,8 @@ type AgentBackendEnv = Pick<
   ServerEnv,
   | "agentBackendMode"
   | "agentFilesRoot"
+  | "canvasWorkDirs"
+  | "sandboxRoot"
   | "skillsRoot"
   | "runtimePathAdditions"
   | "javaHome"
@@ -31,12 +33,12 @@ export type AgentBackendResult = {
 export function createAgentBackend(
   env: AgentBackendEnv,
   canvasId?: string,
-  options?: { hasWorkspaceSkills?: boolean },
+  options?: { hasInstanceSkills?: boolean },
 ): AgentBackendResult {
   if (env.agentBackendMode === "filesystem") {
     return createDevelopmentBackend(env, {
       ...(canvasId != null ? { canvasId } : {}),
-      ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+      ...(options?.hasInstanceSkills ? { hasInstanceSkills: true } : {}),
       ...(env.runtimePathAdditions?.length
         ? { runtimePathAdditions: env.runtimePathAdditions }
         : {}),
@@ -51,9 +53,12 @@ export function createAgentBackend(
     );
   }
 
+  const workDir = env.canvasWorkDirs?.[canvasId];
   return createProductionBackendFactory(canvasId, {
+    ...(workDir ? { workDir } : {}),
+    ...(env.sandboxRoot ? { sandboxRoot: env.sandboxRoot } : {}),
     ...(env.skillsRoot ? { skillsRoot: env.skillsRoot } : {}),
-    ...(options?.hasWorkspaceSkills ? { hasWorkspaceSkills: true } : {}),
+    ...(options?.hasInstanceSkills ? { hasInstanceSkills: true } : {}),
     ...(env.runtimePathAdditions?.length
       ? { runtimePathAdditions: env.runtimePathAdditions }
       : {}),

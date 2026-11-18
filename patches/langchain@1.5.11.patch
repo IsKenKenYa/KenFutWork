@@ -1,0 +1,146 @@
+diff --git a/dist/agents/ReactAgent.cjs b/dist/agents/ReactAgent.cjs
+index c02cb04f9a21bb027abd80b62d3f858cc061520f..49b4410d9fe142ef36f96f80259fd81a3eb101ab 100644
+--- a/dist/agents/ReactAgent.cjs
++++ b/dist/agents/ReactAgent.cjs
+@@ -225,8 +225,8 @@ var ReactAgent = class ReactAgent {
+ 			const nextDefault = afterModelNodes[i - 1].name;
+ 			if (node.allowed && node.allowed.length > 0) {
+ 				const allowedMapped = node.allowed.map((t) => require_utils$1.parseJumpToTarget(t)).filter((dest) => dest !== "tools" || hasToolsAvailable);
+-				const destinations = Array.from(/* @__PURE__ */ new Set([nextDefault, ...allowedMapped]));
+-				allNodeWorkflows.addConditionalEdges(current, this.#createAfterModelSequenceRouter(clientTools, node.allowed, nextDefault, hasToolsAvailable), destinations);
++				const destinations = Array.from(/* @__PURE__ */ new Set([nextDefault, ...allowedMapped.map((dest) => dest === require_AgentNode.AGENT_NODE_NAME ? loopEntryNode : dest)]));
++				allNodeWorkflows.addConditionalEdges(current, this.#createAfterModelSequenceRouter(clientTools, node.allowed, nextDefault, hasToolsAvailable, loopEntryNode), destinations);
+ 			} else allNodeWorkflows.addEdge(current, nextDefault);
+ 		}
+ 		if (afterModelNodes.length > 0) {
+@@ -234,8 +234,8 @@ var ReactAgent = class ReactAgent {
+ 			const firstAfterModelNode = firstAfterModel.name;
+ 			const modelPaths = this.#getModelPaths(clientTools, true, hasToolsAvailable).filter((p) => p !== "tools" || hasToolsAvailable);
+ 			const allowJump = Boolean(firstAfterModel.allowed && firstAfterModel.allowed.length > 0);
+-			const destinations = modelPaths.map((p) => p === _langchain_langgraph.END ? exitNode : p);
+-			allNodeWorkflows.addConditionalEdges(firstAfterModelNode, this.#createAfterModelRouter(clientTools, allowJump, exitNode, hasToolsAvailable), destinations);
++			const destinations = Array.from(/* @__PURE__ */ new Set([...modelPaths.map((p) => p === _langchain_langgraph.END ? exitNode : p), loopEntryNode]));
++			allNodeWorkflows.addConditionalEdges(firstAfterModelNode, this.#createAfterModelRouter(clientTools, allowJump, exitNode, hasToolsAvailable, loopEntryNode), destinations);
+ 		}
+ 		for (let i = afterAgentNodes.length - 1; i > 0; i--) {
+ 			const node = afterAgentNodes[i];
+@@ -406,12 +406,16 @@ var ReactAgent = class ReactAgent {
+ 	* @param hasToolsAvailable - Whether tools are available (includes dynamic tools via middleware)
+ 	* @returns Router function that handles jumpTo logic and normal routing
+ 	*/
+-	#createAfterModelRouter(toolClasses, allowJump, exitNode, hasToolsAvailable = toolClasses.length > 0) {
++	#createAfterModelRouter(toolClasses, allowJump, exitNode, hasToolsAvailable = toolClasses.length > 0, modelReturnTarget = require_AgentNode.AGENT_NODE_NAME) {
+ 		const hasStructuredResponse = Boolean(this.options.responseFormat);
+ 		return (state) => {
+ 			const builtInState = state;
+ 			const messages = builtInState.messages;
+ 			const lastMessage = messages.at(-1);
++			if (allowJump && builtInState.jumpTo && require_utils$1.parseJumpToTarget(builtInState.jumpTo) === "model_request") return new _langchain_langgraph.Send(modelReturnTarget, {
++				...state,
++				jumpTo: void 0
++			});
+ 			if (_langchain_core_messages.AIMessage.isInstance(lastMessage) && (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) return exitNode;
+ 			if (allowJump && builtInState.jumpTo) {
+ 				const destination = require_utils$1.parseJumpToTarget(builtInState.jumpTo);
+@@ -423,10 +427,6 @@ var ReactAgent = class ReactAgent {
+ 						jumpTo: void 0
+ 					});
+ 				}
+-				return new _langchain_langgraph.Send(require_AgentNode.AGENT_NODE_NAME, {
+-					...state,
+-					jumpTo: void 0
+-				});
+ 			}
+ 			const toolMessages = messages.filter(_langchain_core_messages.ToolMessage.isInstance);
+ 			const lastAiMessage = messages.filter(_langchain_core_messages.AIMessage.isInstance).at(-1);
+@@ -474,7 +474,7 @@ var ReactAgent = class ReactAgent {
+ 	* @param nextDefault - Default node to route to
+ 	* @param hasToolsAvailable - Whether tools are available (includes dynamic tools via middleware)
+ 	*/
+-	#createAfterModelSequenceRouter(toolClasses, allowed, nextDefault, hasToolsAvailable = toolClasses.length > 0) {
++	#createAfterModelSequenceRouter(toolClasses, allowed, nextDefault, hasToolsAvailable = toolClasses.length > 0, modelReturnTarget = require_AgentNode.AGENT_NODE_NAME) {
+ 		const allowedSet = new Set(allowed.map((t) => require_utils$1.parseJumpToTarget(t)));
+ 		return (state) => {
+ 			const builtInState = state;
+@@ -488,7 +488,7 @@ var ReactAgent = class ReactAgent {
+ 						jumpTo: void 0
+ 					});
+ 				}
+-				if (dest === "model_request" && allowedSet.has("model_request")) return new _langchain_langgraph.Send(require_AgentNode.AGENT_NODE_NAME, {
++				if (dest === "model_request" && allowedSet.has("model_request")) return new _langchain_langgraph.Send(modelReturnTarget, {
+ 					...state,
+ 					jumpTo: void 0
+ 				});
+diff --git a/dist/agents/ReactAgent.js b/dist/agents/ReactAgent.js
+index d19dc5c62e347178396cfd603ee024518b8ca26d..5c67c18fdb1b26500155176e362d8c276e51c07f 100644
+--- a/dist/agents/ReactAgent.js
++++ b/dist/agents/ReactAgent.js
+@@ -225,8 +225,8 @@ var ReactAgent = class ReactAgent {
+ 			const nextDefault = afterModelNodes[i - 1].name;
+ 			if (node.allowed && node.allowed.length > 0) {
+ 				const allowedMapped = node.allowed.map((t) => parseJumpToTarget(t)).filter((dest) => dest !== "tools" || hasToolsAvailable);
+-				const destinations = Array.from(/* @__PURE__ */ new Set([nextDefault, ...allowedMapped]));
+-				allNodeWorkflows.addConditionalEdges(current, this.#createAfterModelSequenceRouter(clientTools, node.allowed, nextDefault, hasToolsAvailable), destinations);
++				const destinations = Array.from(/* @__PURE__ */ new Set([nextDefault, ...allowedMapped.map((dest) => dest === AGENT_NODE_NAME ? loopEntryNode : dest)]));
++				allNodeWorkflows.addConditionalEdges(current, this.#createAfterModelSequenceRouter(clientTools, node.allowed, nextDefault, hasToolsAvailable, loopEntryNode), destinations);
+ 			} else allNodeWorkflows.addEdge(current, nextDefault);
+ 		}
+ 		if (afterModelNodes.length > 0) {
+@@ -234,8 +234,8 @@ var ReactAgent = class ReactAgent {
+ 			const firstAfterModelNode = firstAfterModel.name;
+ 			const modelPaths = this.#getModelPaths(clientTools, true, hasToolsAvailable).filter((p) => p !== "tools" || hasToolsAvailable);
+ 			const allowJump = Boolean(firstAfterModel.allowed && firstAfterModel.allowed.length > 0);
+-			const destinations = modelPaths.map((p) => p === END ? exitNode : p);
+-			allNodeWorkflows.addConditionalEdges(firstAfterModelNode, this.#createAfterModelRouter(clientTools, allowJump, exitNode, hasToolsAvailable), destinations);
++			const destinations = Array.from(/* @__PURE__ */ new Set([...modelPaths.map((p) => p === END ? exitNode : p), loopEntryNode]));
++			allNodeWorkflows.addConditionalEdges(firstAfterModelNode, this.#createAfterModelRouter(clientTools, allowJump, exitNode, hasToolsAvailable, loopEntryNode), destinations);
+ 		}
+ 		for (let i = afterAgentNodes.length - 1; i > 0; i--) {
+ 			const node = afterAgentNodes[i];
+@@ -406,12 +406,16 @@ var ReactAgent = class ReactAgent {
+ 	* @param hasToolsAvailable - Whether tools are available (includes dynamic tools via middleware)
+ 	* @returns Router function that handles jumpTo logic and normal routing
+ 	*/
+-	#createAfterModelRouter(toolClasses, allowJump, exitNode, hasToolsAvailable = toolClasses.length > 0) {
++	#createAfterModelRouter(toolClasses, allowJump, exitNode, hasToolsAvailable = toolClasses.length > 0, modelReturnTarget = AGENT_NODE_NAME) {
+ 		const hasStructuredResponse = Boolean(this.options.responseFormat);
+ 		return (state) => {
+ 			const builtInState = state;
+ 			const messages = builtInState.messages;
+ 			const lastMessage = messages.at(-1);
++			if (allowJump && builtInState.jumpTo && parseJumpToTarget(builtInState.jumpTo) === "model_request") return new Send(modelReturnTarget, {
++				...state,
++				jumpTo: void 0
++			});
+ 			if (AIMessage.isInstance(lastMessage) && (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) return exitNode;
+ 			if (allowJump && builtInState.jumpTo) {
+ 				const destination = parseJumpToTarget(builtInState.jumpTo);
+@@ -423,10 +427,6 @@ var ReactAgent = class ReactAgent {
+ 						jumpTo: void 0
+ 					});
+ 				}
+-				return new Send(AGENT_NODE_NAME, {
+-					...state,
+-					jumpTo: void 0
+-				});
+ 			}
+ 			const toolMessages = messages.filter(ToolMessage.isInstance);
+ 			const lastAiMessage = messages.filter(AIMessage.isInstance).at(-1);
+@@ -474,7 +474,7 @@ var ReactAgent = class ReactAgent {
+ 	* @param nextDefault - Default node to route to
+ 	* @param hasToolsAvailable - Whether tools are available (includes dynamic tools via middleware)
+ 	*/
+-	#createAfterModelSequenceRouter(toolClasses, allowed, nextDefault, hasToolsAvailable = toolClasses.length > 0) {
++	#createAfterModelSequenceRouter(toolClasses, allowed, nextDefault, hasToolsAvailable = toolClasses.length > 0, modelReturnTarget = AGENT_NODE_NAME) {
+ 		const allowedSet = new Set(allowed.map((t) => parseJumpToTarget(t)));
+ 		return (state) => {
+ 			const builtInState = state;
+@@ -488,7 +488,7 @@ var ReactAgent = class ReactAgent {
+ 						jumpTo: void 0
+ 					});
+ 				}
+-				if (dest === "model_request" && allowedSet.has("model_request")) return new Send(AGENT_NODE_NAME, {
++				if (dest === "model_request" && allowedSet.has("model_request")) return new Send(modelReturnTarget, {
+ 					...state,
+ 					jumpTo: void 0
+ 				});

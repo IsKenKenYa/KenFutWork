@@ -1,14 +1,15 @@
 import {
   applicationErrorResponseSchema,
-  modelCatalogResponseSchema,
   providerInstanceCreateRequestSchema,
   providerInstanceListResponseSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
+  providerPresetListResponseSchema,
+  providerProbeResultSchema,
   unauthenticatedErrorResponseSchema,
-} from "@loomic/shared";
+} from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
   type ModelProviderService,
   ModelProviderServiceError,
@@ -53,14 +54,14 @@ function sendError(
 export async function registerProviderInstanceRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     modelProviders: ModelProviderService;
   },
 ) {
   // GET /api/provider-instances — 列出实例（凭证红线：只含 hasCredential）
   app.get("/api/provider-instances", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -83,7 +84,7 @@ export async function registerProviderInstanceRoutes(
   // POST /api/provider-instances — 创建实例（apiKey 只写）
   app.post("/api/provider-instances", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -107,7 +108,7 @@ export async function registerProviderInstanceRoutes(
   // PATCH /api/provider-instances/:instanceId — 更新（apiKey 缺省即不改，更新即覆盖）
   app.patch("/api/provider-instances/:instanceId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -133,10 +134,49 @@ export async function registerProviderInstanceRoutes(
     }
   });
 
+  // GET /api/provider-instances/presets — models.dev 供应商预设（供应商设置
+  // 「从预设选择」）：非权威 UI 数据，capability 由模态推导，用户可改。
+  app.get("/api/provider-instances/presets", async (_request, reply) => {
+    return reply.code(200).send(
+      providerPresetListResponseSchema.parse({
+        presets: options.modelProviders.listProviderPresets(),
+      }),
+    );
+  });
+
+  // POST /api/provider-instances/:instanceId/probe — 能力探测（阶段 E）：
+  // 连通性 + 中转方言四探测项，结果缓存到实例（运行期据此裁剪请求，fail open）。
+  app.post(
+    "/api/provider-instances/:instanceId/probe",
+    async (request, reply) => {
+      try {
+        const user = await options.localAccess.authenticate(request);
+        if (!user) {
+          return reply.code(401).send(
+            unauthenticatedErrorResponseSchema.parse({
+              error: {
+                code: "unauthorized",
+                message: "Missing or invalid bearer token.",
+              },
+            }),
+          );
+        }
+        const { instanceId } = request.params as { instanceId: string };
+        const result = await options.modelProviders.probeInstance(
+          user,
+          instanceId,
+        );
+        return reply.code(200).send(providerProbeResultSchema.parse(result));
+      } catch (error) {
+        return sendError(error, reply, "instance_probe_failed");
+      }
+    },
+  );
+
   // DELETE /api/provider-instances/:instanceId
   app.delete("/api/provider-instances/:instanceId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({

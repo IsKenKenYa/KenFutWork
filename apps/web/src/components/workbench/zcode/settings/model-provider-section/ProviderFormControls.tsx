@@ -1,0 +1,335 @@
+import { ModelSettingsSummary } from "@zui/host/ModelSettingsSummary.js";
+import { useCallback, useRef, useState } from "react";
+import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
+import type { ProviderSettingsFormModel } from "@zui/lib/providerSettingsFormTypes.js";
+import type { ModelConnectivityResult } from "@zcode/shared";
+import { Loader2Icon, Trash2, Unplug } from "lucide-react";
+import { Button } from "@zui/components/ui/button.js";
+import { Switch } from "@zui/components/ui/switch.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useProviderModelDraft } from "@zui/settings/model-provider-section/useProviderModelDraft.js";
+import { ProviderModelMetadataDialog } from "@zui/settings/model-provider-section/ProviderModelMetadataDialog.js";
+import type { ModelConfigResolution, ProviderConfigObject } from "@zcode/provider";
+import { useProviderDetailFeedback } from "@zui/settings/model-provider-section/ProviderDetailFeedback.js";
+
+export function ModelRowInput({
+  model,
+  providerId,
+  providerName = providerId,
+  providerEnabled = true,
+  providerAccess,
+  inputTestId,
+  deleteTestId,
+  onCommit,
+  onResolveDraft,
+  settingsRevision = 0,
+  providerRevision,
+  onDelete,
+  onEnabledChange,
+  onTest,
+}: {
+  model: ProviderSettingsFormModel;
+  providerId: string;
+  providerName?: string;
+  providerEnabled?: boolean;
+  providerAccess?: ProviderConfigObject["access"];
+  inputTestId?: string;
+  deleteTestId?: string;
+  onCommit: (model: ProviderSettingsFormModel, basedOnRevision: number) => void | Promise<void>;
+  onResolveDraft?: (
+    nextModelId: string,
+    personalConfig: ProviderSettingsFormModel["personalConfig"],
+  ) => Promise<ModelConfigResolution>;
+  settingsRevision?: number;
+  providerRevision?: number | undefined;
+  onDelete?: () => void;
+  onEnabledChange?: (enabled: boolean) => void;
+  onTest?: (model: string) => Promise<ModelConnectivityResult>;
+}) {
+  const { intl } = useZCodeIntl();
+  const generation = Boolean(model.native && model.native.capability !== "chat");
+  const [nativeDraft, setNativeDraft] = useState(model.native);
+  const nativeDraftRef = useRef(model.native);
+  const changeNativeDraft = (value: typeof model.native) => { nativeDraftRef.current = value; setNativeDraft(value); };
+  const { showFeedback } = useProviderDetailFeedback();
+  const [isTesting, setIsTesting] = useState(false);
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
+  const [metadataSaving, setMetadataSaving] = useState(false);
+  const metadataSavingRef = useRef(false);
+  const [commitErrorMessage, setCommitErrorMessage] = useState<string | null>(null);
+  const [draftBasedOnRevision, setDraftBasedOnRevision] = useState(settingsRevision);
+  // 外部 View 每次投影会产生新对象；编辑事务固定打开时的模型与 revision，不能跟随对象刷新重置。
+  const [editingModel, setEditingModel] = useState(model);
+  const editor = useProviderModelDraft({
+    model: editingModel,
+    open: metadataDialogOpen && !generation,
+    scopeKey: providerId,
+    resolve: onResolveDraft,
+  });
+  const { draft } = editor;
+  const [draftErrorField, setDraftErrorField] = useState<
+    | "id"
+    | "contextWindow"
+    | "maxOutputTokens"
+    | "inputFormat"
+    | "reasoningLevelValues"
+    | "reasoningLevelMap"
+    | null
+  >(null);
+
+  const updateDraft = (patch: Parameters<typeof editor.change>[0]) => {
+    editor.change(patch);
+    setDraftErrorField(null);
+  };
+  const commitDraft = async (): Promise<boolean> => {
+    if (generation && nativeDraftRef.current) {
+      const native = parseGenerationModelDraft(nativeDraftRef.current);
+      await onCommit({ ...model, native, modelId: native.id }, draftBasedOnRevision);
+      return true;
+    }
+    const result = await editor.commit();
+    if (result.status === "invalid") {
+      setDraftErrorField(result.field);
+      return false;
+    }
+    setDraftErrorField(null);
+    await onCommit(result.model, draftBasedOnRevision);
+    return true;
+  };
+
+  const cancelMetadataDialog = useCallback(() => {
+    editor.reset(model);
+    setDraftErrorField(null);
+    setCommitErrorMessage(null);
+    setMetadataDialogOpen(false);
+  }, [model]);
+
+  const openMetadataDialog = useCallback(() => {
+    changeNativeDraft(model.native ? structuredClone(model.native) : undefined);
+    setEditingModel(model);
+    editor.reset(model);
+    setDraftErrorField(null);
+    setCommitErrorMessage(null);
+    setDraftBasedOnRevision(generation ? (providerRevision ?? settingsRevision) : settingsRevision);
+    setMetadataDialogOpen(true);
+  }, [model, settingsRevision, generation, providerRevision]);
+
+  const handleMetadataDialogOpenChange = useCallback(
+    (open: boolean) => {
+      // 保存期间 Esc/遮罩不能结束并重开草稿，否则旧保存回包会关闭新一轮编辑。
+      if (metadataSavingRef.current) return;
+      if (!open) {
+        cancelMetadataDialog();
+        return;
+      }
+      openMetadataDialog();
+    },
+    [cancelMetadataDialog, openMetadataDialog],
+  );
+
+  const handleMetadataDialogCommit = useCallback(async (): Promise<boolean> => {
+    if (metadataSavingRef.current) return false;
+    metadataSavingRef.current = true;
+    setMetadataSaving(true);
+    setCommitErrorMessage(null);
+    try {
+      if (!(await commitDraft())) return false;
+      setMetadataDialogOpen(false);
+      return true;
+    } catch (error) {
+      setCommitErrorMessage(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      metadataSavingRef.current = false;
+      setMetadataSaving(false);
+    }
+  }, [commitDraft]);
+
+  const handleTest = useCallback(async () => {
+    if (!onTest || isTesting || !providerEnabled) {
+      return;
+    }
+
+    const modelId = draft.idValue.trim();
+    const dedupeKey = `model-test:${providerId}:${modelId}`;
+    showFeedback({
+      key: dedupeKey,
+      message: intl.formatMessage(
+        { id: "settings.modelProvider.testModel.connectingWithIdentity" },
+        { provider: providerName, model: modelId },
+      ),
+      state: "pending",
+      durationMs: 0,
+    });
+    setIsTesting(true);
+    try {
+      const result = await onTest(modelId);
+      if (result.success) {
+        showFeedback({
+          key: dedupeKey,
+          message: intl.formatMessage(
+            { id: "settings.modelProvider.testModel.successWithIdentity" },
+            { provider: providerName, model: modelId },
+          ),
+          state: "success",
+          successEmphasis: true,
+          dismissible: true,
+          dismissLabel: intl.formatMessage({ id: "common.close" }),
+        });
+      } else {
+        const localizedReason =
+          result.error.code === "provider-unavailable"
+            ? intl.formatMessage({ id: "settings.modelProvider.testModel.providerUnavailable" })
+            : result.error.code === "model-unavailable"
+              ? intl.formatMessage({ id: "settings.modelProvider.testModel.modelUnavailable" })
+              : result.error.message.trim();
+        const reason =
+          localizedReason || intl.formatMessage({ id: "settings.modelProvider.testModel.failed" });
+        showFeedback({
+          key: dedupeKey,
+          message: intl.formatMessage(
+            { id: "settings.modelProvider.testModel.failedWithIdentity" },
+            { provider: providerName, model: modelId, reason },
+          ),
+          state: "failure",
+          durationMs: 8_000,
+          dismissible: true,
+          dismissLabel: intl.formatMessage({ id: "common.close" }),
+        });
+      }
+    } catch (error) {
+      showFeedback({
+        key: dedupeKey,
+        message: intl.formatMessage(
+          { id: "settings.modelProvider.testModel.failedWithIdentity" },
+          {
+            provider: providerName,
+            model: modelId,
+            reason:
+              error instanceof Error
+                ? error.message
+                : intl.formatMessage({ id: "settings.modelProvider.testModel.failed" }),
+          },
+        ),
+        state: "failure",
+        durationMs: 8_000,
+        dismissible: true,
+        dismissLabel: intl.formatMessage({ id: "common.close" }),
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  }, [
+    onTest,
+    isTesting,
+    draft.idValue,
+    intl,
+    providerId,
+    providerName,
+    providerEnabled,
+    showFeedback,
+  ]);
+
+  const testIcon = isTesting ? (
+    <Loader2Icon className="size-3.5 text-foreground-subtle animate-spin" />
+  ) : (
+    <Unplug className="size-3.5 text-foreground-subtle" />
+  );
+  const draftErrorMessage =
+    commitErrorMessage ??
+    (draftErrorField
+      ? intl.formatMessage({
+          id: `settings.modelProvider.modelMetadata.invalid.${draftErrorField}`,
+        })
+      : null);
+  const shouldShowTestButton = !generation && Boolean(onTest);
+  const testDisabled = !providerEnabled || isTesting || !draft.idValue.trim() || !onTest;
+
+  return (
+    <div className="space-y-2 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <ModelSettingsSummary model={model} inputTestId={inputTestId} />
+        {shouldShowTestButton ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 p-0"
+            disabled={testDisabled}
+            title={intl.formatMessage({
+              id: providerEnabled
+                ? "settings.modelProvider.testModel"
+                : "settings.modelProvider.testModel.enableProviderFirst",
+            })}
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
+            onClick={handleTest}
+          >
+            {testIcon}
+          </Button>
+        ) : null}
+        <ProviderModelMetadataDialog
+          editorContent={generation && nativeDraft ? <GenerationModelFields model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
+          onRestore={() => {
+            setDraftErrorField(null);
+            setCommitErrorMessage(null);
+            void editor
+              .restore()
+              .catch((error) =>
+                setCommitErrorMessage(error instanceof Error ? error.message : String(error)),
+              );
+          }}
+          mode="edit"
+          open={metadataDialogOpen}
+          draft={draft}
+          draftErrorMessage={draftErrorMessage}
+          draftErrorField={draftErrorField}
+          overrideFields={editor.overrides}
+          inheritedConfig={editor.inheritedConfig}
+          onOpenChange={handleMetadataDialogOpenChange}
+          onDraftChange={updateDraft}
+          onCommit={handleMetadataDialogCommit}
+          saving={metadataSaving}
+          modelConfigResolutionPending={editor.pending}
+          modelDefaultsLoaded={editor.defaultsLoaded}
+          onModelIdBlur={() => {
+            void editor.flush().catch(() => undefined);
+          }}
+          modelIdReadOnly={model.builtin}
+        />
+        {onDelete ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-foreground-subtle"
+            data-testid={deleteTestId}
+            aria-label={intl.formatMessage({ id: "settings.modelProvider.delete" })}
+            title={intl.formatMessage({ id: "settings.modelProvider.delete" })}
+            onMouseDown={(event) => {
+              // 输入框聚焦时点击删除会先触发 blur 保存，父层刷新后原按钮的 click 会丢失。
+              event.preventDefault();
+            }}
+            onClick={onDelete}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        ) : null}
+        {onEnabledChange ? (
+          <Switch
+            size="sm"
+            checked={model.config.enabled !== false}
+            aria-label={intl.formatMessage({
+              id:
+                model.config.enabled === false
+                  ? "settings.modelProvider.enableAction"
+                  : "settings.modelProvider.disableAction",
+            })}
+            onCheckedChange={onEnabledChange}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}

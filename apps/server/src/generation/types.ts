@@ -1,3 +1,5 @@
+import type { VideoGenerationCaps } from "@kenfutwork/shared";
+
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
   /** Provider-scoped model ID, e.g. "google/nano-banana-pro" */
@@ -16,11 +18,15 @@ export interface ModelInfo {
  * - hd:       ~2K (default, production quality)
  * - ultra:    ~4K (highest, print quality — not all models support this)
  */
-export type ImageQuality = "standard" | "hd" | "ultra";
+export type ImageQuality = string;
 
 export type OutputFormat = "png" | "jpg" | "webp";
 
 export interface ImageGenerateParams {
+  count?: number;
+  width?: number;
+  height?: number;
+  signal?: AbortSignal;
   prompt: string;
   model: string;
   aspectRatio?: string;
@@ -39,16 +45,30 @@ export interface GeneratedImage {
   height: number;
 }
 
+export type ImageAsyncPollResult =
+  | { state: "in_progress" }
+  | { state: "succeeded"; images: GeneratedImage[] }
+  | { state: "failed"; errorMessage: string };
+
 export interface ImageProvider {
   readonly name: string;
   readonly models: readonly ModelInfo[];
+  /** 上传参考素材等准备工作；Job须在登记付费提交阶段之前完成。 */
+  prepareInputs?(params: ImageGenerateParams): Promise<ImageGenerateParams>;
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
+  generateMany?(params: ImageGenerateParams): Promise<GeneratedImage[]>;
+  /** startAsync可按count原生批量；仍须模型明确声明maxOutputs，未知模型按单图。 */
+  readonly supportsAsyncBatch?: true;
+  startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
+  pollAsync?(providerJobId: string): Promise<ImageAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoGenerateParams {
+  signal?: AbortSignal;
   prompt: string;
   model: string;
-  resolution?: "480p" | "720p" | "1080p";
+  resolution?: string;
   duration?: number;
   aspectRatio?: string;
   inputImages?: string[];
@@ -65,14 +85,35 @@ export interface GeneratedVideo {
   durationSeconds: number;
 }
 
+/**
+ * 异步任务面的单次查询结果（五态归一到引擎关心的三态：
+ * queued/cancelled 由引擎与取消路径持有，provider 不产出）。
+ * `videoUrl` 为厂商产物 URL（mime 恒 video/mp4，与既有实现一致）。
+ */
+export type VideoAsyncPollResult =
+  | { state: "in_progress" }
+  | { state: "succeeded"; videoUrl: string }
+  | { state: "failed"; errorMessage: string };
+
 export interface VideoProvider {
   readonly name: string;
   readonly models: readonly VideoModelInfo[];
+  /** 上传参考素材等准备工作；不创建上游生成任务。 */
+  prepareInputs?(params: VideoGenerateParams): Promise<VideoGenerateParams>;
   generate(params: VideoGenerateParams): Promise<GeneratedVideo>;
+  /**
+   * 异步任务面（可选，S6）：submit 立即返回外部任务引用，由 executor 落库
+   * （`background_jobs.provider_job_id`）并经队列延迟消息承载轮询节奏——
+   * 实现里**禁止** while 轮询/自管重试。未实现时 executor 回落阻塞式
+   * `generate()`（遗留注册路径与 google 系 provider 保持不变）。
+   */
+  startAsync?(params: VideoGenerateParams): Promise<{ providerJobId: string }>;
+  pollAsync?(providerJobId: string): Promise<VideoAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoPriceRate {
-  /** Loomic's resolution value sent through the public generation API. */
+  /** KenFutWork's resolution value sent through the public generation API. */
   resolution: "720p" | "1080p";
   /** Provider-native label shown to users, for example 768P or 2K. */
   displayResolution: string;
@@ -91,20 +132,31 @@ export interface VideoPricingInfo {
   rates: readonly VideoPriceRate[];
 }
 
+/** Model info enriched with its owning provider name（生成工具清单条目）。 */
+export interface AvailableModel extends ModelInfo {
+  provider: string;
+}
+
+export interface AvailableVideoModel extends VideoModelInfo {
+  provider: string;
+}
+
 /** Extended model info with video-specific capabilities metadata. */
 export interface VideoModelInfo extends ModelInfo {
+  /** 实例模型声明；缺省保持未知，旧provider继续使用capabilities/limits。 */
+  videoGeneration?: VideoGenerationCaps;
   capabilities: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
+    textToVideo?: boolean;
+    imageToVideo?: boolean;
+    videoToVideo?: boolean;
+    audio?: boolean;
   };
   limits: {
-    maxDuration: number;
+    maxDuration?: number;
     allowedDurations?: number[];
-    maxResolution: "480p" | "720p" | "1080p" | "2160p";
-    maxInputImages: number;
+    maxResolution?: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages?: number;
   };
-  /** Verified provider pricing, separate from Loomic's own credit balance. */
+  /** Verified provider pricing, separate from KenFutWork's own credit balance. */
   pricing?: VideoPricingInfo;
 }

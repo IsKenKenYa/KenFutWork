@@ -1,0 +1,477 @@
+/**
+ * 米家插件：把米家设备接进工作台——侧栏面板可看可控制，agent 也能直接操作。
+ *
+ * 能力面：`tools`（agent 工具）+ `routes`（面板用的 HTTP 面）+ `ui`（侧栏入口）
+ * + `storage`（米家会话持久保存，服务端重启后免扫码）。
+ *
+ * 与内核的约定：
+ * - 路由**默认私有**（要求登录）：面板是同源 iframe，宿主会经 `postMessage` 把令牌递进来
+ *   （`apps/web/src/lib/plugin-panels.tsx` 的握手），面板带 `Authorization` 调这里的路由；
+ * - 实例由调用方显式传入：路由取 `request.instanceId`、工具取执行上下文 `exec.instanceId`，
+ *   插件存储按实例隔离（多用户自托管时各连各的米家账号）；
+ * - 米家会话只落在插件存储里（值保存在实例私有存储、HTTP 永不回显），进程内另存一份内存副本省往返。
+ */
+
+import { randomUUID } from "node:crypto";
+import {
+  createSpecResolver,
+  describeDevice,
+  mergeValues,
+  propertyKey,
+  selectProperties,
+} from "./lib/device-model.js";
+import { createMihomeClient, MIHOME_AUTH_VERSION } from "./lib/micloud.js";
+
+export const name = "kenfutwork-mihome";
+
+export const inject = ["tools", "routes", "ui", "storage"];
+
+/** 设备列表缓存：米家云按天不变，5 分钟内不重复拉。 */
+const DEVICE_CACHE_TTL_MS = 5 * 60 * 1000;
+/** 二维码会话有效期（米家侧 timeout 通常 2 分钟，留点余量）。 */
+const QR_SESSION_TTL_MS = 3 * 60 * 1000;
+/** 单次批量读属性上限（云端按条计费心跳，别把一次面板刷新拆成 N 个请求）。 */
+const PROP_BATCH_SIZE = 100;
+/** 一次最多读多少个器件的属性（器件多时先保证面板能动，不追求一次全刷）。 */
+const MAX_DEVICES_PER_REFRESH = 40;
+const SESSION_KEY = "session";
+
+function notConnectedError() {
+  return {
+    status: 401,
+    body: {
+      error:
+        "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接（一次即可，之后服务端重启也无需重扫）。",
+      code: "not_connected",
+    },
+  };
+}
+
+export function apply(ctx) {
+  const client = createMihomeClient({ logger: ctx.logger });
+  const specs = createSpecResolver({ logger: ctx.logger });
+
+  /** 会话内存副本（键=实例）：省掉每次面板轮询的存储解密。 */
+  const sessions = new Map();
+  /** 设备列表缓存（键=实例）。 */
+  const deviceCache = new Map();
+  /** 二维码登录会话（键=随机 id）。 */
+  const qrSessions = new Map();
+
+  function requireInstance(instanceId, where) {
+    if (typeof instanceId !== "string" || instanceId.trim() === "") {
+      throw new Error(
+        `${where}缺少实例上下文（路由需本机接入上下文、工具需 agent 运行上下文）——插件存储按实例隔离，不能凭空取一个。`,
+      );
+    }
+    return instanceId;
+  }
+
+  async function readSession(instanceId) {
+    const cached = sessions.get(instanceId);
+    if (cached) return cached;
+    const raw = await ctx.storage.get(instanceId, SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    // 旧 `xiaomiio` 会话不能迁移成现代 `mijia` 会话（serviceToken 绑定 sid）。
+    // 与其显示「已连接 + 0 设备」这种假成功，不如自动清掉，让用户只重扫一次正确的码。
+    if (session.authVersion !== MIHOME_AUTH_VERSION) {
+      await ctx.storage.remove(instanceId, SESSION_KEY);
+      return null;
+    }
+    sessions.set(instanceId, session);
+    return session;
+  }
+
+  async function writeSession(instanceId, session) {
+    sessions.set(instanceId, session);
+    await ctx.storage.set(
+      instanceId,
+      SESSION_KEY,
+      JSON.stringify({ ...session, savedAt: new Date().toISOString() }),
+    );
+    deviceCache.delete(instanceId);
+  }
+
+  async function clearSession(instanceId) {
+    sessions.delete(instanceId);
+    deviceCache.delete(instanceId);
+    await ctx.storage.remove(instanceId, SESSION_KEY);
+  }
+
+  /**
+   * 设备 API 用的就是扫码登录会话本身（CookieJar 见 `apiCookieJar`），无需任何兑换步骤；
+   * 这里只做读取与缓存。
+   */
+  async function loadDevices(instanceId, session, { refresh = false } = {}) {
+    const cached = deviceCache.get(instanceId);
+    if (!refresh && cached && Date.now() - cached.at < DEVICE_CACHE_TTL_MS) {
+      return cached;
+    }
+    const { devices, homeCount } = await client.listDevices(session);
+    const entry = { at: Date.now(), list: devices, homeCount };
+    deviceCache.set(instanceId, entry);
+    return entry;
+  }
+
+  /**
+   * 器件视图：[{...基础字段, properties:[…], specError?}]。
+   * 逐器件解析规格（成功/失败都有缓存），再批量读一次属性值；某个器件规格解析失败不影响其它器件。
+   * `refreshSpec`（用户点「刷新」）时强制对失败型号重试一次——否则 10 分钟内一直沿用负缓存。
+   */
+  async function buildDeviceView(
+    session,
+    rawList,
+    { refreshSpec = false } = {},
+  ) {
+    const targets = rawList
+      .map(describeDevice)
+      .filter((device) => device.did)
+      .slice(0, MAX_DEVICES_PER_REFRESH);
+
+    const specErrors = [];
+    const planned = [];
+    for (const device of targets) {
+      try {
+        const spec = await specs.loadSpec(device.model, { force: refreshSpec });
+        planned.push({ device, properties: selectProperties(spec) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        specErrors.push({ did: device.did, name: device.name, error: message });
+        planned.push({ device, properties: [] });
+      }
+    }
+
+    // 离线器件不读值（读了也是旧值），但保留在列表里如实显示离线
+    const online = planned.filter((item) => item.device.online);
+    const params = [];
+    for (const item of online) {
+      for (const property of item.properties) {
+        params.push({
+          did: item.device.did,
+          siid: property.siid,
+          piid: property.piid,
+        });
+      }
+    }
+
+    const values = [];
+    for (let index = 0; index < params.length; index += PROP_BATCH_SIZE) {
+      const chunk = params.slice(index, index + PROP_BATCH_SIZE);
+      if (chunk.length === 0) continue;
+      try {
+        values.push(...(await client.getProps(session, chunk)));
+      } catch (error) {
+        specErrors.push({
+          did: "",
+          name: "属性读取",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        break;
+      }
+    }
+    const valuesByDid = new Map();
+    for (const item of values) {
+      const key = String(item.did);
+      const bucket = valuesByDid.get(key) ?? [];
+      bucket.push(item);
+      valuesByDid.set(key, bucket);
+    }
+
+    return {
+      devices: planned.map((item) => ({
+        ...item.device,
+        properties: mergeValues(
+          item.properties,
+          valuesByDid.get(item.device.did) ?? [],
+        ),
+        hasSpec: item.properties.length > 0,
+      })),
+      specErrors,
+      total: rawList.length,
+    };
+  }
+
+  // === 路由（私有：面板使用本机HttpOnly会话cookie，实例由服务端解析）===
+
+  ctx.routes.register({
+    path: "login/qr",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "获取二维码");
+      const { qrUrl, lp, timeout, auth } = await client.createQrLogin();
+      const sessionId = `qr_${randomUUID()}`;
+      for (const [id, item] of qrSessions) {
+        if (Date.now() - item.at > QR_SESSION_TTL_MS) qrSessions.delete(id);
+      }
+      // deviceId/pass_o/locale 与这张二维码绑定，只留服务端内存，不回前端。
+      qrSessions.set(sessionId, {
+        lp,
+        auth,
+        instanceId,
+        at: Date.now(),
+      });
+      return { status: 200, body: { sessionId, qrUrl, timeout } };
+    },
+  });
+
+  ctx.routes.register({
+    path: "login/poll",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "轮询扫码结果");
+      const sessionId = request.query.sessionId ?? "";
+      const entry = qrSessions.get(sessionId);
+      if (!entry || entry.instanceId !== instanceId) {
+        return {
+          status: 410,
+          body: { error: "二维码会话已失效，请重新获取。", code: "qr_expired" },
+        };
+      }
+      const result = await client.pollQrLogin(entry.lp, entry.auth);
+      if (result.status !== "ok") {
+        if (result.status === "expired") qrSessions.delete(sessionId);
+        return {
+          status: 200,
+          body: {
+            status: result.status,
+            wait: result.wait,
+            ...(result.error ? { error: result.error } : {}),
+          },
+        };
+      }
+      await writeSession(instanceId, result.session);
+      qrSessions.delete(sessionId);
+      return { status: 200, body: { status: "ok" } };
+    },
+  });
+
+  ctx.routes.register({
+    path: "status",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "读取连接状态");
+      const session = await readSession(instanceId);
+      return {
+        status: 200,
+        body: {
+          connected: Boolean(session),
+          // 只回可展示的元信息：令牌与 ssecurity 绝不出插件（BYOK 同一条红线）
+          userId: session?.userId ?? null,
+          apiHost: session?.apiHost ?? null,
+          savedAt: session?.savedAt ?? null,
+        },
+      };
+    },
+  });
+
+  ctx.routes.register({
+    path: "devices",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "列设备");
+      const session = await readSession(instanceId);
+      if (!session) return notConnectedError();
+      const { list, homeCount } = await loadDevices(instanceId, session, {
+        refresh: request.query.refresh === "1",
+      });
+      const view = await buildDeviceView(session, list, {
+        // 用户点「刷新」= 明确想重试：让规格失败的型号也再试一次
+        refreshSpec: request.query.refresh === "1",
+      });
+      const authHint =
+        view.devices.length === 0
+          ? homeCount === 0
+            ? "米家云没有返回家庭数据：请确认扫描的是绑定设备的米家账号，并确认账号地区与米家 App 一致。"
+            : "该米家账号的家庭下没有设备。"
+          : null;
+      return {
+        status: 200,
+        body: {
+          ...view,
+          homeCount,
+          authHint,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    },
+  });
+
+  ctx.routes.register({
+    path: "control",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "控制设备");
+      const session = await readSession(instanceId);
+      if (!session) return notConnectedError();
+      const body = request.body ?? {};
+      const did = typeof body.did === "string" ? body.did : "";
+      const siid = Number(body.siid);
+      const piid = Number(body.piid);
+      if (!did || !Number.isInteger(siid) || !Number.isInteger(piid)) {
+        return {
+          status: 400,
+          body: { error: "控制参数不完整：需要 did / siid / piid。" },
+        };
+      }
+      const written = await client.setProp(session, {
+        did,
+        siid,
+        piid,
+        value: body.value,
+      });
+      const code = written[0]?.code ?? null;
+      // 读回真值：米家云会「接受指令但器件不响应」，只报成功是假成功
+      let value = null;
+      try {
+        const read = await client.getProps(session, [{ did, siid, piid }]);
+        value = read[0]?.value ?? null;
+      } catch (error) {
+        ctx.logger.warn("米家控制后读回失败：", error);
+      }
+      return {
+        status: code === 0 ? 200 : 502,
+        body: {
+          ok: code === 0,
+          code,
+          value,
+          message: code === 0 ? "已下发" : `米家云返回 code=${code}`,
+        },
+      };
+    },
+  });
+
+  ctx.routes.register({
+    path: "disconnect",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "断开连接");
+      await clearSession(instanceId);
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // === UI：侧栏入口（面板页由本插件自带，见 assets/panel.html；icon 是米家 logo）===
+  ctx.ui.register({
+    id: "mihome",
+    title: "米家",
+    slot: "sidebar",
+    url: "assets/panel.html",
+    icon: "assets/icon.svg",
+  });
+
+  // === agent 工具：与面板共用同一份会话与规格解析 ===
+
+  ctx.tools.register({
+    name: "mihome_devices",
+    // 只读：默认档不审批（声明 read 的插件工具不进危险判据）。
+    access: "read",
+    description:
+      "列出米家设备：名称、在线状态、房间，以及每台设备可读写的属性（含 siid/piid 与当前值）。控制设备前先用本工具拿到目标属性的 siid/piid。",
+    parameters: {
+      type: "object",
+      properties: {
+        refresh: {
+          type: "boolean",
+          description: "true 时忽略 5 分钟缓存强制刷新",
+        },
+      },
+    },
+    execute: async (args, exec) => {
+      const instanceId = requireInstance(exec?.instanceId, "工具调用");
+      const session = await readSession(instanceId);
+      if (!session) {
+        throw new Error(
+          "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
+        );
+      }
+      const { list, homeCount } = await loadDevices(instanceId, session, {
+        refresh: args?.refresh === true,
+      });
+      const view = await buildDeviceView(session, list, {
+        refreshSpec: args?.refresh === true,
+      });
+      return {
+        devices: view.devices.map((device) => ({
+          did: device.did,
+          name: device.name,
+          online: device.online,
+          room: device.room,
+          model: device.model,
+          properties: device.properties.map((property) => ({
+            siid: property.siid,
+            piid: property.piid,
+            name: property.name,
+            writable: property.writable,
+            value: property.value ?? null,
+            ...(property.valueList ? { options: property.valueList } : {}),
+          })),
+        })),
+        specErrors: view.specErrors,
+        total: view.total,
+        homeCount,
+        // 不向未验证域名发送凭据；只基于官方主机的家庭数给出诚实提示。
+        ...(view.devices.length === 0
+          ? {
+              note:
+                homeCount === 0
+                  ? "米家云没有返回家庭数据：请确认扫码账号与地区是否正确。"
+                  : "该米家账号的家庭下没有设备。",
+            }
+          : {}),
+      };
+    },
+  });
+
+  ctx.tools.register({
+    name: "mihome_control",
+    // 写设备状态：进默认档审批（名表不认识插件工具名，靠这条声明）。
+    access: "write",
+    description:
+      "写米家设备的某个属性（开关、亮度、模式等）。siid/piid 与可用取值先用 mihome_devices 查；返回里带读回的真值，便于确认是否真的生效。",
+    parameters: {
+      type: "object",
+      properties: {
+        did: {
+          type: "string",
+          description: "设备 id（mihome_devices 返回的 did）",
+        },
+        siid: { type: "number", description: "服务实例 id" },
+        piid: { type: "number", description: "属性实例 id" },
+        value: {
+          description:
+            "目标值：开关类用 true/false；数值类用数字；枚举类用 valueList 里的 value",
+        },
+      },
+      required: ["did", "siid", "piid", "value"],
+    },
+    execute: async (args, exec) => {
+      const instanceId = requireInstance(exec?.instanceId, "工具调用");
+      const session = await readSession(instanceId);
+      if (!session) {
+        throw new Error(
+          "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
+        );
+      }
+      const did = String(args?.did ?? "");
+      const siid = Number(args?.siid);
+      const piid = Number(args?.piid);
+      if (!did || !Number.isInteger(siid) || !Number.isInteger(piid)) {
+        throw new Error("控制参数不完整：需要 did / siid / piid。");
+      }
+      const written = await client.setProp(session, {
+        did,
+        siid,
+        piid,
+        value: args?.value,
+      });
+      const code = written[0]?.code ?? null;
+      if (code !== 0) {
+        throw new Error(`米家云拒绝了这次写入（code=${code}）。`);
+      }
+      const read = await client.getProps(session, [{ did, siid, piid }]);
+      return {
+        ok: true,
+        did,
+        key: propertyKey(siid, piid),
+        value: read[0]?.value ?? null,
+      };
+    },
+  });
+}

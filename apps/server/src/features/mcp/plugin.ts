@@ -1,15 +1,28 @@
 import type { ServerEnv } from "../../config/env.js";
 import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
+import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
+import { createCodeUiMcpHost } from "./code-ui-host.js";
+import {
+  createMcpEnvCredentialReader,
+  MCP_ENV_CREDENTIAL_CAPABILITY,
+} from "./env-credential.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
+import { mcpConfigurationVersion } from "./mcp-tools.js";
 import { createMcpServerStore } from "./server-store.js";
+import {
+  createTaskMcpService,
+  type TaskMcpService,
+} from "./task-mcp-service.js";
+import { createTaskMcpTools } from "./task-mcp-tools.js";
 
 /**
  * mcp 插件（P4d，§4.5）：连接 MCP server → 工具注册进 ctx.tools。
  *
  * 配置来源两处（**同名时库内优先**）：
- * - `mcp_servers` 表：界面可增删改（变更类走管理员门，因为会在本机起子进程）；
- * - `LOOMIC_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
+ * - `mcp_servers` 表：界面可增删改（变更类走已授权本机访问门，因为会在本机起子进程）；
+ * - `KENFUTWORK_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
  *
  * 插件**常驻挂载**（不再以「有没有配 server」决定 enabled）——否则没配环境变量时
  * 连管理入口都不存在。连接失败是运行态（状态里可查原因），不阻断进程启动。
@@ -23,18 +36,20 @@ export interface McpServerConfig {
 }
 
 export function parseMcpServers(raw: string | undefined): McpServerConfig[] {
-  if (!raw || !raw.trim()) {
+  if (!raw?.trim()) {
     return [];
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error("[mcp] LOOMIC_MCP_SERVERS 必须是 JSON 数组（fail loud）。");
+    throw new Error(
+      "[mcp] KENFUTWORK_MCP_SERVERS 必须是 JSON 数组（fail loud）。",
+    );
   }
   return parsed.map((entry) => {
     const config = entry as Partial<McpServerConfig>;
     if (!config.name || !config.command) {
       throw new Error(
-        "[mcp] LOOMIC_MCP_SERVERS 每项需要 name 与 command（fail loud）。",
+        "[mcp] KENFUTWORK_MCP_SERVERS 每项需要 name 与 command（fail loud）。",
       );
     }
     return {
@@ -50,37 +65,172 @@ export function createMcpPlugin(): PluginDefinition {
   // 同一个 service 实例贯穿 apply（连接）与 mounted（路由）：
   // 两处各建一个实例会让路由拿到空连接表——状态恒为 error、重连会开出第二条连接
   let service: McpService | undefined;
+  let tasks: TaskMcpService | undefined;
 
   return {
     name: "mcp",
-    inject: ["auth", "admin", "persistence"],
+    inject: [
+      "localInstance",
+      "localAccess",
+      "persistence",
+      "processSandbox",
+      "settings",
+      "executionScopes",
+      "taskWork",
+    ],
     apply(ctx) {
       service = createMcpService({
         env: ctx.env as ServerEnv,
         registry: ctx.get("tools"),
-        store: createMcpServerStore(ctx.get("persistence")),
-      });
-      ctx.effect(() => () => {
-        void service?.shutdown();
-      });
-      // 连接是异步的：挂载后逐个连接并注册工具（可用性不影响进程启动）
-      // 兜底 catch：即使 connectAll 内部失效，也不能把进程带走（unhandled rejection）
-      void service.connectAll().catch((error: unknown) => {
-        console.warn(
-          "[mcp] 启动连接异常（不影响进程）：",
-          error instanceof Error ? error.message : String(error),
-        );
+        store: createMcpServerStore(
+          ctx.get("persistence"),
+          ctx.get("localInstance"),
+        ),
+        // 可选依赖：测试装配可以没有插件内核；生产装配在 apply 之后仍可懒解析。
+        pluginServers: async () =>
+          ctx.tryGet("plugins")?.listMcpServers() ?? [],
+        resolveTimeoutMs: async () => {
+          const actor = await ctx.get("localInstance").serviceActor();
+          return (
+            await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId)
+          ).executeTimeoutMs;
+        },
+        executeTool: async (source, tool, args, context, remoteCall) => {
+          if (!tasks) throw new Error("MCP Task工作域未加载，请重启应用。");
+          return source.kind === "stdio"
+            ? tasks.callConfigured(source, tool, args, context)
+            : remoteCall();
+        },
+        onDisconnect: (name) => tasks?.closeSource(name) ?? Promise.resolve(),
       });
     },
     mounted(ctx) {
       if (!service) {
         throw new Error("[mcp] service 未初始化（apply 未执行）。");
       }
+      for (const [id, value] of Object.entries(
+        createCodeUiMcpHost({
+          service,
+          localInstance: ctx.get("localInstance"),
+        }),
+      )) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
+      // 两种工作方式都通过固定Task目录与同一沙箱创建MCP工具源。
+      // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的
+      // key，后装配的能力依赖会因顺序而 fail loud（probe 装配实测踩中）。
+      const tools = ctx.get("tools");
+      const taskService = createTaskMcpService({
+        sandbox: ctx.get("processSandbox"),
+        registry: tools,
+        settings: ctx.get("settings"),
+        version: ctx.env.version,
+      });
+      tasks = taskService;
+      ctx.effect(() =>
+        ctx
+          .get("capabilities")
+          .register<ComputerUseMcpSource>("computer-use-mcp-source", {
+            id: "mcp:instance-inventory",
+            value: {
+              list: async (context) => {
+                if (
+                  !context.actor ||
+                  context.actor.instanceId !== context.instanceId
+                )
+                  throw new Error("桌面MCP缺少可信本地调用上下文");
+                await ctx.get("localInstance").resolve(context.actor);
+                return [
+                  ...(await service!.computerUseConnections()),
+                  ...(await taskService.computerUseConnections(context)),
+                ];
+              },
+            },
+          }),
+      );
+      for (const tool of createTaskMcpTools(taskService)) {
+        ctx.effect(() =>
+          tools.registerDynamic({
+            id: `mcp:${tool.name}`,
+            scope: "shared",
+            configurationVersion: mcpConfigurationVersion({
+              version: ctx.env.version,
+              parameters: tool.parameters,
+              access: tool.access,
+              execute: tool.execute.toString(),
+            }),
+            resolve(run) {
+              const handle = run.scopeHandle;
+              if (!handle) return null;
+              if (
+                tool.access !== "read" &&
+                (handle.role === "explore" ||
+                  handle.role === "review" ||
+                  handle.describe().sandboxMode === "read-only")
+              )
+                return null;
+              return tool;
+            },
+          }),
+        );
+      }
+      ctx.effect(() =>
+        ctx.get("capabilities").register("task-before-process-close", {
+          id: "mcp:task-connections",
+          value: {
+            close: (instanceId: string, taskId: string) =>
+              taskService.closeTask(instanceId, taskId, "Task已关闭"),
+          },
+        }),
+      );
+      // 只读凭据缝：知识库要复用 jev MCP 条目的 TypeSafe key 注入 `sag config`。
+      // 只按「服务器名 + env 键」取单值，不枚举整个 env、不经 HTTP 暴露（DEC-7）。
+      const startedService = service;
+      if (startedService) {
+        ctx.effect(() =>
+          ctx.get("capabilities").register(MCP_ENV_CREDENTIAL_CAPABILITY, {
+            id: "mcp:env-credential",
+            value: createMcpEnvCredentialReader({
+              readConfigurations: () =>
+                startedService.readSettingsConfigurations(),
+            }),
+          }),
+        );
+      }
+      ctx.effect(() =>
+        ctx
+          .get("executionScopes")
+          .onRevoke(({ previous, next }) => taskService.revoke(previous, next)),
+      );
+      ctx.effect(() =>
+        ctx
+          .get("taskWork")
+          .onHostLost(() => taskService.shutdown("执行宿主租约已失效")),
+      );
+      const shutdown = async () => {
+        await taskService.shutdown("MCP插件/宿主关闭");
+        await service?.shutdown();
+      };
+      ctx.app.addHook("onClose", shutdown);
+      void service.connectAll().catch((error: unknown) => {
+        console.warn(
+          "[mcp] 启动连接异常：",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
       void registerMcpRoutes(ctx.app, {
-        admin: ctx.get("admin"),
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
         service,
       });
+      // 最后登记：LIFO卸载先夹紧准入并join真实stop，再撤销工具和生命周期订阅。
+      ctx.effect(() => shutdown);
     },
   };
 }

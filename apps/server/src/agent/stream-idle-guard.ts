@@ -1,3 +1,5 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+
 /**
  * 流空闲看门狗（stream idle watchdog）。
  *
@@ -12,11 +14,12 @@
  *   同时回调 `onIdle` 中止底层请求（释放上游连接）；
  * - 中止 → 结束迭代，适配器照旧走 canceled 分支（界面「停止」按钮真正生效）。
  *
- * 阈值依据：流事件在工具执行期间也会发（tools 的 start/end），最长静默发生在
- * 单个工具执行期间——沙箱命令超时为 120s，故默认 180s 留出余量。
+ * 调用方只在真实模型请求期间启用计时；工具和人审等待不属于模型停滞。
+ * 默认与护栏由shared governance持有，实例设置与env经settings服务解析。
  */
 
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS =
+  AGENT_GOVERNANCE_DEFAULTS.agentStreamIdleTimeoutMs;
 
 /** 面向用户的错误（文案可直接展示）：error-sanitizer 据此透传而非套用通用文案。 */
 export class StreamIdleTimeoutError extends Error {
@@ -24,8 +27,7 @@ export class StreamIdleTimeoutError extends Error {
 
   constructor(readonly idleMs: number) {
     const seconds = idleMs / 1000;
-    const human =
-      seconds >= 1 ? `${Math.round(seconds)} 秒` : `${idleMs} 毫秒`;
+    const human = seconds >= 1 ? `${Math.round(seconds)} 秒` : `${idleMs} 毫秒`;
     super(
       `模型流已 ${human}没有任何输出（上游停滞），本轮已终止。请重试或更换模型。`,
     );
@@ -36,6 +38,10 @@ export class StreamIdleTimeoutError extends Error {
 export interface StreamIdleGuardOptions {
   /** 空闲上限（毫秒）；<= 0 或非有限值表示不启用超时。 */
   idleMs?: number;
+  /** 仅在调用方确认等待受监控的上游时计时；取消保护始终保留。 */
+  idleEnabled?: () => boolean;
+  /** Trusted tool/approval transitions suspend and restart model-wait timing without polling. */
+  onIdleStateChange?: (listener: () => void) => () => void;
   signal?: AbortSignal;
   /** 空闲超时触发时调用（用于中止底层请求）。抛错不影响终止。 */
   onIdle?: () => void;
@@ -60,6 +66,7 @@ async function stepWithGuard<T>(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  let unsubscribeIdleState: (() => void) | undefined;
   /** 停滞错误：`onIdle` 会中止同一信号，须让「停滞」优先于「取消」胜出。 */
   let idleError: StreamIdleTimeoutError | undefined;
   try {
@@ -70,16 +77,26 @@ async function stepWithGuard<T>(
     if (idleMs > 0 && Number.isFinite(idleMs)) {
       racers.push(
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            idleError = new StreamIdleTimeoutError(idleMs);
-            try {
-              options.onIdle?.();
-            } catch {
-              // 中止回调失败不改变「本轮已停滞」的结论
+          const updateTimer = () => {
+            if (timer !== undefined) {
+              clearTimeout(timer);
+              timer = undefined;
             }
-            reject(idleError);
-          }, idleMs);
-          (timer as { unref?: () => void }).unref?.();
+            if (!(options.idleEnabled?.() ?? true)) return;
+            timer = setTimeout(() => {
+              if (!(options.idleEnabled?.() ?? true)) return;
+              idleError = new StreamIdleTimeoutError(idleMs);
+              try {
+                options.onIdle?.();
+              } catch {
+                /* termination remains authoritative */
+              }
+              reject(idleError);
+            }, idleMs);
+            (timer as { unref?: () => void }).unref?.();
+          };
+          unsubscribeIdleState = options.onIdleStateChange?.(updateTimer);
+          updateTimer();
         }),
       );
     }
@@ -105,6 +122,7 @@ async function stepWithGuard<T>(
       ? { kind: "end" }
       : { kind: "value", value: result.value };
   } finally {
+    unsubscribeIdleState?.();
     if (timer !== undefined) {
       clearTimeout(timer);
     }

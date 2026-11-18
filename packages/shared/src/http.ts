@@ -1,24 +1,26 @@
 import { z } from "zod";
-
 import {
   assetObjectSchema,
   canvasContentSchema,
   canvasDetailSchema,
+  canvasSummarySchema,
   chatMessageSchema,
   chatSessionSummarySchema,
+  identifierSchema,
+  instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
+  projectModesSchema,
   projectSummarySchema,
   runIdSchema,
-  viewerProfileSchema,
-  workspaceMembershipSchema,
-  workspaceSettingsSchema,
-  workspaceSummarySchema,
+  terminalShellSchema,
 } from "./contracts.js";
+import { runStopReasonSchema } from "./events.js";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
-  service: z.literal("loomic-server"),
+  service: z.literal("kenfutwork-server"),
   version: z.string().min(1),
 });
 
@@ -27,31 +29,12 @@ export const runCancelResponseSchema = z.object({
   status: z.enum(["canceling", "canceled"]),
 });
 
-export const viewerCreditsSchema = z.object({
-  balance: z.number().int(),
-  plan: z.string(),
-  dailyClaimed: z.boolean(),
-  limits: z.object({
-    maxConcurrentJobs: z.number().int(),
-    maxResolution: z.string(),
-    monthlyCredits: z.number().int(),
-    dailyCredits: z.number().int(),
-  }),
-});
-
-export const viewerResponseSchema = z.object({
-  profile: viewerProfileSchema,
-  workspace: workspaceSummarySchema,
-  membership: workspaceMembershipSchema,
-  credits: viewerCreditsSchema.optional(),
-});
-
 export const projectListResponseSchema = z.object({
   projects: z.array(projectSummarySchema),
 });
 
 export const projectListQuerySchema = z.object({
-  /** 只取该类型的项目；缺省取 design（画布项目）。 */
+  /** 按已启用工作方式筛选；缺省 design。 */
   kind: projectKindSchema.optional(),
 });
 
@@ -63,6 +46,31 @@ export const projectCreateRequestSchema = z.object({
    * 两端各自按 kind 取列表，避免画布项目与工作目录项目互相串味。
    */
   kind: projectKindSchema.optional(),
+  /**
+   * 项目固定工作目录绝对路径；省略时创建托管目录。服务端校验「绝对路径 + 存在 + 是目录」，
+   * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
+   */
+  work_dir: z.string().trim().min(1).optional(),
+  directory_choice: z.literal("independent").optional(),
+  additional_directories: z.array(additionalDirectorySchema).optional(),
+});
+
+export const projectDirectoryQuerySchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
+});
+export const projectDirectoryCandidatesSchema = z.object({
+  projects: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      kind: projectKindSchema,
+      enabledModes: projectModesSchema,
+      workDir: z.string(),
+    }),
+  ),
 });
 
 export const projectCreateResponseSchema = z.object({
@@ -75,7 +83,6 @@ export const unauthenticatedErrorResponseSchema = z.object({
     message: z.string().min(1),
   }),
 });
-
 // --- Code 模式 git 分支视图（工作目录=项目） ---
 
 export const codeGitBranchSchema = z.object({
@@ -96,11 +103,471 @@ export const codeGitStatusResponseSchema = z.object({
 });
 
 export const codeGitCheckoutRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   branch: z.string().min(1),
 });
 
+// --- G4 worktree 管理（Q10：新建/删除/绑为工作目录的列表面） ---
+
+export const codeGitWorktreeViewSchema = z.object({
+  /** 工作树绝对路径（服务端解析后的真实位置）。 */
+  path: z.string().min(1),
+  head: z.string().min(1),
+  /** 分支短名；detached 工作树为 null。 */
+  branch: z.string().nullable(),
+});
+
+export const codeGitWorktreeListResponseSchema = z.object({
+  worktrees: z.array(codeGitWorktreeViewSchema),
+});
+
+export const codeGitWorktreeCreateResponseSchema = z.object({
+  worktree: codeGitWorktreeViewSchema,
+});
+
+export const codeGitWorktreeCreateRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 相对 Task 工作域的目录名；服务端解析并校验不越出主目录。 */
+  path: z.string().min(1),
+  branch: z.string().min(1),
+  /** true = 从当前 HEAD 新建该分支；false = 检出已存在的分支。 */
+  createBranch: z.boolean().default(false),
+});
+
+export const codeGitWorktreeDeleteRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 列表里的工作树绝对路径（防止任意路径删除）。 */
+  path: z.string().min(1),
+});
+
+// --- Code 模式 git 写操作（R2-1：更改统计 / 提交 / 推送 / 新建分支） ---
+
+export const codeGitDiffStatResponseSchema = z.object({
+  stat: z.object({
+    /** 有改动的文件数（含未跟踪）。 */
+    files: z.number().int().min(0),
+    additions: z.number().int().min(0),
+    deletions: z.number().int().min(0),
+    untracked: z.number().int().min(0),
+  }),
+});
+
+export const codeGitCommitRequestSchema = z.object({
+  taskId: z.string().min(1),
+  message: z.string().trim().min(1).max(500),
+});
+
+export const codeGitBranchCreateRequestSchema = z.object({
+  taskId: z.string().min(1),
+  name: z.string().trim().min(1).max(200),
+});
+
+/**
+ * git 图谱（R2-1 条目 6）：`git log --graph --oneline --decorate --all` 的图形行。
+ *
+ * 服务端**不解析**图形（`*` / `|` / `\` 这些字符本身就是画法），原样给前端用等宽字体渲染；
+ * 只额外给两个判断：`isRepo`（非仓库时前端显示初始化引导）与 `truncated`（历史比条数上限更长）。
+ */
+/**
+ * git 图谱（参考图 `git图谱.png`）：独立窗口里的 图/描述/日期/作者/提交 表格。
+ * 服务端**不解析图形语义**，只把每行的图形字符与结构化字段分行给出（连接线行也保留，
+ * 否则分支图形会缺笔画）。
+ */
+export const codeGitGraphEntrySchema = z.object({
+  /** 该行的图形字符（`*`、`|`、`|\`…），界面按等宽渲染成「图」列。 */
+  rail: z.string(),
+  /** 提交行才有；连接线行为 null。 */
+  sha: z.string().nullable(),
+  shortSha: z.string().nullable(),
+  subject: z.string(),
+  author: z.string(),
+  date: z.string(),
+  /** ref 装饰（HEAD / main / origin/main…）。 */
+  refs: z.array(z.string()),
+  /** 父提交短 sha（详情面板用）。 */
+  parents: z.array(z.string()),
+});
+
+export const codeGitGraphResponseSchema = z.object({
+  graph: z.object({
+    isRepo: z.boolean(),
+    /** 逐行数据；无提交时为空数组（不是错误）。 */
+    entries: z.array(codeGitGraphEntrySchema),
+    truncated: z.boolean(),
+  }),
+});
+
+// --- Code 模式变更清单 / 单文件差异 / 单文件内容（R3-2、R3-3 共用） ---
+
+export const codeGitChangedFileSchema = z.object({
+  path: z.string().min(1),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  /** 二进制文件没有行数概念：`additions`/`deletions` 恒为 0。 */
+  binary: z.boolean(),
+  status: z.enum(["modified", "added", "deleted", "renamed", "untracked"]),
+  /** 已进索引（审查视图据此标「已暂存」并决定按钮文案）。 */
+  staged: z.boolean(),
+});
+
+/** 「审查」里的暂存/取消暂存（参考图审查视图的「暂存」）。 */
+export const codeGitStageRequestSchema = z.object({
+  taskId: z.string().min(1),
+  path: z.string().min(1).max(1000),
+  staged: z.boolean(),
+});
+
+/** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
+export const codeGitStageHunkRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 这个块属于哪个文件（服务端会核对 patch 里改的确实只有它）。 */
+  path: z.string().min(1).max(1000),
+  /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
+  patch: z.string().min(1).max(200_000),
+  /** true = 反向应用（索引里撤下 / 工作区里撤销）。 */
+  reverse: z.boolean().optional(),
+  /** `index` = 动索引（暂存/取消暂存）；`worktree` = 动工作区（撤销这一块的改动）。 */
+  target: z.enum(["index", "worktree"]).optional(),
+});
+
+/** 撤销：单个文件（未跟踪的会被删掉）或全部未提交改动。 */
+export const codeGitDiscardRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 缺省 = 撤销全部。 */
+  path: z.string().min(1).max(1000).optional(),
+  /** 该文件是否未跟踪（未跟踪的撤销 = 删除文件）。 */
+  untracked: z.boolean().optional(),
+});
+
+export const codeGitDiscardResponseSchema = z.object({
+  ok: z.literal(true),
+});
+
+export const codeGitStageResponseSchema = z.object({
+  path: z.string(),
+  staged: z.boolean(),
+});
+
+export const codeGitChangesResponseSchema = z.object({
+  changes: z.object({
+    isRepo: z.boolean(),
+    files: z.array(codeGitChangedFileSchema),
+    /** 变更文件数超过上限（只列前 N 个）。 */
+    truncated: z.boolean(),
+  }),
+});
+
+export const codeGitDiffResponseSchema = z.object({
+  diff: z.object({
+    path: z.string().min(1),
+    /** 统一 diff 文本；未跟踪文件是「按新增行」的合成视图，界面要如实标注。 */
+    text: z.string(),
+    truncated: z.boolean(),
+    untracked: z.boolean(),
+  }),
+});
+
+// --- 工作目录的文件目录（R3-1「文件目录」标签） ---
+
+export const codeFileEntrySchema = z.object({
+  name: z.string().min(1),
+  /** 相对工作目录的路径（点进去时原样回传）。 */
+  path: z.string(),
+  type: z.enum(["file", "dir"]),
+  /** 目录为 null。 */
+  bytes: z.number().int().nonnegative().nullable(),
+});
+
+export const codeFilesResponseSchema = z.object({
+  files: z.object({
+    /** 列的是哪个目录（相对工作目录；根目录是空串）。 */
+    path: z.string(),
+    entries: z.array(codeFileEntrySchema),
+    /** 条目数超上限（只列前 N 项）。 */
+    truncated: z.boolean(),
+  }),
+});
+
+// --- 右栏终端（R3-1「终端」标签）：在画布工作目录里跑用户命令 ---
+
+export const codeTerminalRequestSchema = z.object({
+  taskId: z.string().min(1),
+  command: z.string().trim().min(1).max(4000),
+  /** 本次用的 shell；缺省用工作区设置的默认（设置里没配就是 `auto`）。 */
+  shell: terminalShellSchema.optional(),
+});
+
+/** `GET /api/code/shells`：本机可用的 shell + 工作区设置的默认值（设置页与终端下拉共用）。 */
+export const codeShellsResponseSchema = z.object({
+  shells: z.array(
+    z.object({
+      id: terminalShellSchema,
+      label: z.string(),
+      /** 解析到的可执行文件路径（同名 shell 用它分辨）。 */
+      executable: z.string(),
+    }),
+  ),
+  defaultShell: terminalShellSchema,
+  /** `defaultShell` 是 `auto` 时，这台机器上实际会用的那个 shell（界面据此说清「auto → cmd」）。 */
+  resolvedShell: terminalShellSchema,
+});
+
+export const codeTerminalResponseSchema = z.object({
+  result: z.object({
+    command: z.string(),
+    /** 实际执行这条命令的 shell（`auto` 也会解析成具体的那个）。 */
+    shell: terminalShellSchema,
+    /** 被超时杀掉时为 null。 */
+    exitCode: z.number().int().nullable(),
+    timedOut: z.boolean(),
+    stdout: z.string(),
+    stderr: z.string(),
+    /** 任一流被截断（超出每次执行的输出上限）。 */
+    truncated: z.boolean(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+});
+
+// --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
+
+/**
+ * `GET /api/agent/subagents`：这份清单**由 agent 装配处同一份数据导出**
+ * （`apps/server/src/agent/sub-agents.ts`），不是另写一遍的说明文字——
+ * 界面列出来的，就是真跑起来会用的那些。
+ */
+export const agentSubagentListResponseSchema = z.object({
+  /** 我们声明的子代理（name 即模型分发时用的名字）。 */
+  subagents: z.array(
+    z.object({
+      name: z.string().min(1),
+      /** 中文短名（界面用；英文 description 是给模型看的）。 */
+      label: z.string().min(1),
+      description: z.string(),
+      tools: z.array(z.string()),
+    }),
+  ),
+  /** 框架内置的分发工具（不在我们的声明清单里，但会出现在工具表与事件流里）。 */
+  builtin: z.array(
+    z.object({
+      name: z.string().min(1),
+      label: z.string().min(1),
+      description: z.string(),
+    }),
+  ),
+});
+
+export type AgentSubagentListResponse = z.infer<
+  typeof agentSubagentListResponseSchema
+>;
+
+// --- 原生目录对话框（桌面形态：服务端在跑，对话框开在用户这台机器上） ---
+
+/**
+ * `GET /api/system/directory-picker`：这台服务端能不能弹系统文件夹对话框。
+ *
+ * 只有**桌面形态**可用（服务端与用户同一台机器）。自托管/Web 形态下对话框会开在
+ * 服务器那台机器上、对用户毫无意义，故如实报不可用并给原因——客户端据此决定
+ * 「打开文件夹」是走系统对话框，还是回落到浏览器目录选择器。
+ */
+export const directoryPickerStatusSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().optional(),
+});
+
+/**
+ * `POST /api/system/pick-directory`：弹对话框并把选中的**绝对路径**带回来。
+ *
+ * 四种结果都在 200 里按 `status` 分流（HTTP 状态码表达不了「取消」与「不可用」的差别）：
+ * 取消要静默、不可用要回落另一种选择器、失败要如实报原因。
+ */
+export const pickDirectoryResponseSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("picked"), path: z.string().min(1) }),
+  z.object({ status: z.literal("cancelled") }),
+  z.object({ status: z.literal("unavailable"), reason: z.string() }),
+  z.object({ status: z.literal("failed"), reason: z.string() }),
+]);
+
+export type DirectoryPickerStatus = z.infer<typeof directoryPickerStatusSchema>;
+export type PickDirectoryResponse = z.infer<typeof pickDirectoryResponseSchema>;
+
+// --- agent 运行活动（Git 弹层的「智能体 N 秒 · M 运行」；口径：近 7 天） ---
+
+export const agentRunActivityResponseSchema = z.object({
+  activity: z.object({
+    /** 统计窗口（天）。 */
+    windowDays: z.number().int().min(1).max(90),
+    /** 窗口内该工作目录的 agent 运行次数。 */
+    runs: z.number().int().nonnegative(),
+    /** 窗口内各轮运行时长之和（秒）；仍在跑的轮按「到现在」计。 */
+    totalSeconds: z.number().int().nonnegative(),
+  }),
+});
+
+// --- 会话最近一轮 run 的终态（失败轮的原因要给界面看服务端原文） ---
+
+/**
+ * `GET /api/agent/runs/latest?sessionId=…` 的响应。
+ *
+ * 用途：Code 模式的转录存在客户端本地任务仓，只记收到的事件；断线/重启会让
+ * 「本轮为什么结束」在本地丢失（实测：界面只剩「已工作 N 秒」）。服务端
+ * `agent_runs` 里一直有终态与原因（`error_message`），这个只读端点把它交给界面兜底。
+ * 会话不属于调用方本地实例、或该会话还没有任何一轮 run 时，`run` 为 null。
+ */
+export const agentRunLatestResponseSchema = z.object({
+  run: z
+    .object({
+      /** 运行状态（`accepted` / `running` / `completed` / `failed` / `canceled`）。 */
+      status: z.string().min(1),
+      stopReason: runStopReasonSchema
+        .nullable()
+        .optional()
+        .describe("本轮结束原因；旧记录为空"),
+      errorCode: z.string().nullable(),
+      /** 面向用户的失败原因原文（服务端写的可读文案）。 */
+      errorMessage: z.string().nullable(),
+      /** ISO 时间。 */
+      startedAt: z.string().min(1),
+      completedAt: z.string().nullable(),
+    })
+    .nullable(),
+});
+
+export type AgentRunLatestResponse = z.infer<
+  typeof agentRunLatestResponseSchema
+>;
+
+// --- 单轮运行时间线（事件日志投影 + Markdown 导出） ---
+
+/**
+ * 时间线条目类别：run（开始/结束）、tool（工具调用）、subagent（后台子代理
+ * 结算）、command（后台命令结算）、compaction（上下文压缩）、hook（回合钩子）、
+ * retry（自动重试）。
+ */
+export const runTimelineEntryKindSchema = z.enum([
+  "run",
+  "tool",
+  "subagent",
+  "command",
+  "compaction",
+  "hook",
+  "retry",
+]);
+
+/**
+ * 一条时间线条目。由服务端从 `code_ui_events` 的流事件投影而来：
+ * 同一个 `toolCallId` 的开始与完成合并成一条；消息增量与画布同步这类
+ * 高频事件不进时间线。
+ */
+export const runTimelineEntrySchema = z.object({
+  kind: runTimelineEntryKindSchema,
+  /** 事件日志里递增的序号，客户端据此排序与去重。 */
+  seq: z.number().int().positive(),
+  /** 事件时间（ISO）。 */
+  at: z.string().min(1),
+  /** 一行标题（工具名 / 子代理名 / 钩子事件名）。 */
+  title: z.string().min(1),
+  /** 权威终态；纯信息条目不填。 */
+  status: z.enum(["success", "error", "cancelled", "running"]).optional(),
+  /** 工具名或子代理名，便于客户端按名称过滤。 */
+  name: z.string().min(1).optional(),
+  /** 子代理归因名；主 agent 的调用不填。 */
+  agentName: z.string().min(1).optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  /** 服务端已截断的一行摘要。 */
+  detail: z.string().optional(),
+});
+
+/**
+ * `GET /api/agent/runs/:runId/timeline` 的响应。
+ *
+ * 用途：把一轮运行的完整过程交给界面回看与导出（工具、审批外的钩子、
+ * 压缩、重试、后台子代理结算），并按 `agent_runs` 的终态补上失败原文。
+ * 运行不存在或不属于当前本地实例时返回 404，不返回空壳。
+ */
+export const runTimelineResponseSchema = z.object({
+  run: z.object({
+    runId: runIdSchema,
+    model: z.string().nullable(),
+    status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
+    stopReason: runStopReasonSchema.nullable(),
+    errorCode: z.string().nullable(),
+    /** 面向用户的失败原因原文（服务端写的可读文案）。 */
+    errorMessage: z.string().nullable(),
+    startedAt: z.string().min(1),
+    completedAt: z.string().nullable(),
+    /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+    usage: z
+      .object({
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        /** 成本只在上游声明价格时存在。 */
+        costUsd: z.number().nonnegative().nullable(),
+      })
+      .nullable(),
+  }),
+  entries: z.array(runTimelineEntrySchema),
+});
+
+export type RunTimelineEntry = z.infer<typeof runTimelineEntrySchema>;
+export type RunTimelineEntryKind = z.infer<typeof runTimelineEntryKindSchema>;
+export type RunTimelineResponse = z.infer<typeof runTimelineResponseSchema>;
+
+/**
+ * `GET /api/agent/tasks/:taskId/runs` 的响应。
+ *
+ * 用途：没有检查点的工作区也能按 Task 列出每一轮运行的终态与时间，
+ * 再从 `runId` 进入单轮时间线回看。只返回本实例、本 Task 且所属项目未归档的运行。
+ */
+export const taskRunsResponseSchema = z.object({
+  taskId: identifierSchema,
+  runs: z.array(
+    z.object({
+      runId: runIdSchema,
+      /** 该轮实际使用的模型；历史轮次可能没有记录。 */
+      model: z.string().nullable(),
+      status: z.enum([
+        "accepted",
+        "running",
+        "completed",
+        "failed",
+        "canceled",
+      ]),
+      stopReason: runStopReasonSchema.nullable(),
+      errorCode: z.string().nullable(),
+      errorMessage: z.string().nullable(),
+      startedAt: z.string().min(1),
+      completedAt: z.string().nullable(),
+      /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+      usage: z
+        .object({
+          inputTokens: z.number().int().nonnegative(),
+          outputTokens: z.number().int().nonnegative(),
+          /** 成本只在上游声明价格时存在。 */
+          costUsd: z.number().nonnegative().nullable(),
+        })
+        .nullable(),
+    }),
+  ),
+});
+
+export type TaskRunsResponse = z.infer<typeof taskRunsResponseSchema>;
+
+export const codeGitFileResponseSchema = z.object({
+  file: z.object({
+    path: z.string().min(1),
+    bytes: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    binary: z.boolean(),
+    /** 二进制文件不回内容（空串）。 */
+    content: z.string(),
+  }),
+});
+
 export const applicationErrorCodeSchema = z.enum([
+  "instance_forbidden",
+  "instance_draining",
+  "settings_forbidden",
+  "settings_failed",
   "application_error",
   /**
    * 依赖的服务/能力未装配或不可用（HTTP 503）。
@@ -129,21 +596,47 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_create_failed",
   "canvas_not_found",
   "canvas_save_failed",
+  "canvas_revision_conflict",
+  "canvas_file_missing",
   "chat_error",
   "profile_update_failed",
   "project_query_failed",
   "project_create_failed",
   "project_delete_failed",
   "project_not_found",
+  "project_revision_conflict",
+  "project_prepare_unavailable",
+  "project_identity_mismatch",
   "project_slug_taken",
   "project_update_failed",
+  "invalid_project_modes",
+  "project_directory_conflict",
+  // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
+  "index_disabled",
+  "index_not_built",
+  "index_too_large",
+  "index_failed",
+  /**
+   * 项目工作目录（`projects.work_dir`，web 形态「填本机路径」）校验失败（400）。
+   * 同一个坑第二次踩到（见上面 `service_unavailable` 的注释）：码不在本枚举里，
+   * `parse` 抛错后响应体变成 ZodError 转储、可读原因丢失——真机验收实测。
+   */
+  "invalid_work_dir",
   "session_not_found",
+  "session_unavailable",
   "settings_not_found",
   "settings_update_failed",
+  /** 默认模型不在目录里（保存设置时 fail loud，400；见 modelCatalog.validateSpecifier）。 */
+  "invalid_model",
   "upload_failed",
   "asset_not_found",
   "job_not_found",
+  /** 单轮运行不存在或不属于当前本地实例（404，见运行时间线端点）。 */
+  "run_not_found",
+  /** Task 或项目已归档，取消归档前不能读取或导出运行记录（409）。 */
+  "task_archived",
   "job_create_failed",
+  "job_request_conflict",
   "job_query_failed",
   "job_cancel_failed",
   "skill_not_found",
@@ -159,25 +652,35 @@ export const applicationErrorCodeSchema = z.enum([
   "marketplace_search_failed",
   "marketplace_detail_failed",
   "instance_create_failed",
+  "instance_not_found",
   "instance_update_failed",
   "instance_delete_failed",
   "instance_query_failed",
+  "instance_revision_conflict",
+  "instance_draining",
   "marketplace_install_failed",
-  "insufficient_credits",
-  "credit_query_failed",
-  "credit_claim_failed",
-  "credit_deduct_failed",
-  "credit_refund_failed",
-  "credit_plan_update_failed",
-  "model_not_accessible",
-  "resolution_not_allowed",
   "concurrency_limit",
-  "variant_not_found",
-  "checkout_failed",
   "generation_failed",
+  "media_driver_invalid_file",
+  "media_driver_conflict",
+  "media_driver_removed",
+  "media_driver_not_found",
+  "media_driver_storage_error",
+  "media_driver_preview_stale",
+  "media_driver_permissions",
+  "media_driver_in_use",
   // 插件市场（安装前兼容性门禁 + 启停）
   "invalid_request",
   "plugin_not_found",
+  /**
+   * 插件静态资源（`/api/plugins/<id>/assets/*`）里没有这个文件（404）。
+   *
+   * 为什么单独一个码：这个位置此前用的是 `not_found`——**不在本枚举里**（同一个坑第四次踩到，
+   * 见上面 `service_unavailable` / `invalid_work_dir` 的注释）：响应体退化成 ZodError 转储，
+   * 「资源不存在」被一段乱码 JSON 顶掉，真机排查时完全看不出原因（米家插件面板 404 就是这么暴露的）。
+   * 服务端 `sendError` 的入参已收窄成本类型：写错码现在是编译错误。
+   */
+  "plugin_asset_not_found",
   "plugin_source_failed",
   "plugin_incompatible",
   "install_failed",
@@ -185,6 +688,88 @@ export const applicationErrorCodeSchema = z.enum([
   "toggle_failed",
   "system_plugin",
   "not_installed",
+  // Code 模式 git 写操作（R2-1：提交/推送/建分支）
+  "git_unavailable",
+  "git_write_failed",
+  // Code 模式检查点（影子 git）。服务内部语义码 not_found 不在枚举里（老坑见上），
+  // 路由映射成 checkpoint_not_found 再进响应
+  "checkpoint_not_found",
+  "checkpoint_failed",
+  "run_in_progress",
+  // Task 准入、工作域和 Design 宿主的可读拒绝；HTTP 保留领域错误码。
+  "admission_unavailable",
+  "mode_mismatch",
+  "scope_mismatch",
+  "branch_changed",
+  "invalid_path",
+  "invalid_scope",
+  "path_denied",
+  "read_only",
+  "revoker_unavailable",
+  "scope_changed",
+  "scope_conflict",
+  "scope_project_closed",
+  "scope_revoking",
+  "scope_unavailable",
+  "task_not_found",
+  // 原宿主项目准备、分组和连接的公共错误。
+  "invalid_code_ui_request",
+  "code_ui_not_found",
+  "code_ui_command_conflict",
+  "code_ui_error",
+  "task_group_revision_conflict",
+  "task_group_not_found",
+  "task_groups_not_initialized",
+  "task_unread_conflict",
+  "task_pin_conflict",
+  "design_goal_conflict",
+  "design_input_conflict",
+  "design_restore_conflict",
+  "design_run_missing",
+  "design_task_busy",
+  "design_task_host_busy",
+  "design_task_identity_mismatch",
+  "design_task_policy_changed",
+  "design_task_queue_busy",
+  "design_task_unavailable",
+  "design_task_unprovisioned",
+  "design_client_required",
+  "design_goal_paused",
+  "design_host_closing",
+  "design_input_reserved",
+  "design_mode_unsupported",
+  "design_model_invalid",
+  "design_plan_update_required",
+  "design_run_conflict",
+  "design_run_incomplete",
+  "design_task_lease_lost",
+  // 用户侧使用统计（R4-2）
+  "usage_query_failed",
+  /**
+   * flow 凭证缝（P3）：工作区/平台池没有启用的 dify-engine 实例（404）。
+   * 与 `plugin_asset_not_found` 同一条教训——错误码必须在本枚举里，
+   * 否则 `applicationErrorResponseSchema.parse` 抛错、可读原因被 ZodError 转储顶掉。
+   */
+  "flow_engine_not_configured",
+  /** flow 凭证缝（P3）：实例在但 base_url 缺失/非法（409），凭证不下发半截。 */
+  "flow_engine_invalid",
+  /** flow 计费缝（P4）：hold 状态不允许该操作（无 hold / 已结算 / 已退款 / 并发修改）→ 409。 */
+  "flow_billing_conflict",
+  /** flow 计费缝（P4）：其余失败 → 500。 */
+  "flow_billing_failed",
+  /** flow 引擎托管（FORM-11）：安装已在进行中（409），轮询 status 即可。 */
+  "flow_engine_install_running",
+  /**
+   * OpenDesign 凭证缝（O3 / OD-4）：没有任何启用且有 Key 的 BYOK 实例（404）。
+   * 同 `flow_engine_not_configured` 的教训——码必须先落枚举，否则 parse 抛错，
+   * 可读原因被 ZodError 转储顶掉。
+   */
+  "open_design_not_configured",
+  /**
+   * OpenDesign 凭证缝（O3 / OD-4）：实例在但 Key 读不到或地址非法（409），
+   * 凭证不下发半截（partial 比没有更危险）。
+   */
+  "open_design_credential_unavailable",
 ]);
 
 export const applicationErrorResponseSchema = z.object({
@@ -198,18 +783,43 @@ export const canvasGetResponseSchema = z.object({
   canvas: canvasDetailSchema,
 });
 
+export const canvasListRequestSchema = z.object({
+  query: z.string().trim().max(200).optional(),
+});
+export const canvasListResponseSchema = z.object({
+  canvases: z.array(canvasSummarySchema),
+});
+export const canvasCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  requestId: z.uuid().optional(),
+});
+export const canvasCreateResponseSchema = canvasGetResponseSchema;
+export const canvasRenameRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  expectedName: z.string().min(1).max(200),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteRequestSchema = z.object({
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteResponseSchema = z.object({ ok: z.literal(true) });
+
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
+  expectedRevision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .nullable(),
 });
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  revision: z.string().regex(/^[a-f0-9]{64}$/u),
+  fileReferences: z.record(z.string(), z.string()),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type RunCancelResponse = z.infer<typeof runCancelResponseSchema>;
-export type ViewerCredits = z.infer<typeof viewerCreditsSchema>;
-export type ViewerResponse = z.infer<typeof viewerResponseSchema>;
 export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export type ProjectCreateRequest = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
@@ -220,15 +830,47 @@ export type ApplicationErrorCode = z.infer<typeof applicationErrorCodeSchema>;
 export type ApplicationErrorResponse = z.infer<
   typeof applicationErrorResponseSchema
 >;
-export const profileUpdateResponseSchema = z.object({
-  profile: viewerProfileSchema,
+
+export const instanceSettingsResponseSchema = z.object({
+  settings: instanceSettingsSchema,
 });
 
-export const workspaceSettingsResponseSchema = z.object({
-  settings: workspaceSettingsSchema,
-});
+/**
+ * 去掉字段上的 `.default(...)`。
+ *
+ * `.partial()` **不会**去掉默认值：`z.boolean().default(false)` 在缺省时依然产出 `false`，
+ * 于是「部分更新」的 payload 会带上一堆没送来的键（实测 `parse({codeIndexAutoNewFolder:false})`
+ * 回来 6 个键）。真机复现过后果：改一个索引开关，另一个索引开关被打回默认、终端 shell 回到
+ * `auto`、用户规则被清空——**一次保存静默重置其它所有设置**。
+ */
+/** 字段带 `.default(...)` 时取它**包着的那层**，否则原样返回。 */
+type StripDefault<T> =
+  T extends z.ZodDefault<infer Inner extends z.ZodTypeAny> ? Inner : T;
 
-export const workspaceSettingsUpdateRequestSchema = workspaceSettingsSchema;
+function withoutDefaults<T extends z.ZodRawShape>(
+  shape: T,
+): { [K in keyof T]: StripDefault<T[K]> } {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, field]) => [
+      key,
+      field instanceof z.ZodDefault ? field.removeDefault() : field,
+    ]),
+  ) as { [K in keyof T]: StripDefault<T[K]> };
+}
+
+/**
+ * PUT 的入参是**部分更新**：只写送来的字段，没送的保持库里现值。
+ *
+ * 两个都不能省：① 每个字段先剥掉默认值（见 {@link withoutDefaults}）；② 再 `.partial()`
+ * 让键本身可缺。少任何一个，客户端的单字段保存都会把其余设置重置成默认。
+ */
+export const instanceSettingsUpdateRequestSchema = z
+  .object({
+    ...withoutDefaults(instanceSettingsSchema.shape),
+    // 响应允许未配置空值；显式选择默认模型仍必须提供非空标识。
+    defaultModel: z.string().min(1),
+  })
+  .partial();
 
 export const modelListResponseSchema = z.object({
   models: z.array(modelInfoSchema),
@@ -255,14 +897,20 @@ export type SessionCreateResponse = z.infer<typeof sessionCreateResponseSchema>;
 export type MessageListResponse = z.infer<typeof messageListResponseSchema>;
 export type MessageCreateResponse = z.infer<typeof messageCreateResponseSchema>;
 export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
+export type CanvasListRequest = z.infer<typeof canvasListRequestSchema>;
+export type CanvasListResponse = z.infer<typeof canvasListResponseSchema>;
+export type CanvasCreateRequest = z.infer<typeof canvasCreateRequestSchema>;
+export type CanvasCreateResponse = z.infer<typeof canvasCreateResponseSchema>;
+export type CanvasRenameRequest = z.infer<typeof canvasRenameRequestSchema>;
+export type CanvasDeleteRequest = z.infer<typeof canvasDeleteRequestSchema>;
+export type CanvasDeleteResponse = z.infer<typeof canvasDeleteResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
-export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
-export type WorkspaceSettingsResponse = z.infer<
-  typeof workspaceSettingsResponseSchema
+export type InstanceSettingsResponse = z.infer<
+  typeof instanceSettingsResponseSchema
 >;
-export type WorkspaceSettingsUpdateRequest = z.infer<
-  typeof workspaceSettingsUpdateRequestSchema
+export type InstanceSettingsUpdateRequest = z.infer<
+  typeof instanceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
 
@@ -281,7 +929,12 @@ export type AssetSignedUrlResponse = z.infer<
 >;
 
 export const projectUpdateRequestSchema = z.object({
+  /** 显式跨模式打开项目；默认工作方式必须保留，Flow 不混用。 */
+  enabled_modes: projectModesSchema.optional(),
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
+  /** 固定项目目录；仅接受与已有目录相同的幂等值，null 或切换目录均拒绝。 */
+  work_dir: z.string().trim().min(1).nullable().optional(),
+  additional_directories: z.array(additionalDirectorySchema).optional(),
 });
 export type ProjectUpdateRequest = z.infer<typeof projectUpdateRequestSchema>;

@@ -3,7 +3,7 @@
  * Supabase 专有对象清点（去 Supabase 迁移的工作底账）。
  *
  * 用途：
- *   1. 默认模式：扫描 supabase/migrations/*.sql，输出「必须重写 / 可直接沿用」的
+ *   1. 默认模式：扫描 docker/pg/migrations/*.sql，输出「必须重写 / 可直接沿用」的
  *      对象清单与计数——《多端产品设计》§5 承诺的「差异清单」由此生成，避免手写漂移。
  *   2. --check 模式：只要有 Supabase 专有构造残留即非零退出（中性化完成后的门禁）。
  *
@@ -19,7 +19,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
+const MIGRATIONS_DIR = join(
+  process.cwd(),
+  "docker",
+  "pg",
+  "migrations",
+);
 
 const countMatches = (text, re) => (text.match(re) ?? []).length;
 
@@ -32,9 +37,10 @@ const countMatches = (text, re) => (text.match(re) ?? []).length;
  * 历史值上。故口径（2026-09-14）：残留统计**整体排除中性化迁移**；权威口径是
  * 「迁移序列执行完后的库内状态」——auth.uid()=0、auth.users 外键=0、策略=0、
  * RLS 表=0、云 URL=0，由 `persistence` 的 schema 中性化集成测试锁定
- * （见 docs/tech/改造计划.md §4.13）。
+ * （见 docs/方案设计/改造计划.md §4.13）。
  */
 const NEUTRALIZER_MIGRATIONS = new Set([
+  "20261004195331_local_instance_schema.sql", // 仅前向退役旧身份对象，最终catalog由真实重放验证。
   "20260914120000_localize_home_seed_urls.sql",
   "20260914180000_accounts_replace_auth_users.sql",
   "20260914190000_drop_rls_policies.sql",

@@ -1,5 +1,5 @@
 {
-  "name": "@loomic/config",
+  "name": "@kenfutwork/config",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",

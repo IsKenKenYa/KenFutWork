@@ -1,23 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRunEventNameSchema,
-  executionModeSchema,
   permissionTierSchema,
   usageRecordSchema,
 } from "./capability-contracts.js";
+import { modelInfoSchema } from "./contracts.js";
 import {
   modelCapabilitySchema,
   providerInstanceConfigSchema,
   providerInstanceCreateRequestSchema,
   providerInstanceHeadersSchema,
   providerInstanceListResponseSchema,
+  providerInstanceModelSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
   providerProtocolSchema,
+  providerScopeSchema,
   reservedProviderHeaderNames,
 } from "./provider-contracts.js";
 
 describe("provider-contracts（BYOK 供应商缝）", () => {
+  it("供应商作用域只有 local，账户与平台池作用域被拒绝", () => {
+    expect(providerScopeSchema.safeParse("local").success).toBe(true);
+    expect(providerScopeSchema.safeParse("workspace").success).toBe(false);
+    expect(providerScopeSchema.safeParse("system").success).toBe(false);
+  });
+
   it("协议是封闭集合：未知协议拒绝", () => {
     expect(providerProtocolSchema.safeParse("openai-compatible").success).toBe(
       true,
@@ -27,15 +35,30 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     );
   });
 
-  it("能力词汇表：chat/image/video 之外拒绝", () => {
-    expect(modelCapabilitySchema.safeParse("audio").success).toBe(false);
+  it("dify-engine（Flow 凭证缝）：接受创建请求；库 CHECK 同改由 workspace 对账门禁锁定", () => {
+    expect(providerProtocolSchema.safeParse("dify-engine").success).toBe(true);
+    // 引擎实例不需要 models（本仓不消费其模型），只要 base_url + apiKey
+    expect(
+      providerInstanceCreateRequestSchema.safeParse({
+        name: "本地 Dify",
+        protocol: "dify-engine",
+        baseUrl: "http://127.0.0.1:5001",
+        apiKey: "app-xxx",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("能力词汇表：audio 可用，枚举之外仍拒绝", () => {
+    // audio 是语音助手「听/说」段的能力（本次扩档）；未知能力照旧拒绝
+    expect(modelCapabilitySchema.safeParse("audio").success).toBe(true);
     expect(modelCapabilitySchema.safeParse("image").success).toBe(true);
+    expect(modelCapabilitySchema.safeParse("speech").success).toBe(false);
   });
 
   it("实例 config：空 models 与空 apiKeyRef 拒绝", () => {
     const base = {
       id: "inst-1",
-      workspaceId: "ws-1",
+      instanceId: "local-1",
       name: "我的网关",
       protocol: "openai-compatible",
       apiKeyRef: "ref-1",
@@ -43,6 +66,17 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
       enabled: true,
     };
     expect(providerInstanceConfigSchema.safeParse(base).success).toBe(true);
+    expect(
+      providerInstanceConfigSchema.safeParse({ ...base, apiKeyRef: null })
+        .success,
+    ).toBe(true);
+    expect(
+      providerInstanceConfigSchema.safeParse({
+        ...base,
+        instanceId: undefined,
+        workspaceId: "old",
+      }).success,
+    ).toBe(false);
     expect(
       providerInstanceConfigSchema.safeParse({ ...base, models: [] }).success,
     ).toBe(false);
@@ -52,7 +86,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     ).toBe(false);
   });
 
-  it("创建请求必须携带明文 apiKey（只写通道）", () => {
+  it("创建可保存无凭证草稿，提供的 apiKey 必须非空", () => {
     const base = {
       name: "网关",
       protocol: "anthropic",
@@ -63,17 +97,23 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
         .success,
     ).toBe(true);
     expect(providerInstanceCreateRequestSchema.safeParse(base).success).toBe(
-      false,
+      true,
     );
+    expect(
+      providerInstanceCreateRequestSchema.safeParse({ ...base, apiKey: "" })
+        .success,
+    ).toBe(false);
   });
 
-  it("凭证红线：响应 schema 不含 apiKey/apiKeyRef 字段（多余的 key 会被剥掉）", () => {
+  it("普通响应 schema 不含 apiKey/apiKeyRef；设置按需读取独立于目录", () => {
     const parsed = providerInstanceResponseSchema.parse({
       id: "inst-1",
-      scope: "workspace",
       name: "网关",
       protocol: "gemini",
+      // 目录仅有本地实例作用域。
+      scope: "local",
       hasCredential: true,
+      configRevision: 1,
       models: [{ id: "m1", name: "M1", capability: "image" }],
       headerKeys: [],
       enabled: true,
@@ -89,10 +129,11 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
       instances: [
         {
           id: "i",
-          scope: "workspace",
           name: "n",
           protocol: "volces",
+          scope: "local",
           hasCredential: false,
+          configRevision: 1,
           models: [{ id: "m", name: "M", capability: "video" }],
           headerKeys: ["x-opencode-session"],
           enabled: false,
@@ -194,10 +235,11 @@ describe("provider-contracts 自定义请求头（§4.8，R6-1）", () => {
   it("响应侧只回 headerKeys：值即使误传也被剥除", () => {
     const parsed = providerInstanceResponseSchema.parse({
       id: "inst-1",
-      scope: "workspace",
+      scope: "local",
       name: "opencode",
       protocol: "openai-compatible",
       hasCredential: true,
+      configRevision: 1,
       models: [{ id: "m1", name: "M1", capability: "chat" }],
       headerKeys: ["x-opencode-session"],
       enabled: true,
@@ -212,14 +254,7 @@ describe("provider-contracts 自定义请求头（§4.8，R6-1）", () => {
 });
 
 describe("capability-contracts（能力层共享契约）", () => {
-  it("执行模式与权限档位词汇表按 DEC-3/DEC-4 封闭", () => {
-    expect(executionModeSchema.safeParse("agent").success).toBe(true);
-    expect(executionModeSchema.safeParse("plan").success).toBe(true);
-    expect(executionModeSchema.safeParse("goal").success).toBe(true);
-    expect(executionModeSchema.safeParse("loop").success).toBe(true);
-    expect(executionModeSchema.safeParse("solo").success).toBe(true);
-    expect(executionModeSchema.safeParse("creative").success).toBe(true);
-    expect(executionModeSchema.safeParse("auto").success).toBe(false);
+  it("权限档位词汇表保持封闭", () => {
     expect(permissionTierSchema.safeParse("default").success).toBe(true);
     expect(permissionTierSchema.safeParse("full-access").success).toBe(true);
     expect(permissionTierSchema.safeParse("unlimited").success).toBe(false);
@@ -232,7 +267,7 @@ describe("capability-contracts（能力层共享契约）", () => {
 
   it("用量记录：token 数必须非负整数，agent/直连两链路字段可选", () => {
     const base = {
-      workspaceId: "ws-1",
+      instanceId: "local-1",
       provider: "openai-compatible",
       model: "gpt-x",
       capability: "chat",
@@ -256,5 +291,67 @@ describe("capability-contracts（能力层共享契约）", () => {
         costUsd: 0.01,
       }).success,
     ).toBe(true);
+  });
+});
+
+/**
+ * 模型声明的限额必须**原样留存**（回归）。
+ *
+ * 真机踩过：`maxOutputTokens` 不在 schema 里 —— 用户在供应商设置里写的
+ * `{"id":"GLM-5.3-Flash","maxOutputTokens":128000}` 被 `z.object` 静默剥掉，
+ * 前端拿到的模型永远没有这个数，于是上下文条里「预留输出」段算不出来。
+ * zod 的默认行为是**丢弃未知键**，不会报错——所以这条得靠回归测试钉住。
+ */
+describe("供应商实例模型的限额字段", () => {
+  it("maxOutputTokens 与 contextWindow 一起留存；非法值被拒", () => {
+    const parsed = providerInstanceCreateRequestSchema.parse({
+      name: "实例",
+      protocol: "openai-compatible",
+      apiKey: "sk-x",
+      models: [
+        {
+          id: "GLM-5.3-Flash",
+          name: "GLM-5.3-Flash",
+          capability: "chat",
+          contextWindow: 1_000_000,
+          maxOutputTokens: 128_000,
+        },
+      ],
+    });
+    expect(parsed.models[0]).toEqual({
+      id: "GLM-5.3-Flash",
+      name: "GLM-5.3-Flash",
+      capability: "chat",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+
+    expect(
+      providerInstanceModelSchema.safeParse({
+        id: "m",
+        name: "M",
+        capability: "chat",
+        maxOutputTokens: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      providerInstanceModelSchema.safeParse({
+        id: "m",
+        name: "M",
+        capability: "chat",
+        maxOutputTokens: 1.5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("模型目录条目（modelInfo）也带得上（上下文条要读它）", () => {
+    const parsed = modelInfoSchema.parse({
+      id: "inst-1:GLM-5.3-Flash",
+      name: "GLM-5.3-Flash",
+      provider: "inst-1",
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+    });
+    expect(parsed.maxOutputTokens).toBe(128_000);
   });
 });

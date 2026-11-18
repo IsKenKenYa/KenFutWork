@@ -1,0 +1,205 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  type CodeIndexStats,
+  clearCodeIndex,
+  fetchCodeIndex,
+  rebuildCodeIndex,
+} from "@/lib/server-api";
+import {
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
+
+/**
+ * 设置 → 索引库（R4-3）。
+ *
+ * 形态照参考图（`docs/参考图/索引库-代码库索引开关.png`）：「代码库」分组下**两行开关**，
+ * 两行都是真行为（不是排版）：
+ * 1. **索引新文件夹**：搜到还没有索引的工作目录时自动建一份（文件数 < 50,000 才建）；
+ * 2. **索引存储库以实现即时搜索（测试版）**：右栏「文件目录」的搜索走索引。
+ *
+ * 索引是**本机缓存**（`<cwd>/.kenfutwork/index/<taskId>.json`），进库表的东西一件没有：
+ * 开关记在工作区设置里，索引文件在磁盘上。「所有数据均存储在本地」这句是承诺，所以
+ * 界面上照写并说明落点。
+ */
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function formatBuiltAt(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "—";
+  return new Date(ms).toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function IndexLibrarySection({
+  accessToken,
+  taskId,
+  enabled,
+  autoNewFolder,
+  onToggle,
+  onToggleAuto,
+}: {
+  accessToken: string | null;
+  /** 当前 Code Task（目录取 Task 的持久快照）。 */
+  taskId: string | null;
+  /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
+  enabled: boolean;
+  /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
+  autoNewFolder: boolean;
+  /** 由设置模态统一读写，避免两处真相。 */
+  onToggle: (next: boolean) => Promise<void>;
+  onToggleAuto: (next: boolean) => Promise<void>;
+}) {
+  const [stats, setStats] = useState<CodeIndexStats | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!taskId) return;
+    try {
+      const status = await fetchCodeIndex(accessToken, taskId);
+      setStats(status.stats);
+    } catch {
+      setStats(null);
+    }
+  }, [accessToken, taskId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = async (action: "rebuild" | "clear") => {
+    if (!taskId) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (action === "rebuild") {
+        const result = await rebuildCodeIndex(accessToken, taskId);
+        setStats(result.stats);
+        setMessage(
+          `已重建：${result.stats?.files ?? 0} 个文件、${formatBytes(result.stats?.bytes ?? 0)}`,
+        );
+      } else {
+        await clearCodeIndex(accessToken, taskId);
+        setStats(null);
+        setMessage("已清空索引（下次搜索会按需重建）");
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-label="索引库设置">
+      <h3 className={SETTINGS_TITLE}>索引库</h3>
+
+      <div className={`${SETTINGS_SECTION_GAP} w-full`}>
+        <div>
+          <p className="mb-2 text-xs text-muted-foreground">代码库</p>
+          <div className="divide-y rounded-lg border">
+            <IndexToggle
+              title="索引新文件夹"
+              checked={autoNewFolder}
+              onChange={(next) => void onToggleAuto(next)}
+            />
+            <IndexToggle
+              title="索引存储库（测试版）"
+              checked={enabled}
+              onChange={(next) => void onToggle(next)}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-3 text-sm">
+          {taskId === null ? (
+            <p className="text-muted-foreground">未绑定工作目录</p>
+          ) : stats ? (
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li>
+                已索引 <span className="text-foreground">{stats.files}</span>{" "}
+                个文件 · {formatBytes(stats.bytes)}
+              </li>
+              <li>索引文件 {formatBytes(stats.indexBytes)}</li>
+              <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
+              {stats.skipped > 0 ? (
+                <li>已跳过 {stats.skipped} 个无法读取的文件</li>
+              ) : null}
+              {stats.truncated ? <li>已达上限，部分未索引</li> : null}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">还没有索引</p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !taskId}
+              onClick={() => void run("rebuild")}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {busy ? "处理中…" : "重建索引"}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !taskId || !stats}
+              onClick={() => void run("clear")}
+              className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+            >
+              清空
+            </button>
+          </div>
+        </div>
+
+        {message ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** 单个开关行：标签 + 开关。标签只写名字，不复述行为（2026-09-27 用户口径）。 */
+function IndexToggle({
+  title,
+  checked,
+  onChange,
+}: {
+  title: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+    >
+      <span className="min-w-0 text-sm">{title}</span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={title}
+        aria-checked={checked}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:bg-background before:transition-transform checked:before:translate-x-4"
+      />
+    </label>
+  );
+}

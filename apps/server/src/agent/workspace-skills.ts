@@ -1,5 +1,7 @@
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
+import { pluginSkillReference } from "../features/skills/skill-resource-service.js";
 
 /**
  * A file bundled with a skill (scripts/, references/, assets/).
@@ -15,12 +17,12 @@ export interface SkillFileEntry {
  * Metadata for a workspace skill loaded from the database.
  * Compatible with the deepagents SkillsMiddleware SkillMetadata shape.
  */
-export interface WorkspaceSkillEntry {
+export interface InstanceSkillEntry {
   /** Skill slug (used as directory name in virtual path) */
   name: string;
   /** Human-readable description for the system prompt */
   description: string;
-  /** Virtual path where the agent can read_file the full SKILL.md content */
+  /** Design Store路径或Code只读DB资源标识，提示段选择对应读取入口。 */
   path: string;
   /** Raw SKILL.md content stored in the database */
   content: string;
@@ -28,67 +30,105 @@ export interface WorkspaceSkillEntry {
   files: SkillFileEntry[];
 }
 
-export type WorkspaceSkillsLoader = (
+export type InstanceSkillsLoader = (
+  instanceId: string,
   canvasId: string,
-) => Promise<WorkspaceSkillEntry[]>;
+) => Promise<InstanceSkillEntry[]>;
+
+export type InstanceSkillsByInstanceLoader = (
+  instanceId: string,
+  projectId?: string,
+) => Promise<InstanceSkillEntry[]>;
+
+/** Code用可信工作区身份读取安装包，不经Canvas JOIN，不签发物理FS路径。 */
+export function createInstanceSkillsByInstanceLoader(options: {
+  skills: Pick<SkillCatalogRepository, "listInstanceSkills" | "listSkillFiles">;
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
+  mode?: "code" | "design";
+}): InstanceSkillsByInstanceLoader {
+  return async (instanceId, projectId) => {
+    const installed = await options.skills
+      .listInstanceSkills(instanceId, projectId)
+      .catch(() => []);
+    const enabled = installed.filter((entry) => entry.enabled);
+    const files = await options.skills
+      .listSkillFiles(
+        instanceId,
+        enabled.map((entry) => entry.skillId),
+      )
+      .catch(() => []);
+    const filesBySkillId = new Map<string, SkillFileEntry[]>();
+    for (const file of files) {
+      const packageFiles = filesBySkillId.get(file.skillId) ?? [];
+      packageFiles.push({ path: file.path, content: file.content });
+      filesBySkillId.set(file.skillId, packageFiles);
+    }
+    const packages = options.plugins
+      ? await options.plugins.readSkillPackages(options.mode ?? "code")
+      : [];
+    const pluginSkills = packages
+      .filter((entry) => entry.enabled)
+      .flatMap((entry) =>
+        entry.skills.map((skill) => ({
+          name: pluginSkillReference(entry.pluginId, skill.relativePath),
+          description: skill.description,
+          path: pluginSkillReference(entry.pluginId, skill.relativePath),
+          content: skill.content,
+          files: skill.files,
+        })),
+      );
+    return [
+      ...enabled
+        .filter((entry) => {
+          if (entry.skillContent) return true;
+          console.warn(
+            `[workspace-skills] ${entry.slug} 正文为空，跳过提示注入。`,
+          );
+          return false;
+        })
+        .map((entry) => ({
+          name: entry.slug,
+          description: entry.description,
+          path: `kenfutwork-skill:${entry.skillId}`,
+          content: entry.skillContent,
+          files: filesBySkillId.get(entry.skillId) ?? [],
+        })),
+      ...pluginSkills,
+    ];
+  };
+}
 
 /**
  * 技能加载缝（agent 侧消费）：把「画布 → 工作区 → 已启用 skill + 附带文件」
  * 从 agent 内部装配收敛到数据访问层。
  *
- * 数据访问全部经 repository（工作区谓词）——技能表本身没有 workspace_id，
+ * 数据访问全部经 repository（工作区谓词）——技能表本身没有 instance_id，
  * 靠 `workspace_skills` 这一层限定；不用裸 skill id 取数。
  */
-export function createWorkspaceSkillsLoader(options: {
+export function createInstanceSkillsLoader(options: {
   canvases: CanvasRepository;
   skills: SkillCatalogRepository;
-}): WorkspaceSkillsLoader {
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
+}): InstanceSkillsLoader {
   const { canvases, skills } = options;
+  const loadWorkspace = createInstanceSkillsByInstanceLoader({
+    skills,
+    ...(options.plugins ? { plugins: options.plugins } : {}),
+    mode: "design",
+  });
 
-  return async (canvasId) => {
-    const workspaceId = await canvases
-      .findWorkspaceIdByCanvas(canvasId)
+  return async (instanceId, canvasId) => {
+    const canvas = await canvases
+      .findById(instanceId, canvasId)
       .catch(() => null);
-    if (!workspaceId) return [];
-
-    const installed = await skills
-      .listWorkspaceSkills(workspaceId)
-      .catch(() => []);
-
-    // 只取启用项；无 SKILL.md 正文的条目跳过（旧的告警语义保留）
-    const enabled = installed.filter((entry) => entry.enabled);
-
-    const filesBySkillId = new Map<string, SkillFileEntry[]>();
-    const files = await skills
-      .listSkillFiles(
-        workspaceId,
-        enabled.map((entry) => entry.skillId),
-      )
-      .catch(() => []);
-
-    for (const file of files) {
-      const existing = filesBySkillId.get(file.skillId) ?? [];
-      existing.push({ path: file.path, content: file.content });
-      filesBySkillId.set(file.skillId, existing);
-    }
-
-    return enabled
-      .map((entry) => {
-        if (!entry.skillContent) {
-          console.warn(
-            `[workspace-skills] Skill "${entry.slug}" is enabled but has empty content — skipping`,
-          );
-          return null;
-        }
-
-        return {
-          name: entry.slug,
-          description: entry.description,
-          path: `/workspace-skills/${entry.slug}/SKILL.md`,
-          content: entry.skillContent,
-          files: filesBySkillId.get(entry.skillId) ?? [],
-        };
-      })
-      .filter((entry): entry is WorkspaceSkillEntry => entry !== null);
+    if (!canvas) return [];
+    return (await loadWorkspace(instanceId, canvas.project_id)).map(
+      (entry) => ({
+        ...entry,
+        path: entry.path.startsWith("kenfutwork-plugin-skill:")
+          ? entry.path
+          : `/workspace-skills/${entry.name}/SKILL.md`,
+      }),
+    );
   };
 }

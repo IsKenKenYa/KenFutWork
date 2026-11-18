@@ -10,7 +10,12 @@ import {
 } from "../features/persistence/migrations.js";
 import { resolveDesktopDataDir, resolveDesktopPaths } from "./paths.js";
 import { ensurePgmqAvailable, resolvePgmqShimDir } from "./pgmq-shim.js";
-import { resolvePgBinDir, startEmbeddedPostgres } from "./postgres.js";
+import {
+  type EmbeddedPostgresHandle,
+  resolvePgBinDir,
+  startEmbeddedPostgres,
+} from "./postgres.js";
+import { acquireDesktopServerOwner } from "./server-owner.js";
 
 /**
  * 桌面运行时的准备（FORM-2）：在 buildApp 之前把「本机开箱即用」需要的一切就位。
@@ -29,12 +34,37 @@ export type DesktopRuntime = {
   shutdown(): Promise<void>;
 };
 
-/** 是否桌面形态：内嵌数据库或免登录认证任一开启即算。 */
+/** 桌面供给持有内嵌数据库生命周期。 */
 export function isDesktopRuntime(env: ServerEnv): boolean {
-  return Boolean(env.embeddedPostgres) || env.authDriver === "local-trust";
+  return Boolean(env.embeddedPostgres);
 }
 
-/** 迁移集目录：`LOOMIC_MIGRATIONS_ROOT` → `<exeDir>/supabase` → `<repoRoot>/supabase`。 */
+/** API与独立worker共用目录归一；不启动服务、不创建目录、不接管数据库生命周期。 */
+export function resolveLocalRuntimeEnv(
+  env: ServerEnv,
+  processEnv: Record<string, string | undefined> = process.env,
+): ServerEnv & { desktopDataDir: string } {
+  const dataDir = resolveDesktopDataDir({
+    env: {
+      ...processEnv,
+      ...(env.desktopDataDir
+        ? { KENFUTWORK_DATA_DIR: env.desktopDataDir }
+        : {}),
+    },
+  });
+  const paths = resolveDesktopPaths(dataDir);
+  return {
+    ...env,
+    desktopDataDir: dataDir,
+    blobDir: paths.blobDir,
+    sandboxRoot: paths.sandboxDir,
+    checkpointRoot: paths.checkpointDir,
+    agentFilesRoot: paths.agentFilesDir,
+    pluginsDir: paths.pluginsDir,
+  };
+}
+
+/** 迁移集目录：`KENFUTWORK_MIGRATIONS_ROOT` → `<exeDir>/db` → `<repoRoot>/docker/pg`。 */
 export function resolveMigrationRoots(input: {
   env: Record<string, string | undefined>;
   exists: (path: string) => boolean;
@@ -42,9 +72,9 @@ export function resolveMigrationRoots(input: {
   repoRoot?: string;
 }): { bootstrapDir: string; migrationsDir: string } | undefined {
   const candidates = [
-    input.env.LOOMIC_MIGRATIONS_ROOT?.trim(),
-    join(input.exeDir ?? process.cwd(), "supabase"),
-    join(input.repoRoot ?? process.cwd(), "supabase"),
+    input.env.KENFUTWORK_MIGRATIONS_ROOT?.trim(),
+    join(input.exeDir ?? process.cwd(), "db"),
+    join(input.repoRoot ?? process.cwd(), "docker", "pg"),
   ].filter((root): root is string => Boolean(root));
 
   const root = candidates.find(
@@ -65,7 +95,7 @@ export async function prepareDesktopRuntime(options: {
   env: ServerEnv;
   /** 打包态传 exe 所在目录；开发态默认 cwd。 */
   exeDir?: string;
-  /** 开发态仓库根（定位 supabase/ 与 docker/pg-dev-shim）。 */
+  /** 开发态仓库根（定位 docker/pg 与 docker/pg/pg-dev-shim）。 */
   repoRoot?: string;
   onLog?: (message: string) => void;
   /** 覆盖环境探测（测试用）。 */
@@ -76,36 +106,41 @@ export async function prepareDesktopRuntime(options: {
   const exeDir = options.exeDir ?? process.cwd();
   const repoRoot = options.repoRoot ?? process.cwd();
   const env = options.env;
+  const processEnv = options.processEnv ?? process.env;
+  const localEnv = resolveLocalRuntimeEnv(env, processEnv);
+  const paths = resolveDesktopPaths(localEnv.desktopDataDir);
 
   if (!env.embeddedPostgres) {
     // 非内嵌形态（开发连外部库 / 自托管）：本函数不接管任何生命周期
-    return { env, shutdown: async () => {} };
+    return { env: localEnv, shutdown: async () => {} };
   }
 
   const { existsSync } = await import("node:fs");
   const exists = options.exists ?? existsSync;
-  const processEnv = options.processEnv ?? process.env;
-
-  const dataDir =
-    env.desktopDataDir ?? resolveDesktopDataDir({ env: processEnv });
-  const paths = resolveDesktopPaths(dataDir);
   await mkdir(paths.dataDir, { recursive: true });
 
-  const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
-  const postgres = await startEmbeddedPostgres({
-    binDir,
-    dataDir: paths.pgDataDir,
-    logFile: paths.pgLogFile,
-    onLog: log,
-    passwordFile: paths.pgPasswordFile,
-    ...(env.embeddedPostgresPort ? { port: env.embeddedPostgresPort } : {}),
-  });
-
-  const shutdown = async () => {
-    await postgres.stop();
-  };
+  const owner = acquireDesktopServerOwner(paths.dataDir);
+  let postgres: EmbeddedPostgresHandle | undefined;
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () =>
+    (shutdownPromise ??= (async () => {
+      try {
+        await postgres?.stop();
+      } finally {
+        owner.close();
+      }
+    })());
 
   try {
+    const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
+    postgres = await startEmbeddedPostgres({
+      binDir,
+      dataDir: paths.pgDataDir,
+      logFile: paths.pgLogFile,
+      onLog: log,
+      passwordFile: paths.pgPasswordFile,
+      ...(env.embeddedPostgresPort ? { port: env.embeddedPostgresPort } : {}),
+    });
     const shimDir = resolvePgmqShimDir({ env: processEnv, exeDir, repoRoot });
     const migrationRoots = resolveMigrationRoots({
       env: processEnv,
@@ -115,7 +150,7 @@ export async function prepareDesktopRuntime(options: {
     });
     if (!migrationRoots) {
       throw new Error(
-        `未找到迁移目录（应含 migrations/ 与 bootstrap/）：试过 ${join(exeDir, "supabase")} 与 ${join(repoRoot, "supabase")}；可用 LOOMIC_MIGRATIONS_ROOT 指定。`,
+        `未找到迁移目录（应含 migrations/ 与 bootstrap/）：试过 ${join(exeDir, "db")} 与 ${join(repoRoot, "docker", "pg")}；可用 KENFUTWORK_MIGRATIONS_ROOT 指定。`,
       );
     }
 
@@ -123,16 +158,20 @@ export async function prepareDesktopRuntime(options: {
     try {
       await ensurePgmqAvailable(pool, { binDir, shimDir, onLog: log });
       const migrationSet = loadMigrationSet(migrationRoots);
-      const { applied } = await applyMigrations(
+      const { applied, superseded } = await applyMigrations(
         toQueryable(pool),
         migrationSet,
         {
           onApplied: (file) => log(`已执行迁移 ${file.version}_${file.name}`),
+          onSuperseded: (file, byVersion) =>
+            log(
+              `迁移 ${file.version}_${file.name} 已被 ${byVersion} 退役；记录superseded，未执行原SQL`,
+            ),
         },
       );
       log(
-        applied.length > 0
-          ? `迁移完成：本次执行 ${applied.length} 条（共 ${migrationSet.length} 条）`
+        applied.length > 0 || superseded.length > 0
+          ? `迁移完成：本次执行 ${applied.length} 条、明确退役 ${superseded.length} 条（共 ${migrationSet.length} 条）`
           : `迁移无需执行（${migrationSet.length} 条均已落地）`,
       );
     } finally {
@@ -145,38 +184,14 @@ export async function prepareDesktopRuntime(options: {
 
   return {
     env: {
-      ...env,
-      // 显式配置优先：桌面下若用户自己配了库/队列/blob，尊重之
-      blobDir: env.blobDir ?? paths.blobDir,
-      // BYOK 凭证加密主密钥：桌面必须开箱可用，故首次生成并持久化（用户不配也不报错）
-      credentialSecret:
-        env.credentialSecret ??
-        (await readOrCreateSecret(paths.credentialSecretFile)),
-      databaseUrl: env.databaseUrl ?? postgres.connectionString,
+      ...localEnv,
+      // 内嵌形态的数据全由此根持有；自部署外部数据库走非内嵌分支。
+      blobDir: paths.blobDir,
+      databaseUrl: postgres.connectionString,
       queueDriver: env.queueDriver ?? "in-process",
     },
     shutdown,
   };
-}
-
-/**
- * 读取或生成持久化密钥（首次 48 字符随机）。
- * 与 PG 口令同样的处置：只在数据目录、不进仓库、不打印。
- */
-async function readOrCreateSecret(file: string): Promise<string> {
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const { randomBytes } = await import("node:crypto");
-  try {
-    const existing = (await readFile(file, "utf8")).trim();
-    if (existing) {
-      return existing;
-    }
-  } catch {
-    // 不存在：走下面的生成
-  }
-  const secret = randomBytes(36).toString("base64url");
-  await writeFile(file, secret, { encoding: "utf8", mode: 0o600 });
-  return secret;
 }
 
 function toQueryable(pool: Pool) {

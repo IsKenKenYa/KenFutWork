@@ -1,6 +1,6 @@
 "use client";
 
-import type { BrandKitAsset } from "@loomic/shared";
+import type { BrandKitAsset } from "@kenfutwork/shared";
 import { useCallback, useRef } from "react";
 
 import { AddAssetCard, AssetCard } from "./asset-card";

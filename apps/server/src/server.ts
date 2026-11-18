@@ -12,24 +12,58 @@ async function setupProxy() {
 }
 
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
+import { resolveEntryRoot } from "./desktop/entry-root.js";
 import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
-import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
-import { startJobLoop } from "./features/jobs/job-loop.js";
-import { registerAllProviders } from "./generation/providers/register-all.js";
+import {
+  resolveRuntimes,
+  resolveSystemGitExecutable,
+} from "./desktop/runtimes.js";
+import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
+import { createLocalConnectionUrl } from "./features/local-access/connection-url.js";
+import { registerDataLocationControl } from "./features/local-instance/data-control.js";
+import { runDataLocationCommand } from "./features/local-instance/data-location.js";
+import { waitForLocalInstanceIdle } from "./features/local-instance/idle.js";
 
 /**
  * HTTP 进程入口。
  *
- * 桌面形态（`LOOMIC_EMBEDDED_PG=1`，FORM-2）下：先就位本机 Postgres + 同源迁移，
+ * 桌面形态（`KENFUTWORK_EMBEDDED_PG=1`，FORM-2）下：先就位本机 Postgres + 同源迁移，
  * 再起 HTTP，并在**同进程**跑任务消费循环——桌面用进程内队列，生产者与消费者必须
  * 是同一个队列实例（M3.2），故循环在 server 进程内起，而不是另开 worker。
  */
+/**
+ * 未处理的 promise 拒绝**不允许带走整个服务端**。
+ *
+ * 真机踩过：node-pty 的 `kill()` 内部有一条 `consoleProcessList` 为 undefined 的路径会抛未处理
+ * 拒绝，Node 22 默认据此终止进程——一个终端会话把 API 一起干掉（全站 401/500、客户端跳登录页）。
+ * 这里的策略是**记录（带栈）+ 继续服务**：第三方库的异步异常不该等于全站下线；
+ * 同步的 `uncaughtException` 仍按默认行为退出（那种更可能是状态已损坏）。
+ */
+process.on("unhandledRejection", (reason) => {
+  const stack = reason instanceof Error ? reason.stack : String(reason);
+  console.error("[unhandledRejection] 已记录，进程继续服务：", stack);
+});
+
 async function main() {
+  if (process.argv[2] === "--local-connection-url") {
+    const env = loadServerEnv();
+    console.log(
+      await createLocalConnectionUrl({
+        env: process.env,
+        port: env.port,
+        uiBase: env.webDist ? `http://127.0.0.1:${env.port}` : env.webOrigin,
+      }),
+    );
+    return;
+  }
+  if (await runDataLocationCommand(process.argv.slice(2))) return;
   await setupProxy();
+
+  /** 进程启动时刻：孤儿对账只碰**早于它**创建的非终态 run（本进程不可能在跑那些）。 */
+  const bootAt = new Date();
 
   const exeDir = resolveExeDir();
   // 随包运行时（Node/Python/JDK）：解析出 bin 目录注入 sandbox PATH，宿主机没装也能跑
@@ -37,9 +71,14 @@ async function main() {
   // git 与其余运行时优先级相反：宿主自带优先，随包只兜底（runtimes 里出现 git 即表示
   // 宿主没有）。三者都没有时明确标记 unavailable，界面据此说明「为什么没有分支可切」。
   const bundledGit = runtimes.roots.find((root) => root.name === "git");
+  const systemGit = bundledGit
+    ? null
+    : resolveSystemGitExecutable({ path: process.env.PATH, env: process.env });
+  const gitBinDir =
+    bundledGit?.binDir ?? (systemGit ? dirname(systemGit) : undefined);
   const gitSource: "system" | "bundled" | "unavailable" = bundledGit
     ? "bundled"
-    : hasSystemGit({ path: process.env.PATH })
+    : systemGit
       ? "system"
       : "unavailable";
   if (runtimes.bundled.length > 0) {
@@ -48,50 +87,46 @@ async function main() {
     );
   }
   const baseEnv = loadServerEnv({
-    runtimePathAdditions: runtimes.pathAdditions,
+    runtimePathAdditions: [
+      ...runtimes.pathAdditions,
+      ...(systemGit && gitBinDir ? [gitBinDir] : []),
+    ],
     ...(runtimes.javaHome ? { javaHome: runtimes.javaHome } : {}),
-    ...(bundledGit ? { gitBinDir: bundledGit.binDir } : {}),
+    ...(gitBinDir ? { gitBinDir } : {}),
     gitSource,
   });
   const desktop = await prepareDesktopRuntime({
     env: baseEnv,
     exeDir,
-    repoRoot: process.cwd(),
+    // 仓库根必须从入口文件上溯解析：dev 态 cwd 是 apps/server，拿 cwd 当 repoRoot
+    // 会找不到 <repoRoot>/docker/pg 迁移集与 docker/pg/pg-dev-shim（entry-root 的注释里
+    // 记录过这次修正——源码态上四级到仓库根，打包态回落 exe 目录）
+    repoRoot: resolveEntryRoot({
+      entryFileUrl: import.meta.url,
+      execPath: process.execPath,
+    }),
   });
   const env = desktop.env;
-
-  registerAllProviders(env);
 
   const app = buildApp({ env });
 
   // 桌面单进程：HTTP 与生成任务同进程；服务端形态仍由独立 worker 进程消费
-  const jobLoop = isDesktopRuntime(env)
-    ? startJobLoop(
-        {
-          assetWriter: app.kernel.get("assetWriter"),
-          blob: app.kernel.get("blob"),
-          creditService: app.kernel.get("credits"),
-          env,
-          jobService: app.kernel.get("jobs"),
-          modelProviders: app.kernel.get("modelProviders"),
-          queue: app.kernel.get("queue"),
-          usageService: app.kernel.get("usage"),
-        },
-        { tag: "[desktop-worker]" },
-      )
-    : undefined;
+  const jobLoop = isDesktopRuntime(env) ? app.kernel.get("jobLoop") : undefined;
 
   const host = env.serverHost ?? "127.0.0.1";
 
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) {
-      return;
-    }
-    shuttingDown = true;
-    await jobLoop?.shutdown();
-    await app.close();
-    await desktop.shutdown();
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => {
+    shutdownPromise ??= (async () => {
+      console.log("[shutdown] 等待生成任务收尾。");
+      await jobLoop?.shutdown();
+      console.log("[shutdown] 关闭HTTP与内核资源。");
+      await app.close();
+      console.log("[shutdown] 停止本机数据库。");
+      await desktop.shutdown();
+      console.log("[shutdown] 服务与数据库已停止。");
+    })();
+    return shutdownPromise;
   };
   process.on("SIGINT", () => {
     void shutdown().then(() => process.exit(0));
@@ -101,12 +136,61 @@ async function main() {
   });
 
   try {
+    const disposeDataControl = registerDataLocationControl(
+      app.kernel.get("localInstance"),
+      {
+        canMove: Boolean(env.embeddedPostgres),
+        waitUntilIdle: () =>
+          waitForLocalInstanceIdle({
+            instance: app.kernel.get("localInstance"),
+            runs: app.kernel.get("agentRuns"),
+            persistence: app.kernel.get("persistence"),
+            settings: app.kernel.get("settings"),
+            inFlightJobs: () => jobLoop?.inFlightCount() ?? 0,
+          }),
+        shutdown: async () => {
+          try {
+            await shutdown();
+            process.exit(0);
+          } catch (error) {
+            console.error(
+              "本机迁移停机失败：",
+              error instanceof Error ? error.message : "未知错误",
+            );
+            process.exit(1);
+          }
+        },
+      },
+    );
+    app.addHook("onClose", async () => {
+      disposeDataControl();
+    });
+    await app.ready();
     await app.listen({
       host,
       port: env.port,
     });
 
-    console.log(`@loomic/server listening on http://${host}:${env.port}`);
+    console.log(`@kenfutwork/server listening on http://${host}:${env.port}`);
+
+    /**
+     * 孤儿 run 对账：**绑上端口之后**才做（见 reconcile.ts 的说明——抢不到端口的
+     * 第二条 dev server 链也会走完装配，由它做对账会误杀正在服务的那条进程在飞的 run）。
+     */
+    void reconcileInterruptedRuns(app.kernel.get("persistence"), bootAt)
+      .then((count) => {
+        if (count > 0) {
+          console.log(
+            `[agent-runs] 启动对账：${count} 个遗留 run 已收敛为 failed`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(
+          "[agent-runs] 启动对账失败（不阻断启动）：",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
   } catch (error) {
     app.log.error(error);
     await shutdown();
@@ -116,15 +200,16 @@ async function main() {
 
 /**
  * 资源根目录：打包（SEA）态是 exe 所在目录（pg/、supabase/、web/ 都在那），
- * 开发态是仓库根。SEA 下 import.meta.url 为空，故回退到 process.execPath。
+ * 开发态是仓库根（判定与回归见 `desktop/entry-root.ts`）。
  */
 function resolveExeDir(): string {
-  try {
-    const thisFile = fileURLToPath(import.meta.url);
-    return dirname(dirname(dirname(thisFile)));
-  } catch {
-    return dirname(process.execPath);
-  }
+  return resolveEntryRoot({
+    entryFileUrl: import.meta.url,
+    execPath: process.execPath,
+  });
 }
 
-void main();
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : "本机服务启动失败。");
+  process.exitCode = 1;
+});

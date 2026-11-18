@@ -1,13 +1,18 @@
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { join, win32 } from "node:path";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import {
   hasSystemGit,
   prependRuntimePath,
   resolveRuntime,
   resolveRuntimes,
+  resolveSystemGitExecutable,
   runtimeEnvAdditions,
 } from "./runtimes.js";
+
+vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
 /**
  * 回归背景：桌面包是 Node SEA 单 exe，agent 的 execute 跑在宿主机上——用户机器
@@ -31,6 +36,7 @@ describe("运行时目录解析", () => {
       env: {},
       exeDir: app,
       exists: fakeFs(present),
+      platform: "win32",
     });
     expect(resolved.bundled).toEqual(["node", "python", "uv", "java"]);
     expect(resolved.pathAdditions).toEqual([
@@ -67,6 +73,7 @@ describe("运行时目录解析", () => {
       env: {},
       exeDir: app,
       exists: fakeFs([join(app, "runtime", "node", "node.exe")]),
+      platform: "win32",
     });
     expect(resolved.bundled).toEqual(["node"]);
     expect(resolved.pathAdditions).toEqual([join(app, "runtime", "node")]);
@@ -77,12 +84,13 @@ describe("运行时目录解析", () => {
     const portable = join("D:", "portable-node");
     const app = join("C:", "app");
     const root = resolveRuntime("node", {
-      env: { LOOMIC_NODE_BIN_DIR: portable },
+      env: { KENFUTWORK_NODE_BIN_DIR: portable },
       exeDir: app,
       exists: fakeFs([
         join(portable, "node.exe"),
         join(app, "runtime", "node", "node.exe"),
       ]),
+      platform: "win32",
     });
     expect(root?.binDir).toBe(portable);
     expect(root?.homeDir).toBe(portable);
@@ -91,19 +99,21 @@ describe("运行时目录解析", () => {
   it("显式环境变量指向错误目录：fail loud（不静默回落宿主运行时）", () => {
     expect(() =>
       resolveRuntime("java", {
-        env: { LOOMIC_JAVA_BIN_DIR: join("D:", "empty") },
+        env: { KENFUTWORK_JAVA_BIN_DIR: join("D:", "empty") },
         exeDir: "C:/app",
         exists: () => false,
+        platform: "win32",
       }),
-    ).toThrow(/LOOMIC_JAVA_BIN_DIR/);
+    ).toThrow(/KENFUTWORK_JAVA_BIN_DIR/);
   });
 
   it("JAVA_HOME 推导：bin 目录覆盖式显式配置时回到运行时根", () => {
     const jdkBin = join("D:", "jdk-21", "bin");
     const root = resolveRuntime("java", {
-      env: { LOOMIC_JAVA_BIN_DIR: jdkBin },
+      env: { KENFUTWORK_JAVA_BIN_DIR: jdkBin },
       exeDir: join("C:", "app"),
       exists: fakeFs([join(jdkBin, "java.exe")]),
+      platform: "win32",
     });
     expect(root?.binDir).toBe(jdkBin);
     expect(root?.homeDir).toBe(join("D:", "jdk-21"));
@@ -125,6 +135,73 @@ describe("PATH 注入", () => {
 
     expect(prependRuntimePath(undefined, ["A"])).toBe("A");
     expect(prependRuntimePath("", ["A", "B"])).toBe("A;B");
+  });
+});
+
+/**
+ * macOS 布局（回归背景：RUNTIME_LAYOUT 此前写死 .exe，mac 随包运行时全部探测
+ * 不到——打包版 agent 永远回落宿主机，等于没带）。锁 darwin 资产的包内形态：
+ * node/uv 顶层可执行体、python 的 bin/ 子目录、Adoptium mac JRE 的 Contents/Home。
+ */
+describe("运行时目录解析（darwin 布局）", () => {
+  const app = join(
+    "/Applications",
+    "KenFutWork.app",
+    "Contents",
+    "Resources",
+    "app",
+  );
+
+  it("发布包布局：node/uv 顶层、python bin/、jdk Contents/Home，JAVA_HOME 指向 Contents/Home", () => {
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: fakeFs([
+        join(app, "runtime", "node", "bin", "node"),
+        join(app, "runtime", "python", "bin", "python3"),
+        join(app, "runtime", "uv", "uvx"),
+        join(app, "runtime", "jdk", "Contents", "Home", "bin", "java"),
+      ]),
+      platform: "darwin",
+      systemPath: "/usr/bin:/bin",
+    });
+    expect(resolved.bundled).toEqual(["node", "python", "uv", "java"]);
+    expect(resolved.pathAdditions).toEqual([
+      join(app, "runtime", "node", "bin"),
+      join(app, "runtime", "python", "bin"),
+      join(app, "runtime", "uv"),
+      join(app, "runtime", "jdk", "Contents", "Home", "bin"),
+    ]);
+    // mac JRE 的 JAVA_HOME 是 jdk/Contents/Home，不是 jdk/（win 与 mac 不同构）
+    expect(resolved.javaHome).toBe(
+      join(app, "runtime", "jdk", "Contents", "Home"),
+    );
+    // 宿主有 git（/usr/bin/git 存在于 PATH 探测口径外——这里 PATH 段没有 git，但
+    // darwin 不打包 git，缺席即可）
+    expect(resolved.bundled).not.toContain("git");
+  });
+
+  it("未捆绑：不抛错（宿主 node/python 照常可用）", () => {
+    const resolved = resolveRuntimes({
+      env: {},
+      exeDir: app,
+      exists: () => false,
+      platform: "darwin",
+    });
+    expect(resolved.bundled).toEqual([]);
+    expect(resolved.javaHome).toBeUndefined();
+  });
+
+  it("显式 KENFUTWORK_PYTHON_BIN_DIR 指向 bin/（含 python3），JAVA_HOME 同一套推导", () => {
+    const pythonBin = join("/opt", "kfw", "python", "bin");
+    const root = resolveRuntime("python", {
+      env: { KENFUTWORK_PYTHON_BIN_DIR: pythonBin },
+      exeDir: app,
+      exists: fakeFs([join(pythonBin, "python3")]),
+      platform: "darwin",
+    });
+    expect(root?.binDir).toBe(pythonBin);
+    expect(root?.homeDir).toBe(join("/opt", "kfw", "python"));
   });
 });
 
@@ -176,7 +253,13 @@ describe("sandbox env 片段", () => {
  * （python/node/jdk 才是随包优先）。这里锁住这个优先级，避免「打包目录一前置就把本地
  * git 顶掉」。
  */
-describe("git 运行时的优先级（本地优先，打包兜底）", () => {
+describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌面场景）", () => {
+  // 这些用例的 PATH/可执行体都是 Windows 形态：统一把平台 mock 成 win32
+  const realPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  afterAll(() => {
+    Object.defineProperty(process, "platform", { value: realPlatform });
+  });
   const app = join("C:", "app");
   const bundledGit = join(app, "runtime", "git", "cmd", "git.exe");
 
@@ -184,7 +267,7 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
     expect(
       hasSystemGit({
         path: ["C:/Windows", "C:/Program Files/Git/cmd"].join(";"),
-        exists: fakeFs([join("C:/Program Files/Git/cmd", "git.exe")]),
+        exists: fakeFs([win32.join("C:/Program Files/Git/cmd", "git.exe")]),
       }),
     ).toBe(true);
 
@@ -193,8 +276,9 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
       exeDir: app,
       exists: fakeFs([
         bundledGit,
-        join("C:/Program Files/Git/cmd", "git.exe"),
+        win32.join("C:/Program Files/Git/cmd", "git.exe"),
       ]),
+      platform: "win32",
       systemPath: "C:/Program Files/Git/cmd",
     });
     expect(resolved.bundled).not.toContain("git");
@@ -208,6 +292,7 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
       env: {},
       exeDir: app,
       exists: fakeFs([bundledGit]),
+      platform: "win32",
       systemPath: "C:/Windows;C:/Windows/System32",
     });
     expect(resolved.bundled).toContain("git");
@@ -216,12 +301,13 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
     );
   });
 
-  it("显式 LOOMIC_GIT_BIN_DIR 时不受「本地有 git」影响（显式覆盖优先）", () => {
+  it("显式 KENFUTWORK_GIT_BIN_DIR 时不受「本地有 git」影响（显式覆盖优先）", () => {
     const explicit = join("D:", "portable-git");
     const resolved = resolveRuntimes({
-      env: { LOOMIC_GIT_BIN_DIR: explicit },
+      env: { KENFUTWORK_GIT_BIN_DIR: explicit },
       exeDir: app,
       exists: fakeFs([join(explicit, "git.exe")]),
+      platform: "win32",
       systemPath: "C:/Program Files/Git/cmd",
     });
     expect(resolved.bundled).toContain("git");
@@ -239,8 +325,206 @@ describe("git 运行时的优先级（本地优先，打包兜底）", () => {
     expect(
       hasSystemGit({
         path: "C:/Git",
-        exists: fakeFs([join("C:/Git", "git.exe")]),
+        exists: fakeFs([win32.join("C:/Git", "git.exe")]),
       }),
     ).toBe(true);
+  });
+});
+
+describe("Darwin 系统 Git 选择", () => {
+  it("PATH 选中Apple启动器时只调用固定xcrun，返回真实Git可执行文件", () => {
+    const actualGit = "/Library/Developer/CommandLineTools/usr/bin/git";
+    const finder = vi.mocked(execFileSync);
+    finder.mockReturnValue(`${actualGit}\n`);
+    try {
+      const resolved = resolveSystemGitExecutable({
+        env: {},
+        platform: "darwin",
+        path: "/usr/bin:/bin",
+        exists: fakeFs(["/usr/bin/git", actualGit]),
+      });
+
+      expect(resolved).toBe(actualGit);
+      expect(finder).toHaveBeenCalledWith(
+        "/usr/bin/xcrun",
+        ["--find", "git"],
+        expect.objectContaining({
+          encoding: "utf8",
+          timeout: AGENT_GOVERNANCE_DEFAULTS.localServiceStartupTimeoutMs,
+        }),
+      );
+      expect(finder.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+        ["/usr/bin/xcrun", ["--find", "git"]],
+      ]);
+    } finally {
+      finder.mockReset();
+    }
+  });
+
+  it("PATH里更早的自定义Git优先，不查询Apple selector", () => {
+    const customGit = join("/opt/custom git/bin", "git");
+    const resolver = vi.fn(
+      () => "/Library/Developer/CommandLineTools/usr/bin/git",
+    );
+    expect(
+      resolveSystemGitExecutable({
+        path: "/opt/custom git/bin:/usr/bin",
+        platform: "darwin",
+        env: {},
+        exists: fakeFs([customGit, "/usr/bin/git"]),
+        resolveAppleGit: resolver,
+      }),
+    ).toBe(customGit);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("Apple解析失败即不可用，不运行git启动器或回退后面的Git", () => {
+    const resolver = vi.fn(() => {
+      throw new Error("开发者工具未安装");
+    });
+    expect(
+      resolveSystemGitExecutable({
+        path: "/usr/bin:/opt/other/bin",
+        platform: "darwin",
+        env: {},
+        exists: fakeFs(["/usr/bin/git", "/opt/other/bin/git"]),
+        resolveAppleGit: resolver,
+      }),
+    ).toBeNull();
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["", "relative/git", "/usr/bin/git", "/bin/sh", "/missing/git"])(
+    "Apple返回无效或不存在的可执行路径%s时不可用",
+    (result) => {
+      expect(
+        resolveSystemGitExecutable({
+          path: "/usr/bin",
+          platform: "darwin",
+          env: {},
+          exists: fakeFs(["/usr/bin/git"]),
+          resolveAppleGit: () => result,
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it("Apple查询超时采用shared启动治理值，合法env覆盖且非法值回落", () => {
+    const actualGit = "/Library/Developer/CommandLineTools/usr/bin/git";
+    const resolver = vi.fn(() => actualGit);
+    const options = {
+      path: "/usr/bin",
+      platform: "darwin" as const,
+      exists: fakeFs(["/usr/bin/git", actualGit]),
+      resolveAppleGit: resolver,
+    };
+    expect(
+      resolveSystemGitExecutable({
+        ...options,
+        env: { KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS: "750" },
+      }),
+    ).toBe(actualGit);
+    expect(resolver).toHaveBeenLastCalledWith(750);
+    expect(
+      resolveSystemGitExecutable({
+        ...options,
+        env: { KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS: "invalid" },
+      }),
+    ).toBe(actualGit);
+    expect(resolver).toHaveBeenLastCalledWith(
+      AGENT_GOVERNANCE_DEFAULTS.localServiceStartupTimeoutMs,
+    );
+  });
+
+  const platforms: Array<{
+    platform: NodeJS.Platform;
+    path: string;
+    git: string;
+  }> = [
+    {
+      platform: "win32",
+      path: "C:/tools/git;C:/Windows",
+      git: win32.join("C:/tools/git", "git.exe"),
+    },
+    {
+      platform: "linux",
+      path: "/usr/bin:/opt/git",
+      git: join("/usr/bin", "git"),
+    },
+  ];
+  it.each(platforms)(
+    "$platform保留平台PATH和可执行体口径，不调用Apple resolver",
+    (options) => {
+      const resolver = vi.fn(() => "不可调用");
+      expect(
+        resolveSystemGitExecutable({
+          ...options,
+          exists: fakeFs([options.git]),
+          env: {},
+          resolveAppleGit: resolver,
+        }),
+      ).toBe(options.git);
+      expect(resolver).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, "", ": :"])("空PATH或只有空段%s时不查询Apple", (path) => {
+    const resolver = vi.fn(() => "不可调用");
+    expect(
+      resolveSystemGitExecutable({
+        path,
+        platform: "darwin",
+        env: {},
+        exists: () => true,
+        resolveAppleGit: resolver,
+      }),
+    ).toBeNull();
+    expect(resolver).not.toHaveBeenCalled();
+  });
+});
+
+describe("hasSystemGit 平台探测（回归：POSIX 不能用 Windows 参数）", () => {
+  it("POSIX：PATH 用 `:` 分隔、可执行体是 git（不再写死 git.exe 与 `;`）", () => {
+    const posixPath = "/usr/bin:/opt/homebrew/bin:/usr/local/bin";
+    expect(
+      hasSystemGit({
+        path: posixPath,
+        separator: ":",
+        executable: "git",
+        exists: (p) => p === "/opt/homebrew/bin/git",
+      }),
+    ).toBe(true);
+    // 平台默认值：POSIX 上不传 separator/executable 也应探测成功
+    const realPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    try {
+      expect(
+        hasSystemGit({
+          path: posixPath,
+          exists: (p) => p === "/opt/homebrew/bin/git",
+        }),
+      ).toBe(true);
+    } finally {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    }
+  });
+
+  it("Windows：PATH 用 `;` 分隔、可执行体是 git.exe（行为不变）", () => {
+    const winPath = "C:\\Windows;C:\\tools\\git\\cmd";
+    const realPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    // exists 收到的路径分隔符形态随 join 的平台而变：比较前统一成正斜杠
+    const norm = (p: string) => p.replaceAll("\\", "/");
+    try {
+      expect(
+        hasSystemGit({
+          path: winPath,
+          exists: (p) => norm(p) === "C:/tools/git/cmd/git.exe",
+        }),
+      ).toBe(true);
+      expect(hasSystemGit({ path: winPath, exists: () => false })).toBe(false);
+    } finally {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    }
   });
 });

@@ -1,0 +1,7 @@
+# OpenDesign 插件：产品入口条目。
+# 只做入口门控（安装态决定 Code 模式右侧栏是否出现 OpenDesign 面板），不声明服务端能力；
+# 宿主适配层基础设施在 apps/server/src/features/open-design/（同 flow 的分工）。
+- insert:
+    - id: kenfutwork-open-design
+      name: kenfutwork-open-design
+      inject: []

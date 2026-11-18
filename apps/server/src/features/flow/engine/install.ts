@@ -1,0 +1,609 @@
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+
+import type { FlowEnginePathId } from "@kenfutwork/shared";
+import {
+  bootstrapDifyStackWithRetry,
+  type DifyBootstrapRetryOptions,
+} from "./bootstrap.js";
+import {
+  createProcessRunCommand,
+  decodeCommandText,
+  type RunCommand,
+} from "./exec.js";
+
+/**
+ * Dify 无头栈的**托管安装状态机**（FORM-11 探测后的「下载 → 确认 → 托管」流程）。
+ *
+ * 职责：flow 插件启用且承载路径可用时，把 `docker/dify/docker-compose.dify.yml --profile dify`
+ * 拉起来（镜像 ~8.3GB 随 up 自动拉取）。安装是**长任务**（拉镜像分钟级）——
+ * detached spawn + 日志落文件 + 状态轮询，不占请求连接。
+ *
+ * 承载目标（`EngineLaunch`）：宿主 docker（默认）或 **WSL2 发行版内 docker**
+ * （Windows 优先档，§3.5.1 双 Provider）。选定后**落盘**（`dify-stack.runtime.json`）——
+ * 停止/查询必须用同一个目标，否则 `down` 找不到另一侧起的容器。
+ *
+ * 三个口径（§9.1 已拍板，见《flow插件集成规划》§9.1）：
+ *  - 首次安装自动生成密钥（SECRET_KEY / ADMIN_API_KEY）落到数据目录的 env 文件，之后复用；
+ *  - 引擎数据在容器卷里（不在主仓数据目录；WSL2 档落 distro 内的命名卷）；
+ *  - 停止默认 `down` 保留数据卷，显式选择全删才 `down --volumes`（见 stopEngineStack）；
+ *    flow 插件**卸载**走 purge：`down --volumes --rmi all` + 清本地 env/日志/记录——
+ *    下次安装重新拉镜像即可（用户口径：卸载就把 dify 那些删掉，代码保留才能二次安装）。
+ *
+ * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根 `docker/dify/`，打包=资源根 `dify/`）。
+ */
+
+export type EngineInstallState = "idle" | "installing" | "ready" | "error";
+
+export interface EngineInstallSnapshot {
+  state: EngineInstallState;
+  /** 安装日志尾部（最后 N 行），排障用。 */
+  logTail: string[];
+  /** 错误摘要（state=error 时）。 */
+  error?: string;
+  /** startedAt ISO（installing/error 时有）。 */
+  startedAt?: string;
+}
+
+const LOG_LINES_KEEP = 50;
+
+/** 进程内单例状态（服务重启后按 compose ps 重新探测，不持久化状态本身）。 */
+let current: {
+  state: EngineInstallState;
+  error?: string;
+  startedAt?: string;
+  logFile?: string;
+  child?: ReturnType<typeof spawn>;
+} = { state: "idle" };
+
+export function getEngineInstallSnapshot(): EngineInstallSnapshot {
+  const logTail = readLogTail(current.logFile);
+  const snapshot: EngineInstallSnapshot = {
+    state: current.state,
+    logTail,
+  };
+  if (current.error) snapshot.error = current.error;
+  if (current.startedAt) snapshot.startedAt = current.startedAt;
+  return snapshot;
+}
+
+function readLogTail(logFile?: string): string[] {
+  if (!logFile || !existsSync(logFile)) return [];
+  try {
+    const lines = readFileSync(logFile, "utf8").split(/\r?\n/).filter(Boolean);
+    return lines.slice(-LOG_LINES_KEEP);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 数据目录里的安装日志尾部（进程重启后仍可读）。
+ * 安装状态快照是进程内的，`current.logFile` 只在本次进程发起过安装时才存在；
+ * 引擎页要看历史失败原因时必须按标准文件名直接读盘。
+ */
+export function readStackLogTail(dataDir: string): string[] {
+  return readLogTail(join(dataDir, STACK_LOG_FILE));
+}
+
+/** 栈凭据键（宿主一次生成、重启复用；不再要求用户在 flow/.env 里手填）。 */
+const STACK_ENV_KEYS = [
+  "DIFY_SECRET_KEY",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_DB_PASSWORD",
+  "DIFY_SANDBOX_API_KEY",
+] as const;
+
+/** Flow 网关需要同源的键：init/setup 建的管理员与网关自动授权必须用同一份。 */
+const GATEWAY_SHARED_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_SECRET_KEY",
+] as const;
+
+function envKeySet(content: string): Set<string> {
+  return new Set(
+    [...content.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)]
+      .map((match) => match[1])
+      .filter((key): key is string => typeof key === "string"),
+  );
+}
+
+/** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用并补齐缺键）。 */
+export function ensureStackEnvFile(dataDir: string): string {
+  mkdirSync(dataDir, { recursive: true });
+  const envFile = join(dataDir, STACK_ENV_FILE);
+  const random = (bytes: number) => randomBytes(bytes).toString("base64url");
+  const generated: Record<string, string> = {
+    DIFY_SECRET_KEY: random(32),
+    DIFY_INIT_PASSWORD: random(9),
+    DIFY_ADMIN_API_KEY: `kfw-admin-${random(24)}`,
+    DIFY_ADMIN_EMAIL: "admin@kenfutwork.local",
+    DIFY_ADMIN_PASSWORD: random(18),
+    DIFY_DB_PASSWORD: random(18),
+    DIFY_SANDBOX_API_KEY: `kfw-sandbox-${random(18)}`,
+  };
+  if (!existsSync(envFile)) {
+    const content = [
+      "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
+      ...STACK_ENV_KEYS.map((key) => `${key}=${generated[key]}`),
+      "",
+    ].join("\n");
+    writeFileSync(envFile, content, { mode: 0o600 });
+    return envFile;
+  }
+
+  // 旧版本 env 缺管理员账号等键：只补齐，绝不轮换已有值
+  // （SECRET_KEY 一变，Dify 里已加密的数据就不可读）。
+  const existing = readFileSync(envFile, "utf8");
+  const present = envKeySet(existing);
+  const missing = STACK_ENV_KEYS.filter((key) => !present.has(key));
+  if (missing.length === 0) return envFile;
+  const suffix = existing.endsWith("\n") ? "" : "\n";
+  const appended = [
+    "",
+    "# 宿主补齐（零手工初始化）：管理员账号与栈凭据由本机生成，重启复用同一份",
+    ...missing.map((key) => `${key}=${generated[key]}`),
+    "",
+  ].join("\n");
+  writeFileSync(envFile, `${existing}${suffix}${appended}`);
+  return envFile;
+}
+
+/**
+ * 管理员凭据键：Dify 栈重建后 bootstrap 会用它们重新创建管理员，
+ * 必须与 Flow 网关 `loginConsole` 的登录凭据逐字同源。
+ */
+const ADMIN_CREDENTIAL_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+] as const;
+
+function upsertEnvValue(content: string, key: string, value: string): string {
+  const pattern = new RegExp(`^${key}=.*$`, "m");
+  if (pattern.test(content)) return content.replace(pattern, `${key}=${value}`);
+  return `${content}${content.endsWith("\n") ? "" : "\n"}${key}=${value}\n`;
+}
+
+/**
+ * 把管理员凭据同源补进 Flow 网关 env：只补缺失键，绝不覆盖用户显式配置的值。
+ * 网关 `onModuleInit` 的自动授权与 init/setup 建号必须用同一份口令。
+ *
+ * 反向对齐：若网关 env 已显式配置了管理员账号/密码（例如上次安装留下的），
+ * 以它为准写回栈 env，而不是拿栈 env 随机生成的新口令去建管理员。否则 Dify
+ * 卷重建后管理员被换成新密码，网关仍持旧密码，`onReady` 补控制面授权必然
+ * 401/503（实测 `Dify Console 授权无效`）。网关 env 本身始终不被覆盖。
+ */
+export function syncGatewayCredentials(
+  envFile: string,
+  gatewayEnvFiles: readonly string[],
+): void {
+  let source = readFileSync(envFile, "utf8");
+  const values = new Map(
+    [...source.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gm)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+
+  // 按网关 envFilePath 的优先级取第一个含管理员凭据的文件；没有凭据的
+  // 文件不能提前 break，否则会漏看真正生效的那份（如 runtime env 缺键）。
+  let changed = false;
+  for (const key of ADMIN_CREDENTIAL_KEYS) {
+    let authoritative: string | null = null;
+    for (const file of gatewayEnvFiles) {
+      if (!existsSync(file)) continue;
+      const value = readFileSync(file, "utf8").match(
+        new RegExp(`^${key}=(.*)$`, "m"),
+      )?.[1];
+      if (value !== undefined) {
+        authoritative = value;
+        break;
+      }
+    }
+    if (authoritative === null || values.get(key) === authoritative) continue;
+    source = upsertEnvValue(source, key, authoritative);
+    values.set(key, authoritative);
+    changed = true;
+  }
+  if (changed) writeFileSync(envFile, source);
+
+  for (const file of gatewayEnvFiles) {
+    if (!existsSync(file)) continue;
+    const original = readFileSync(file, "utf8");
+    const present = envKeySet(original);
+    const missing = GATEWAY_SHARED_KEYS.filter(
+      (key) => !present.has(key) && values.has(key),
+    );
+    if (missing.length === 0) continue;
+    const suffix = original.endsWith("\n") ? "" : "\n";
+    const appended = [
+      "",
+      "# 由宿主安装引擎时自动补齐（与 dify-stack.env 同源）",
+      ...missing.map((key) => `${key}=${values.get(key)}`),
+      "",
+    ].join("\n");
+    writeFileSync(file, `${original}${suffix}${appended}`);
+  }
+}
+
+export interface EngineInstallOptions {
+  /** docker compose 文件的绝对路径。 */
+  composeFile: string;
+  /** env 文件目录（数据目录）。 */
+  dataDir: string;
+  /** 额外注入的环境（如 DIFY_PORT）。 */
+  extraEnv?: Record<string, string>;
+  /** 承载目标；缺省 host（读落盘记录由调用方完成）。 */
+  launch?: EngineLaunch;
+  /** Flow 网关 env：安装时把宿主生成的管理员凭据同源补进去（只补缺失键）。 */
+  gatewayEnvFiles?: string[];
+  /** 引擎栈就绪前执行：通知 Flow 网关补一次控制面授权（装完即可用）。 */
+  onReady?: () => Promise<void>;
+  /** 安装进程 ready 前执行 Dify 初始化；设置由宿主按库值 ?? env ?? 默认解析。 */
+  bootstrap?: () => Promise<
+    Pick<
+      DifyBootstrapRetryOptions,
+      | "consoleBase"
+      | "attempts"
+      | "retryDelayMs"
+      | "requestTimeoutMs"
+      | "credentialEnvFiles"
+    >
+  >;
+}
+
+/** 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。 */
+export type EngineLaunch = { kind: "host" } | { kind: "wsl2"; distro: string };
+
+/** 承载记录文件名（数据目录内）：安装时写，停止/查询读。 */
+export const STACK_RUNTIME_FILE = "dify-stack.runtime.json";
+
+/** 安装日志文件名（数据目录内）。 */
+export const STACK_LOG_FILE = "dify-stack-install.log";
+
+/** 密钥 env 文件名（数据目录内）。 */
+export const STACK_ENV_FILE = "dify-stack.env";
+
+/**
+ * Windows 路径 → WSL 内路径（`C:\a\b` → `/mnt/c/a/b`）。
+ * 非盘符路径（已是 POSIX / UNC）原样返回——UNC 不受支持，交给命令自己报错。
+ */
+export function toWslPath(winPath: string): string {
+  const match = /^([A-Za-z]):[\\/](.*)$/.exec(winPath);
+  if (!match) return winPath;
+  const [, drive, rest] = match;
+  return `/mnt/${(drive ?? "").toLowerCase()}/${(rest ?? "").replace(/\\/g, "/")}`;
+}
+
+/**
+ * compose 命令（含承载目标）：host → `docker compose …`；
+ * wsl2 → `wsl.exe -d <distro> -- docker compose …`（compose/env 路径换成 /mnt/…）。
+ */
+export function composeCommand(
+  options: Pick<EngineInstallOptions, "composeFile" | "launch"> & {
+    /** 存在才带上 `--env-file`（只读查询路径不创建它）。 */
+    envFile?: string | undefined;
+  },
+  args: string[],
+): { command: string; args: string[] } {
+  const launch = options.launch ?? { kind: "host" };
+  const inWsl = launch.kind === "wsl2";
+  const envFile =
+    options.envFile === undefined
+      ? undefined
+      : inWsl
+        ? toWslPath(options.envFile)
+        : options.envFile;
+  const composeFile = inWsl
+    ? toWslPath(options.composeFile)
+    : options.composeFile;
+  const composeArgs = [
+    "compose",
+    ...(envFile === undefined ? [] : ["--env-file", envFile]),
+    "-f",
+    composeFile,
+    ...args,
+  ];
+  if (launch.kind === "wsl2") {
+    return {
+      command: "wsl.exe",
+      args: ["-d", launch.distro, "--", "docker", ...composeArgs],
+    };
+  }
+  return { command: "docker", args: composeArgs };
+}
+
+/** 写承载记录（安装时调用；下次停止/查询按它执行）。 */
+export function writeStackRuntime(dataDir: string, launch: EngineLaunch): void {
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, STACK_RUNTIME_FILE),
+    `${JSON.stringify(launch, null, 2)}\n`,
+  );
+}
+
+/** 读承载记录；无记录/坏文件一律回落 `host`（fail-safe，不猜）。 */
+export function readStackRuntime(dataDir: string): EngineLaunch {
+  try {
+    const raw = JSON.parse(
+      readFileSync(join(dataDir, STACK_RUNTIME_FILE), "utf8"),
+    ) as unknown;
+    if (raw && typeof raw === "object") {
+      const kind = (raw as { kind?: unknown }).kind;
+      if (kind === "host") return { kind: "host" };
+      if (kind === "wsl2") {
+        const distro = (raw as { distro?: unknown }).distro;
+        if (typeof distro === "string" && distro.trim()) {
+          return { kind: "wsl2", distro: distro.trim() };
+        }
+      }
+    }
+  } catch {
+    // 没有记录（从未安装）/ JSON 坏了：都按宿主 docker 处理
+  }
+  return { kind: "host" };
+}
+
+/**
+ * 「装上即用」的安装决策：把判据集中一处，产品口径钉在测试里而不是散在装配里。
+ *
+ * 栈在不在取 **docker 报的运行期事实**，不看 `dify-stack.env` 存不存在：删过容器/卷的
+ * 用户库里仍留着那份 env，按 env 判会永远跳过重装（本机实测：容器 0 个、安装状态停在
+ * idle，用户只能自己去「引擎」页点按钮）。
+ * 承载是 `remote`（用户自管 Dify）或压根没探到承载时不动：前者是主动选择，
+ * 后者装了也没地方跑。
+ */
+export function planEngineAutoInstall(input: {
+  installState: EngineInstallSnapshot["state"];
+  stackContainerCount: number;
+  recommended: FlowEnginePathId | null;
+}): { action: "install" } | { action: "skip"; reason: string } {
+  if (input.installState === "installing")
+    return { action: "skip", reason: "已有安装任务在跑" };
+  // 容器已在也要再跑一次：上次可能在 compose up 之后、Dify 初始化之前被中断
+  // （应用重启/进程被杀），只跳过会留下「容器在、管理员没建」的半装栈。
+  // compose up 与 bootstrap 都是幂等的，已在就绪状态时只做检查。
+  if (input.stackContainerCount > 0) return { action: "install" };
+  if (input.recommended !== "wsl2" && input.recommended !== "container") {
+    return {
+      action: "skip",
+      reason: "本机 docker 承载不可用（自管地址或未探到承载）",
+    };
+  }
+  return { action: "install" };
+}
+
+/**
+ * 启动安装（幂等）：已在安装中 → 409 由调用方处理；本函数只在 idle/error 时拉起。
+ * detached spawn：node 重启不杀安装进程，但状态归零——重启后按 compose ps 重新探测（后续增量）。
+ */
+export function startEngineInstall(
+  options: EngineInstallOptions,
+  /** spawn 可注入（测试断言命令构造与承载记录落盘；生产不传）。 */
+  deps: {
+    spawn?: typeof spawn;
+    bootstrapStack?: typeof bootstrapDifyStackWithRetry;
+  } = {},
+): {
+  started: boolean;
+  snapshot: EngineInstallSnapshot;
+} {
+  if (current.state === "installing") {
+    return { started: false, snapshot: getEngineInstallSnapshot() };
+  }
+
+  if (!existsSync(options.composeFile)) {
+    current = {
+      state: "error",
+      error: `找不到 compose 文件：${options.composeFile}`,
+    };
+    return { started: false, snapshot: getEngineInstallSnapshot() };
+  }
+
+  const envFile = ensureStackEnvFile(options.dataDir);
+  syncGatewayCredentials(envFile, options.gatewayEnvFiles ?? []);
+  const logFile = join(options.dataDir, STACK_LOG_FILE);
+  // 承载目标落盘：停止/查询必须用同一个目标（否则 down 找不到另一侧起的容器）
+  writeStackRuntime(options.dataDir, options.launch ?? { kind: "host" });
+  current = {
+    state: "installing",
+    startedAt: new Date().toISOString(),
+    logFile,
+  };
+
+  const command = composeCommand({ ...options, envFile }, [
+    "--profile",
+    "dify",
+    "up",
+    "-d",
+  ]);
+  const child = (deps.spawn ?? spawn)(command.command, command.args, {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...options.extraEnv },
+    windowsHide: true,
+  });
+  current.child = child;
+  const installation = current;
+
+  const append = (chunk: Buffer | string): void => {
+    try {
+      writeFileSync(logFile, String(chunk), { flag: "a" });
+    } catch {
+      // 日志写失败不影响安装本身
+    }
+  };
+  child.stdout?.on("data", append);
+  child.stderr?.on("data", append);
+  child.on("error", (error) => {
+    if (current !== installation) return;
+    current.state = "error";
+    current.error = error.message;
+  });
+  child.on("close", (code) => {
+    void (async () => {
+      if (current !== installation || current.state !== "installing") return;
+      if (code !== 0) {
+        current.state = "error";
+        current.error = `docker compose 退出码 ${code}（详见日志）`;
+        return;
+      }
+      try {
+        if (options.bootstrap) {
+          const bootstrap = await options.bootstrap();
+          try {
+            await (deps.bootstrapStack ?? bootstrapDifyStackWithRetry)(
+              { envFile, ...bootstrap },
+              {},
+            );
+          } catch (error) {
+            throw new Error(
+              `Dify 初始化失败：${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        }
+        // 装完再补一次网关控制面授权：网关 onModuleInit 只有启动期窗口，晚装的
+        // 窗口早过。补授权失败不谎报 ready，但也不能说成「Dify 没装好」——栈其实
+        // 已经起来，缺的是网关那一段，报错必须指到网关去。
+        try {
+          await options.onReady?.();
+        } catch (error) {
+          throw new Error(
+            `引擎已装好，但 Flow 网关控制面补授权失败：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
+          );
+        }
+        if (current === installation && current.state === "installing")
+          current.state = "ready";
+      } catch (error) {
+        if (current !== installation || current.state !== "installing") return;
+        current.state = "error";
+        current.error = error instanceof Error ? error.message : String(error);
+      }
+    })();
+  });
+
+  return { started: true, snapshot: getEngineInstallSnapshot() };
+}
+
+/**
+ * 取消进行中的安装（协作式）：终止 `up` 子进程；已拉取的镜像层保留（可重放），
+ * 半创建的容器由停止（`stopEngineStack`）清理——取消本身不假装栈已不存在。
+ */
+export function cancelEngineInstall(): EngineInstallSnapshot {
+  if (current.state !== "installing") return getEngineInstallSnapshot();
+  current.child?.kill();
+  current = { state: "idle" };
+  return getEngineInstallSnapshot();
+}
+
+export interface EngineStopResult {
+  ok: boolean;
+  /** 失败时的可读原因（命令退出码 + stderr 摘要）。 */
+  error?: string;
+}
+
+/** flow 引擎托管的宿主侧服务（ctx key `flowEngine`）：插件卸载时的引擎清理钩子。 */
+export interface FlowEngineHostService {
+  /**
+   * 插件卸载钩子：仅对 flow 产品插件（`kenfutwork-flow`）执行引擎 purge
+   * （删容器/卷/镜像 + 本地 env/日志/记录），其余插件返回 ok 且不动引擎。
+   */
+  purgeForPlugin(pluginId: string): Promise<EngineStopResult>;
+}
+
+/**
+ * 停止引擎栈（FORM-11 生命周期）：`docker compose down`；`deleteData` 时追加
+ * `--volumes`（全删容器卷，含 Dify 库与文件——**显式选择才动数据**，§9.1③）。
+ * 安装中先取消：`up` 还在跑时 `down` 会互相打架。
+ */
+export async function stopEngineStack(
+  options: EngineInstallOptions & {
+    deleteData?: boolean;
+    /** 连镜像一起删（`--rmi all`；卸载 purge 用，普通停止不动镜像）。 */
+    purgeImages?: boolean;
+  },
+  deps: { run?: RunCommand } = {},
+): Promise<EngineStopResult> {
+  if (current.state === "installing") cancelEngineInstall();
+  // 停止是交互式操作（用户点了按钮）：超时只作兜底，给 compose 收尾留足时间。
+  const run = deps.run ?? createProcessRunCommand({ timeoutMs: 120_000 });
+  const envFile = ensureStackEnvFile(options.dataDir);
+  const command = composeCommand({ ...options, envFile }, [
+    "--profile",
+    "dify",
+    "down",
+    ...(options.deleteData ? ["--volumes"] : []),
+    ...(options.purgeImages ? ["--rmi", "all"] : []),
+  ]);
+  const result = await run(command.command, command.args);
+  if (result.code !== 0) {
+    const detail = decodeCommandText(result.stderr).split("\n")[0]?.trim();
+    return {
+      ok: false,
+      error:
+        `docker compose down 失败（退出码 ${result.code}）` +
+        (detail ? `：${detail.slice(0, 200)}` : ""),
+    };
+  }
+  /**
+   * WSL2 承载：栈停掉之后回收发行版（§9-② 的「不用 flow 时零常驻」）。
+   *
+   * 用 `--terminate <distro>` 而不是方案文档写的 `wsl --shutdown`：后者会把用户
+   * **所有**发行版（含 Docker Desktop 自己的）一起停掉，爆炸半径远超本功能的需要；
+   * terminate 只停这套栈所在的那个发行版。**尽力而为**——回收失败不影响「栈已停」
+   * 的结论（下次启动会自行把发行版拉起来），故只吞错误、不改判返回。
+   */
+  if (options.launch?.kind === "wsl2") {
+    await run("wsl.exe", ["--terminate", options.launch.distro]).catch(
+      () => undefined,
+    );
+  }
+  current = { state: "idle" };
+  return { ok: true };
+}
+
+/**
+ * 卸载清理（flow 插件卸载专用，用户口径）：
+ * **删引擎本体**——`down --volumes --rmi all`（容器 + 卷 + 镜像，下次安装重新下载）
+ * + 清本地 env / 安装日志 / 承载记录；**不碰插件代码**（`plugins/flow` 与 compose 资源
+ * 留在原处，才能二次安装）。
+ */
+export async function purgeEngineStack(
+  options: EngineInstallOptions,
+  deps: { run?: RunCommand } = {},
+): Promise<EngineStopResult> {
+  // 从未安装（没有密钥 env、也没有承载记录）或 compose 资源缺失：没有可清的引擎，
+  // 直接成功——不让「卸载一个从没装过引擎的插件」被 docker 的报错卡住。
+  const everInstalled =
+    existsSync(join(options.dataDir, STACK_ENV_FILE)) ||
+    existsSync(join(options.dataDir, STACK_RUNTIME_FILE));
+  if (everInstalled && existsSync(options.composeFile)) {
+    const result = await stopEngineStack(
+      { ...options, deleteData: true, purgeImages: true },
+      deps,
+    );
+    if (!result.ok) return result;
+  }
+  for (const name of [STACK_ENV_FILE, STACK_LOG_FILE, STACK_RUNTIME_FILE]) {
+    rmSync(join(options.dataDir, name), { force: true });
+  }
+  return { ok: true };
+}

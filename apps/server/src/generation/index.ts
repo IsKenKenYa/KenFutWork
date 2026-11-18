@@ -1,11 +1,3 @@
-export { generateImage } from "./image-generation.js";
-export {
-  clearProviders,
-  getImageProvider,
-  getVideoProvider,
-  registerImageProvider,
-  registerVideoProvider,
-} from "./providers/registry.js";
 export type {
   GeneratedImage,
   GeneratedVideo,
@@ -15,4 +7,3 @@ export type {
   VideoProvider,
 } from "./types.js";
 export { aspectRatioToDimensions, GenerationError } from "./utils.js";
-export { generateVideo } from "./video-generation.js";

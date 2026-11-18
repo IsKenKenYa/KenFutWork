@@ -1,12 +1,30 @@
 import { z } from "zod";
-import { runCreateRequestSchema } from "./contracts.js";
+import { runCreateRequestSchema, terminalShellSchema } from "./contracts.js";
 import { streamEventSchema } from "./events.js";
+
+/** 文档变化与Agent执行事件独立；只唤醒权威读取，不代表任何Run或工具完成。 */
+export const canvasDocumentUpdatedMessageSchema = z.object({
+  type: z.literal("canvas.document.updated"),
+  canvasId: z.uuid(),
+  projectId: z.uuid(),
+  revision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
+  deleted: z.boolean(),
+});
+export type CanvasDocumentUpdatedMessage = z.infer<
+  typeof canvasDocumentUpdatedMessageSchema
+>;
 
 // --- Server → Client: Push Event (replaces SSE) ---
 
 export const wsServerEventSchema = z.object({
   type: z.literal("event"),
   event: streamEventSchema,
+  /** Task缓冲的服务端单调序号；旧Canvas/Code传输可省略。 */
+  seq: z.number().int().min(1).optional(),
+  taskId: z.string().uuid().optional(),
 });
 
 // --- Server → Client: RPC Request ---
@@ -23,6 +41,7 @@ export const wsRpcRequestSchema = z.object({
 export const wsCommandAckSchema = z.object({
   type: z.literal("command.ack"),
   action: z.string().min(1),
+  requestId: z.string().min(1).max(128).optional(),
   payload: z.record(z.string(), z.unknown()),
 });
 
@@ -30,18 +49,29 @@ export const wsCommandAckSchema = z.object({
 
 export const wsRunCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("agent.run"),
-  payload: runCreateRequestSchema,
+  payload: runCreateRequestSchema.extend({
+    /** Design持久输入去重；重连必须复用同一inputId。 */
+    inputId: z.string().min(1).max(128).optional(),
+    scopeGeneration: z.number().int().positive().optional(),
+    branchGeneration: z.number().int().positive().optional(),
+  }),
 });
 
 export const wsCancelCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("agent.cancel"),
-  payload: z.object({ runId: z.string().min(1) }),
+  payload: z.object({
+    runId: z.string().min(1),
+    taskId: z.string().uuid().optional(),
+  }),
 });
 
 export const wsResumeCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("canvas.resume"),
   payload: z.object({
     canvasId: z.string().min(1),
@@ -49,10 +79,106 @@ export const wsResumeCommandSchema = z.object({
   }),
 });
 
+export const wsTaskResumeCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("task.resume"),
+  payload: z.object({
+    taskId: z.string().uuid(),
+    lastSeq: z.number().int().min(0).default(0),
+  }),
+});
+
+/**
+ * flow 事件续传（P5，《flow 集成方案》「flow 画布纳入 EventBuffer」）。
+ *
+ * flowRun 事件没有 canvasId（归属是本地实例，与 `pushToInstance` 同一口径），
+ * 故不进画布缓冲、单独按实例缓冲；重连后客户端带 `lastSeq` 从这里补发缺失事件
+ * （信封 seq 由宿主侧缓冲生成，payload 里的 seq 仍是 flow 的 run 内序号）。
+ */
+export const wsFlowResumeCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("flow.resume"),
+  payload: z.object({
+    lastSeq: z.number().int().min(0).default(0),
+  }),
+});
+
+/**
+ * 终端会话（R3-1「终端」标签的交互式形态）：一条**持久 shell**（cd 保留、REPL 可用），
+ * 输入输出都走这条已有的 WS 连接——不再为每条命令起一个进程。
+ *
+ * `sessionId` 由客户端生成（一个终端标签一个）：WS 重连后用同一个 id 重新
+ * `terminal.start` 即可，界面上不会出现「一断线就多出一个终端」。
+ */
+export const wsTerminalStartCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("terminal.start"),
+  payload: z.object({
+    sessionId: z.string().min(1).max(64),
+    /** 真实Task身份决定持久目录和权限；cwd只选择该授权域中的目录。 */
+    taskId: z.string().uuid(),
+    cwd: z.string().optional(),
+    /** 省略即用服务端解析的**系统默认** shell（用户口径「不要选择，自动进入系统默认配置的终端」）。 */
+    shell: terminalShellSchema.optional(),
+    /** 终端尺寸（列 × 行）：PTY 的窗口大小，交互程序（PSReadLine / 全屏 TUI）靠它排版。 */
+    cols: z.number().int().min(2).max(1000),
+    rows: z.number().int().min(1).max(1000),
+  }),
+});
+
+export const wsTerminalInputCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("terminal.input"),
+  payload: z.object({
+    sessionId: z.string().min(1).max(64),
+    /**
+     * **原始按键**（PTY 口径）：回车就是 `
+`，方向键是 `[A` 这类转义序列——
+     * 服务端**不再补换行、也不回显**（真终端里这两件事是 PTY 自己做的）。
+     */
+    data: z.string().max(4096),
+  }),
+});
+
+export const wsTerminalResizeCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("terminal.resize"),
+  payload: z.object({
+    sessionId: z.string().min(1).max(64),
+    cols: z.number().int().min(2).max(1000),
+    rows: z.number().int().min(1).max(1000),
+  }),
+});
+
+export const wsTerminalStopCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("terminal.stop"),
+  payload: z.object({ sessionId: z.string().min(1).max(64) }),
+});
+
+export const wsTerminalCommandSchemas = [
+  wsTerminalStartCommandSchema,
+  wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
+  wsTerminalStopCommandSchema,
+] as const;
+
 export const wsCommandSchema = z.discriminatedUnion("action", [
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsTaskResumeCommandSchema,
+  wsFlowResumeCommandSchema,
+  wsTerminalStartCommandSchema,
+  wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
+  wsTerminalStopCommandSchema,
 ]);
 
 // --- Client → Server: RPC Response ---
@@ -73,25 +199,78 @@ export const wsClientMessageSchema = z.union([
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsTaskResumeCommandSchema,
+  wsFlowResumeCommandSchema,
+  wsTerminalStartCommandSchema,
+  wsTerminalInputCommandSchema,
+  wsTerminalResizeCommandSchema,
+  wsTerminalStopCommandSchema,
   wsRpcResponseSchema,
 ]);
 
 // --- Union: Server → Client ---
 
+/**
+ * 终端输出（服务端 → 客户端）。**不是** run 事件：它属于终端会话这条独立通道，
+ * 与 agent 的 streamEvent 混在一起会让按 runId 过滤的消费方误判。
+ */
+export const wsTerminalOutputSchema = z.object({
+  type: z.literal("terminal.output"),
+  sessionId: z.string().min(1),
+  /** 一段输出（服务端按 ≤ 8KB 切帧，客户端拼回）。 */
+  data: z.string(),
+});
+
+export const wsTerminalExitSchema = z.object({
+  type: z.literal("terminal.exit"),
+  sessionId: z.string().min(1),
+  /** shell 自己的退出码；被杀掉时为 null。 */
+  exitCode: z.number().int().nullable(),
+  reason: z.string().optional(),
+});
+
+export type WsTerminalOutput = z.infer<typeof wsTerminalOutputSchema>;
+export type WsTerminalExit = z.infer<typeof wsTerminalExitSchema>;
+
+export const wsServerErrorSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+  code: z.string().optional(),
+  requestId: z.string().min(1).max(128).optional(),
+  action: z.string().optional(),
+});
+
 export const wsServerMessageSchema = z.discriminatedUnion("type", [
+  canvasDocumentUpdatedMessageSchema,
   wsServerEventSchema,
+  wsServerErrorSchema,
   wsRpcRequestSchema,
   wsCommandAckSchema,
+  wsTerminalOutputSchema,
+  wsTerminalExitSchema,
 ]);
 
 // --- Type exports ---
 
+export type WsServerError = z.infer<typeof wsServerErrorSchema>;
 export type WsServerEvent = z.infer<typeof wsServerEventSchema>;
 export type WsRpcRequest = z.infer<typeof wsRpcRequestSchema>;
 export type WsCommandAck = z.infer<typeof wsCommandAckSchema>;
 export type WsRunCommand = z.infer<typeof wsRunCommandSchema>;
 export type WsCancelCommand = z.infer<typeof wsCancelCommandSchema>;
+export type WsTaskResumeCommand = z.infer<typeof wsTaskResumeCommandSchema>;
 export type WsResumeCommand = z.infer<typeof wsResumeCommandSchema>;
+export type WsFlowResumeCommand = z.infer<typeof wsFlowResumeCommandSchema>;
+export type WsTerminalResizeCommand = z.infer<
+  typeof wsTerminalResizeCommandSchema
+>;
+export type WsTerminalStartCommand = z.infer<
+  typeof wsTerminalStartCommandSchema
+>;
+export type WsTerminalInputCommand = z.infer<
+  typeof wsTerminalInputCommandSchema
+>;
+export type WsTerminalStopCommand = z.infer<typeof wsTerminalStopCommandSchema>;
 export type WsCommand = z.infer<typeof wsCommandSchema>;
 export type WsRpcResponse = z.infer<typeof wsRpcResponseSchema>;
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;

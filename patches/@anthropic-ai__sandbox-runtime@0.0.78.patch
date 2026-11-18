@@ -1,0 +1,12 @@
+diff --git a/dist/sandbox/macos-sandbox-utils.js b/dist/sandbox/macos-sandbox-utils.js
+index d88027848254bef3d1dc4f3d41893ccc6c0b73fb..6f791e1e0cd826d6f32235214e0c10bf623e6a98 100644
+--- a/dist/sandbox/macos-sandbox-utils.js
++++ b/dist/sandbox/macos-sandbox-utils.js
+@@ -775,6 +775,7 @@ function generateSandboxProfile({ readConfig, libraryDenyEntries, writeConfig, h
+         '  (sysctl-name "hw.memsize")',
+         '  (sysctl-name "hw.ncpu")',
+         '  (sysctl-name "hw.nperflevels")',
++        '  (sysctl-name "hw.optional.neon")',
+         '  (sysctl-name "hw.packages")',
+         '  (sysctl-name "hw.pagesize_compat")',
+         '  (sysctl-name "hw.pagesize")',

@@ -1,14 +1,15 @@
 "use client";
 
-import type { PluginExportArtifact } from "@loomic/shared";
+import type { PluginExportArtifact } from "@kenfutwork/shared";
 import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { triggerDownload } from "@/lib/download";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 
 /**
- * 导出插件为 bundle：产物**双声明**（`dsh.bundle` + `loomic.bundle`），
+ * 导出插件为 bundle：产物**双声明**（`dsh.bundle` + `kenfutwork.bundle`），
  * 同一份文件既能被 dsh 装，也能回灌本项目安装流程。
  */
 export function PluginExportDialog({
@@ -35,7 +36,7 @@ export function PluginExportDialog({
     setBusy(true);
     setError(null);
     setArtifact(null);
-    void fetch(`${getServerBaseUrl()}/api/plugins/export`, {
+    void serverFetch(`${getServerBaseUrl()}/api/plugins/export`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -73,12 +74,10 @@ export function PluginExportDialog({
     const blob = new Blob([JSON.stringify(artifact.files, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${artifact.name.replace(/[^\w.-]+/g, "-")}-bundle.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    void triggerDownload(
+      `${artifact.name.replace(/[^\w.-]+/g, "-")}-bundle.json`,
+      blob,
+    );
   };
 
   return (
@@ -87,10 +86,8 @@ export function PluginExportDialog({
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         aria-describedby={undefined}
       >
-        <div className="flex items-center gap-3 border-b px-5 py-3 pr-12">
-          <DialogTitle className="text-base font-medium">
-            导出插件 bundle
-          </DialogTitle>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-3 pr-12">
+          <DialogTitle className="text-base font-medium">导出插件</DialogTitle>
           <span className="text-xs text-muted-foreground">{name}</span>
           {artifact ? (
             <button

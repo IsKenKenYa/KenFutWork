@@ -1,10 +1,10 @@
 "use client";
 
-import type { CompatReport, PluginBundleManifest } from "@loomic/shared";
+import type { CompatReport, PluginBundleManifest } from "@kenfutwork/shared";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { CompatReportView, hasLifecycleIssue } from "./plugin-compat-report";
 
 /**
@@ -18,6 +18,7 @@ export function PluginInstallByUrl({
   onInstalled,
 }: {
   accessToken: string | null;
+  /** 安装保留兼容性检查。 */
   onInstalled: () => void;
 }) {
   const [source, setSource] = useState("");
@@ -44,7 +45,7 @@ export function PluginInstallByUrl({
     setBusy("inspect");
     reset();
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/plugins/inspect`,
         {
           method: "POST",
@@ -76,7 +77,7 @@ export function PluginInstallByUrl({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/plugins/install`,
         {
           method: "POST",
@@ -96,7 +97,7 @@ export function PluginInstallByUrl({
         setError(payload.error?.message ?? "安装失败。");
         return;
       }
-      setMessage("安装完成，工具已进入统一注册表。");
+      setMessage("安装完成。");
       onInstalled();
     } catch {
       setError("安装请求失败。");
@@ -113,9 +114,7 @@ export function PluginInstallByUrl({
         <ShieldCheck className="h-4 w-4" /> 从链接安装
       </h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        填 GitHub
-        仓库链接（github.com/owner/repo）或本机目录路径。安装前会先做兼容性校验，
-        未通过则不能安装。
+        填 GitHub 链接或本机目录 · 安装前先校验
       </p>
 
       <div className="mt-3 flex gap-2">
@@ -181,10 +180,7 @@ export function PluginInstallByUrl({
                 className="mt-0.5"
                 data-testid="allow-lifecycle"
               />
-              <span>
-                我了解该插件会在<b>安装时执行任意代码</b>
-                （生命周期脚本），并授权执行。
-              </span>
+              <span>我了解并授权：该插件会执行任意代码</span>
             </label>
           ) : null}
         </div>
@@ -195,7 +191,7 @@ export function PluginInstallByUrl({
           className="mt-2 text-xs text-destructive"
           data-testid="install-blocked"
         >
-          兼容性校验未通过，安装已被阻止。
+          校验未通过 · 安装已阻止
         </p>
       ) : null}
       {message ? (

@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AppState,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import { createPortal } from "react-dom";
 
@@ -22,15 +27,8 @@ const ZOOM_MAX = 30;
 const ZOOM_STEP = 1.1;
 
 /* ── Types ── */
-interface CanvasBottomBarProps {
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any | null;
-  layersOpen: boolean;
-  onToggleLayers: () => void;
-  filesOpen: boolean;
-  onToggleFiles: () => void;
-  /** Whether any left panel (layers/files) is open — shifts the bar right */
-  leftPanelOpen: boolean;
+interface CanvasViewControlsProps {
+  excalidrawApi: ExcalidrawImperativeAPI | null;
 }
 
 /* ── Inline SVG icons ── */
@@ -46,7 +44,7 @@ const Ico = ({
   vb = "0 0 16 16",
   fill = "none",
 }: IcoProps) => (
-  <svg viewBox={vb} fill={fill} className={className}>
+  <svg viewBox={vb} fill={fill} className={className} aria-hidden="true">
     {children}
   </svg>
 );
@@ -72,6 +70,7 @@ const PlusIcon = ({ className }: { className?: string }) => (
 );
 const GridIcon = ({ className }: { className?: string }) => (
   <svg
+    aria-hidden="true"
     className={className}
     viewBox="0 0 24 24"
     fill="none"
@@ -85,22 +84,6 @@ const GridIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const LayersIcon = ({ className }: { className?: string }) => (
-  <Ico className={className} vb="0 0 20 20" fill="currentColor">
-    <path d="M17.189 12.48a.65.65 0 0 1 .622 1.141l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 16.41zm0-3.036a.65.65 0 0 1 .622 1.14l-7.5 4.1a.65.65 0 0 1-.623 0l-7.5-4.1a.65.65 0 0 1 .624-1.14L10 13.374zm-7.426-7.2a.65.65 0 0 1 .549.035l7.5 4.1a.651.651 0 0 1 0 1.14l-7.5 4.101a.65.65 0 0 1-.624 0l-7.5-4.1a.651.651 0 0 1 0-1.14l7.5-4.101zM3.854 6.948 10 10.31l6.145-3.36L10 3.59z" />
-  </Ico>
-);
-const FileIcon = ({ className }: { className?: string }) => (
-  <Ico className={className} vb="0 0 24 24">
-    <path
-      d="M9 17h6M9 13h6M13 3H8.2c-1.12 0-1.68 0-2.108.218a2 2 0 0 0-.874.874C5 4.52 5 5.08 5 6.2v11.6c0 1.12 0 1.68.218 2.108a2 2 0 0 0 .874.874C6.52 21 7.08 21 8.2 21h7.6c1.12 0 1.68 0 2.108-.218a2 2 0 0 0 .874-.874C19 19.48 19 18.92 19 17.8V9m-6-6 6 6m-6-6v4.4c0 .56 0 .84.109 1.054a1 1 0 0 0 .437.437C13.76 9 14.04 9 14.6 9H19"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Ico>
-);
 const CloseIcon = ({ className }: { className?: string }) => (
   <Ico className={className}>
     <path
@@ -114,7 +97,7 @@ const CloseIcon = ({ className }: { className?: string }) => (
 
 /* checkerboard pattern for "transparent" swatch */
 const CheckerIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" className={className}>
+  <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
     <rect width="8" height="8" fill="#ccc" />
     <rect x="8" y="8" width="8" height="8" fill="#ccc" />
     <rect x="8" width="8" height="8" fill="#fff" />
@@ -194,6 +177,7 @@ function Popover({
   return createPortal(
     <div
       ref={containerRef}
+      role="none"
       style={pos}
       className={`rounded-lg bg-card border border-border shadow-float animate-in fade-in slide-in-from-bottom-2 duration-150 ${extraClass ?? "p-2"}`}
       onKeyDown={(e) => e.stopPropagation()}
@@ -209,74 +193,39 @@ function Popover({
 const btnClass =
   "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors";
 
-/* ── Element helpers for Search ── */
-// biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type
-type ExcalidrawEl = any;
-const TYPE_ICONS: Record<string, string> = {
-  text: "T",
-  image: "🖼",
-  rectangle: "▭",
-  ellipse: "◯",
-  diamond: "◇",
-  line: "─",
-  arrow: "→",
-};
-const elTypeIcon = (t: string) => TYPE_ICONS[t] ?? "◆";
-const EL_TYPE_LABELS: Record<string, string> = {
-  rectangle: "矩形",
-  ellipse: "椭圆",
-  diamond: "菱形",
-  line: "直线",
-  arrow: "箭头",
-  text: "文字",
-  frame: "框架",
-  freedraw: "画笔",
-  image: "图像",
-  video: "视频",
-};
-
-function elLabel(el: ExcalidrawEl): string {
-  if (el.type === "text") return (el.text as string)?.slice(0, 20) || "文字";
-  return EL_TYPE_LABELS[el.type] ?? el.type;
-}
-
-function ElementRow({
-  el,
-  onSelect,
-}: {
-  el: ExcalidrawEl;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-muted transition-colors text-foreground text-left"
-      onClick={() => onSelect(el.id)}
-    >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border bg-muted text-[10px] leading-none">
-        {elTypeIcon(el.type)}
-      </span>
-      <span className="truncate">{elLabel(el)}</span>
-    </button>
-  );
-}
-
 /* ================================================================
    Main component
    ================================================================ */
-export function CanvasBottomBar({
-  excalidrawApi,
-  layersOpen,
-  onToggleLayers,
-  filesOpen,
-  onToggleFiles,
-  leftPanelOpen,
-}: CanvasBottomBarProps) {
+
+/**
+ * 画布底部工具条左侧的**视图控件组**（背景色 / 图层 / 生成文件 / 网格 / 缩放）。
+ *
+ * 它不再自带定位与外框：底部原本是两条并列的浮条（这条左簇 + 居中的绘图工具条），
+ * 窄视口下互相遮挡，还得靠测量避让（抬高一行）来兜。现在两条合成一条，外框由
+ * `CanvasToolMenu` 那一行提供，本组件只出控件本身，于是避让逻辑连同它的测量代码一起
+ * 消失——那套代码存在的唯一理由就是「两条并列」。
+ */
+export function CanvasViewControls({ excalidrawApi }: CanvasViewControlsProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [gridOn, setGridOn] = useState(false);
   const zoomBtnRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * 与底部居中的绘图工具条避让。
+   *
+   * 画布区被侧栏/助手面板挤压后会变窄（实测 1280 视口下只剩 624px），而工具条
+   * 是居中的、自身就有 ~400px：从左簇右缘到画布右边的空档放不下它，两者就会重叠
+   * ——工具条 z-30 压在左簇之上，`网格/缩小/100%/放大` 被盖住点不到（elementFromPoint
+   * 命中的是「拖拽画布/选择/椭圆」）。
+   *
+   * 取舍：**抬高左簇、不动工具条**。工具条是主 affordance，位置应稳定；左簇是次级
+   * 控件，让位代价最小。实测行不通的替代方案：只挪 left 或只调 z-index——前者在
+   * 「空档 < 工具条宽度」时无解，后者只是把点不到的控件换一批。
+   *
+   * **后续**：两条已合成一条（见组件注释），这段避让随「两条并列」这个前提一起作废。
+   */
 
   /* ── Background color state ── */
   const [bgColor, setBgColor] = useState("#FFFFFF");
@@ -295,12 +244,12 @@ export function CanvasBottomBar({
     setBgColor(initBg);
     setHexInput(initBg.replace(/^#/, "").toUpperCase());
 
-    setGridOn(Boolean(state.gridSize));
+    setGridOn(Boolean(state.gridModeEnabled));
     const unsubscribe = excalidrawApi.onChange(() => {
       const s = excalidrawApi.getAppState();
       setZoom(s.zoom.value);
       setBgColor(s.viewBackgroundColor ?? "#FFFFFF");
-      setGridOn(Boolean(s.gridSize));
+      setGridOn(Boolean(s.gridModeEnabled));
     });
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
@@ -308,15 +257,30 @@ export function CanvasBottomBar({
   }, [excalidrawApi]);
 
   /* ── 网格开关（Excalidraw 原生的「Toggle grid」缺中文键，改由底部栏自绘） ── */
+  /**
+   * 网格开关。Excalidraw 0.18 的**渲染看的是 `gridModeEnabled`**，`gridSize` 只决定格子
+   * 间距——只翻 gridSize 会得到「按钮亮了、画布没有网格」。两处一起写：开关走 gridModeEnabled，
+   * 间距在首次打开时补一个默认值（Excalidraw 自己的菜单动作也只翻 gridModeEnabled）。
+   */
   const handleToggleGrid = useCallback(() => {
-    const current = excalidrawApi?.getAppState().gridSize ?? null;
-    excalidrawApi?.updateScene({ appState: { gridSize: current ? null : 20 } });
+    const state = excalidrawApi?.getAppState();
+    if (!state) return;
+    const next = !state.gridModeEnabled;
+    excalidrawApi?.updateScene({
+      appState: {
+        gridModeEnabled: next,
+        gridSize: state.gridSize || 20,
+      },
+    });
   }, [excalidrawApi]);
 
   /* ── Zoom helpers ── */
   const applyZoom = useCallback(
     (value: number) => {
-      excalidrawApi?.updateScene({ appState: { zoom: { value } } });
+      // zoom.value 在 Excalidraw 类型里是品牌 number（只表示「已夹到 ZOOM_MIN..ZOOM_MAX」）；
+      // 调用方的输入都已按该范围夹过，故在边界断言。
+      const normalized = value as AppState["zoom"]["value"];
+      excalidrawApi?.updateScene({ appState: { zoom: { value: normalized } } });
     },
     [excalidrawApi],
   );
@@ -381,23 +345,15 @@ export function CanvasBottomBar({
     closeAllPopovers();
     if (next) setBgPickerOpen(true);
   }, [bgPickerOpen, closeAllPopovers]);
-  const handleToggleLayers = useCallback(() => {
-    closeAllPopovers();
-    onToggleLayers();
-  }, [closeAllPopovers, onToggleLayers]);
-  const handleToggleFiles = useCallback(() => {
-    closeAllPopovers();
-    onToggleFiles();
-  }, [closeAllPopovers, onToggleFiles]);
 
   return (
     <div
-      className="absolute bottom-4 z-20 transition-[left] duration-200"
-      style={{ left: leftPanelOpen ? 296 : 16 }}
+      role="none"
+      className="flex items-center gap-0.5"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 rounded-full bg-card border border-border px-1 py-1 shadow-card">
+      <div className="flex items-center gap-0.5">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}
@@ -414,26 +370,6 @@ export function CanvasBottomBar({
               style={{ backgroundColor: bgColor }}
             />
           )}
-        </button>
-
-        {/* ── Layers button ── */}
-        <button
-          type="button"
-          className={`${btnClass} ${layersOpen ? "bg-muted text-foreground" : ""}`}
-          onClick={handleToggleLayers}
-          aria-label="图层"
-        >
-          <LayersIcon className="h-4 w-4" />
-        </button>
-
-        {/* ── Files button ── */}
-        <button
-          type="button"
-          className={`${btnClass} ${filesOpen ? "bg-muted text-foreground" : ""}`}
-          onClick={handleToggleFiles}
-          aria-label="生成文件"
-        >
-          <FileIcon className="h-3.5 w-3.5" />
         </button>
 
         {/* ── Grid toggle ── */}
@@ -501,7 +437,7 @@ export function CanvasBottomBar({
             className="px-3 py-1.5 text-xs text-left rounded-md hover:bg-muted transition-colors text-foreground"
             onClick={handleFitAll}
           >
-            Fit All
+            全览
           </button>
         </div>
       </Popover>
@@ -591,8 +527,6 @@ export function CanvasBottomBar({
           </div>
         </div>
       </Popover>
-
-      {/* Files panel is now a separate left sidebar component */}
     </div>
   );
 }

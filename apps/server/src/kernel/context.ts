@@ -1,20 +1,37 @@
+import { isDeepStrictEqual } from "node:util";
 import type { FastifyInstance } from "fastify";
-
+import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
+import type { PermissionInvocation } from "../features/permissions/approval-types.js";
+import {
+  allowsPlanControl,
+  narrowCodeApprovalMode,
+} from "../features/permissions/code-policy.js";
+import type { PermissionService } from "../features/permissions/permission-service.js";
+import { contributionFingerprint } from "./contribution-fingerprint.js";
+import { findOwnedToolInterruption } from "./owned-tool-interruption.js";
+import { publicToolArguments } from "./tool-arguments.js";
 import type {
   AgentRunEvent,
   AgentRunEventPayloads,
   CapabilityRegistration,
   CapabilityRegistry,
   DepsOf,
+  DynamicToolEntry,
   KernelEvents,
   ListenerOf,
   PluginContext,
+  PromptCompositionContext,
+  PromptSectionDefinition,
+  RunToolResolutionContext,
   SerialListener,
   ServiceKey,
   ServiceMap,
+  SystemPromptRegistry,
+  ToolContributionSnapshot,
   ToolDefinition,
   ToolExecutionContext,
+  ToolExecutionObservation,
   ToolRegistry,
   ToolScope,
   TurnStoppingPayload,
@@ -107,19 +124,197 @@ export class AgentRunEventBus {
   }
 }
 
+class ToolRegistrationRevokedError extends ToolDeniedError {}
+
+function registrationSignature(tool: ToolDefinition) {
+  return {
+    name: tool.name,
+    scope: tool.scope,
+    access: tool.access,
+    planControl: tool.planControl,
+    readonlyExecution: tool.readonlyExecution,
+    approvalReviewKind: tool.approvalReviewKind,
+    parameters: structuredClone(tool.parameters),
+    configurationVersion: tool.configurationVersion,
+  };
+}
+
+function contributionSignature(
+  kind: "static" | "dynamic",
+  entry: ToolDefinition | DynamicToolEntry,
+) {
+  const value =
+    kind === "static"
+      ? {
+          ...registrationSignature(entry as ToolDefinition),
+          execute: (entry as ToolDefinition).execute.toString(),
+        }
+      : {
+          id: (entry as DynamicToolEntry).id,
+          scope: entry.scope,
+          configurationVersion: entry.configurationVersion,
+          resolve: (entry as DynamicToolEntry).resolve.toString(),
+        };
+  return contributionFingerprint(value);
+}
+type RegistrationReceipt = {
+  token: symbol;
+  key: string;
+  signature: ReturnType<typeof registrationSignature>;
+  frozenSignature?: string;
+} & (
+  | {
+      kind: "static";
+      definition: ToolDefinition;
+      execute: ToolDefinition["execute"];
+      schema: ToolDefinition["zodSchema"];
+    }
+  | {
+      kind: "dynamic";
+      resolver: DynamicToolEntry["resolve"];
+      resolution: RunToolResolutionContext;
+    }
+);
+
 /** 统一工具注册表：schema + scope + guarded 执行（先过 tool-pre-execute 事件）。 */
 export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
+  private readonly dynamicEntries = new Map<string, DynamicToolEntry>();
+  private readonly staticTokens = new Map<string, symbol>();
+  private readonly dynamicTokens = new Map<string, symbol>();
+  private readonly receipts = new WeakMap<
+    ToolDefinition,
+    RegistrationReceipt
+  >();
 
-  constructor(private readonly events: AgentRunEventBus) {}
+  constructor(
+    private readonly events: AgentRunEventBus,
+    private readonly permissions?: () => PermissionService | undefined,
+  ) {}
 
   register(tool: ToolDefinition): () => void {
     if (this.tools.has(tool.name)) {
       throw new Error(`[kernel] 工具 ${tool.name} 重复注册。`);
     }
-    this.tools.set(tool.name, tool);
+    const key = tool.name;
+    const token = Symbol(key);
+    this.tools.set(key, tool);
+    this.staticTokens.set(key, token);
+    this.receipts.set(tool, {
+      kind: "static",
+      key,
+      token,
+      definition: tool,
+      execute: tool.execute,
+      schema: tool.zodSchema,
+      signature: registrationSignature(tool),
+    });
     return () => {
-      this.tools.delete(tool.name);
+      if (this.staticTokens.get(key) !== token) return;
+      this.tools.delete(key);
+      this.staticTokens.delete(key);
+    };
+  }
+
+  registerDynamic(entry: DynamicToolEntry): () => void {
+    if (this.dynamicEntries.has(entry.id)) {
+      throw new Error(`[kernel] 动态工具 ${entry.id} 重复注册。`);
+    }
+    const key = entry.id;
+    const token = Symbol(key);
+    this.dynamicEntries.set(key, entry);
+    this.dynamicTokens.set(key, token);
+    return () => {
+      if (this.dynamicTokens.get(key) !== token) return;
+      this.dynamicEntries.delete(key);
+      this.dynamicTokens.delete(key);
+    };
+  }
+
+  resolveRunTools(ctx: RunToolResolutionContext): ToolDefinition[] {
+    if (
+      ctx.frozenContributions &&
+      ctx.frozenContributions.preset !== ctx.preset
+    )
+      throw new Error("运行能力快照与工作方式不一致，不能解析工具。");
+    const matches = (
+      kind: "static" | "dynamic",
+      key: string,
+      entry: ToolDefinition | DynamicToolEntry,
+    ) =>
+      !ctx.frozenContributions ||
+      ctx.frozenContributions.entries.some(
+        (frozen) =>
+          frozen.kind === kind &&
+          frozen.id === key &&
+          frozen.signature === contributionSignature(kind, entry),
+      );
+    const statics = this.list(ctx.preset).flatMap((tool) => {
+      if (!matches("static", tool.name, tool)) return [];
+      if (!ctx.frozenContributions) return [tool];
+      const definition = { ...tool };
+      const receipt = this.receipts.get(tool);
+      if (!receipt || receipt.kind !== "static")
+        throw new Error("静态工具注册缺少有效凭据。");
+      this.receipts.set(definition, {
+        ...receipt,
+        frozenSignature: contributionSignature("static", tool),
+      });
+      return [definition];
+    });
+    const resolved: ToolDefinition[] = [];
+    for (const [key, entry] of this.dynamicEntries) {
+      if (entry.scope !== "shared" && entry.scope !== ctx.preset) {
+        continue;
+      }
+      if (!matches("dynamic", key, entry)) continue;
+      const tool = entry.resolve(ctx);
+      if (tool && (tool.scope === "shared" || tool.scope === ctx.preset)) {
+        // Each resolved receipt carries its own Run context, even when a factory reuses an object.
+        const definition = { ...tool };
+        const token = this.dynamicTokens.get(key);
+        if (!token) throw new Error("动态工具注册缺少有效凭据。");
+        this.receipts.set(definition, {
+          kind: "dynamic",
+          key,
+          token,
+          resolver: entry.resolve,
+          resolution: ctx,
+          signature: registrationSignature(tool),
+          ...(ctx.frozenContributions
+            ? { frozenSignature: contributionSignature("dynamic", entry) }
+            : {}),
+        });
+        resolved.push(definition);
+      }
+    }
+    return [...statics, ...resolved];
+  }
+
+  captureContributions(preset: "code" | "design"): ToolContributionSnapshot {
+    return {
+      version: 1,
+      preset,
+      entries: [
+        ...this.list(preset).map((tool) => ({
+          kind: "static" as const,
+          id: tool.name,
+          signature: contributionSignature("static", tool),
+        })),
+        ...[...this.dynamicEntries.values()]
+          .filter((entry) => entry.scope === "shared" || entry.scope === preset)
+          .map((entry) => ({
+            kind: "dynamic" as const,
+            id: entry.id,
+            signature: contributionSignature("dynamic", entry),
+          })),
+      ].sort((left, right) =>
+        `${left.kind}:${left.id}` < `${right.kind}:${right.id}`
+          ? -1
+          : `${left.kind}:${left.id}` > `${right.kind}:${right.id}`
+            ? 1
+            : 0,
+      ),
     };
   }
 
@@ -150,18 +345,389 @@ export class ToolRegistryImpl implements ToolRegistry {
     args: Record<string, unknown>,
     execCtx: ToolExecutionContext = {},
   ): Promise<unknown> {
-    const tool = this.require(name);
-    const decision = await this.events.emitWaterfall("tool-pre-execute", {
-      args,
-      decision: "allow",
-      runId: execCtx.runId,
-      ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
-      toolName: name,
-    });
-    if (decision.decision === "deny") {
-      throw new ToolDeniedError(name, decision.denyReason);
+    return this.executeDefinition(this.require(name), args, execCtx);
+  }
+
+  private currentDefinition(
+    tool: ToolDefinition,
+    receipt: RegistrationReceipt | undefined,
+  ): ToolDefinition {
+    const denied = () =>
+      new ToolRegistrationRevokedError(
+        tool.name,
+        "工具注册或schema已改变，请重新发起工具调用。",
+      );
+    if (!receipt) throw denied();
+    let current: ToolDefinition | undefined | null;
+    if (receipt.kind === "static") {
+      current = this.tools.get(receipt.key);
+      if (
+        this.staticTokens.get(receipt.key) !== receipt.token ||
+        current !== receipt.definition ||
+        current.execute !== receipt.execute ||
+        current.zodSchema !== receipt.schema
+      )
+        throw denied();
+      if (
+        receipt.frozenSignature &&
+        receipt.frozenSignature !== contributionSignature("static", current)
+      )
+        throw denied();
+    } else {
+      const entry = this.dynamicEntries.get(receipt.key);
+      if (
+        !entry ||
+        this.dynamicTokens.get(receipt.key) !== receipt.token ||
+        entry.resolve !== receipt.resolver
+      )
+        throw denied();
+      if (
+        receipt.frozenSignature &&
+        receipt.frozenSignature !== contributionSignature("dynamic", entry)
+      )
+        throw denied();
+      current = entry.resolve(receipt.resolution);
     }
-    return tool.execute(args, execCtx);
+    if (
+      !current ||
+      !isDeepStrictEqual(registrationSignature(current), receipt.signature)
+    )
+      throw denied();
+    return current;
+  }
+
+  async executeDefinition(
+    tool: ToolDefinition,
+    args: Record<string, unknown>,
+    execCtx: ToolExecutionContext = {},
+  ): Promise<unknown> {
+    execCtx.signal?.throwIfAborted();
+    const receipt = this.receipts.get(tool);
+    const handle = execCtx.scopeHandle;
+    const approval = execCtx.codeApproval;
+    const permissions = handle ? this.permissions?.() : undefined;
+    let invocation: PermissionInvocation | undefined;
+    let observedStarted = false;
+    let executionCompleted = false;
+    let normalizedArgs = args;
+    const observe = async (
+      phase: ToolExecutionObservation["phase"],
+      output?: unknown,
+      error?: string,
+    ) => {
+      await execCtx.observeToolExecution?.({
+        phase,
+        runId: execCtx.runId,
+        toolCallId: execCtx.toolCallId,
+        scopeHandle: handle,
+        definition: tool,
+        args: normalizedArgs,
+        ...(phase === "completed" ? { output } : {}),
+        ...(error ? { error } : {}),
+      });
+    };
+    try {
+      const planControl = tool.planControl !== undefined;
+      if (
+        planControl &&
+        (handle?.preset !== "code" ||
+          (tool.scope !== "code" && tool.scope !== "shared") ||
+          !allowsPlanControl({
+            role: handle.role,
+            access: tool.access,
+            planControl: tool.planControl,
+          }))
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "规划控制必须由主Code Task独立声明，不能混合资源访问效果。",
+        );
+      const registered = this.currentDefinition(tool, receipt);
+      const normalized = (
+        registered.zodSchema ?? z.fromJSONSchema(registered.parameters)
+      ).parse(args) as Record<string, unknown>;
+      normalizedArgs = normalized;
+      const revalidateRegistration = () => {
+        const current = this.currentDefinition(tool, receipt);
+        if (execCtx.frozenContributions && receipt) {
+          if (
+            execCtx.workContext &&
+            execCtx.frozenContributions.preset !== execCtx.workContext.preset
+          )
+            throw new ToolRegistrationRevokedError(
+              tool.name,
+              "能力快照与本轮工作方式不一致。",
+            );
+          const admitted = execCtx.frozenContributions.entries.find(
+            (entry) => entry.kind === receipt?.kind && entry.id === receipt.key,
+          );
+          const live = this.captureContributions(
+            execCtx.frozenContributions.preset,
+          ).entries.find(
+            (entry) => entry.kind === receipt?.kind && entry.id === receipt.key,
+          );
+          if (!admitted || !live || admitted.signature !== live.signature)
+            throw new ToolRegistrationRevokedError(
+              tool.name,
+              "工具不属于本轮已接纳能力，请重新提交输入。",
+            );
+        }
+        try {
+          const fresh = (
+            current.zodSchema ?? z.fromJSONSchema(current.parameters)
+          ).parse(args);
+          if (!isDeepStrictEqual(fresh, normalized))
+            throw new Error("schema normalization changed");
+        } catch {
+          throw new ToolRegistrationRevokedError(
+            tool.name,
+            "工具schema已改变，原审批参数不再有效，请重新发起工具调用。",
+          );
+        }
+      };
+      let approvedExecutionMode: ToolExecutionContext["approvedExecutionMode"];
+      if (execCtx.scopeHandle) {
+        await execCtx.scopeHandle.resolvePath(".", "read");
+        if (
+          tool.scope !== "shared" &&
+          tool.scope !==
+            (execCtx.workContext?.preset ?? execCtx.scopeHandle.preset)
+        )
+          throw new ToolDeniedError(tool.name, "工具模式与当前Task不匹配。");
+        const readonly =
+          execCtx.scopeHandle.role === "explore" ||
+          execCtx.scopeHandle.role === "review" ||
+          execCtx.scopeHandle.describe().sandboxMode === "read-only";
+        if (
+          readonly &&
+          !planControl &&
+          tool.access !== "read" &&
+          !(tool.access === "execute" && tool.readonlyExecution)
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "当前作用域只读，该工具没有声明可验证的只读执行能力。",
+          );
+        if (
+          !approval ||
+          !execCtx.runId ||
+          !execCtx.toolCallId ||
+          !execCtx.actor ||
+          !permissions
+        )
+          throw new ToolDeniedError(tool.name, "缺少可信逐调用审批上下文。");
+        const scope = execCtx.scopeHandle.describe();
+        if (execCtx.actor.instanceId !== scope.instanceId) {
+          throw new ToolDeniedError(
+            tool.name,
+            "调用者与工作域不属于同一本地实例。",
+          );
+        }
+        const policy = await approval.resolve();
+        if (
+          tool.planControl === "exit" &&
+          (policy.planEnabled !== true ||
+            !Number.isSafeInteger(policy.planningEpoch))
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "退出规划要求当前Task持久规划仍开启。",
+          );
+        if (policy.scopeGeneration !== scope.generation)
+          throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
+        invocation = {
+          preset: execCtx.workContext?.preset ?? execCtx.scopeHandle.preset,
+          instanceId: scope.instanceId,
+          taskId: scope.taskId,
+          runId: execCtx.runId,
+          toolCallId: execCtx.toolCallId,
+          agentId: execCtx.scopeHandle.agentId,
+          role: execCtx.scopeHandle.role,
+          scopeGeneration: policy.scopeGeneration,
+          branchGeneration: policy.branchGeneration,
+          mode: policy.mode,
+          approvalCeiling: approval.ceiling,
+          toolName: tool.name,
+          args: normalized,
+          displayArgs: publicToolArguments(tool, normalized),
+          access: tool.access,
+          planControl: tool.planControl,
+          ...(tool.planControl === "exit"
+            ? { planningEpoch: policy.planningEpoch }
+            : {}),
+          readonlyExecution: tool.readonlyExecution,
+          reviewKind: tool.approvalReviewKind,
+          ...(execCtx.actor &&
+          execCtx.requestModel &&
+          execCtx.readApprovalContext
+            ? {
+                reviewContext: {
+                  actor: execCtx.actor,
+                  readContext: execCtx.readApprovalContext,
+                  scope,
+                  maxCharacters:
+                    execCtx.scopeHandle.backend.limits.codeReadPageCharacters,
+                  requestModel: execCtx.requestModel,
+                },
+              }
+            : {}),
+          signal: execCtx.signal,
+          ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
+        };
+      }
+      revalidateRegistration();
+      await observe("started");
+      observedStarted = true;
+      const decision = await this.events.emitWaterfall("tool-pre-execute", {
+        ...(execCtx.goalId ? { goalId: execCtx.goalId } : {}),
+        args: normalized,
+        ...(invocation ? { permissionInvocation: invocation } : {}),
+        decision: "allow",
+        runId: execCtx.runId,
+        ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
+        toolName: tool.name,
+        ...(tool.access ? { access: tool.access } : {}),
+      });
+      if (decision.decision === "deny") {
+        throw new ToolDeniedError(tool.name, decision.denyReason);
+      }
+      execCtx.signal?.throwIfAborted();
+      revalidateRegistration();
+      if (invocation && handle && approval && permissions) {
+        await handle.resolvePath(".", "read");
+        const current = await approval.resolve();
+        if (
+          invocation.planControl === "exit" &&
+          (current.planEnabled !== true ||
+            current.planningEpoch !== invocation.planningEpoch)
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "等待批准期间规划代际已改变，原批准不能退出新规划。",
+          );
+        if (
+          current.scopeGeneration !== invocation.scopeGeneration ||
+          current.branchGeneration !== invocation.branchGeneration
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "等待审批期间 Task 授权代际或分支已改变。",
+          );
+        const reviewed = await permissions.revalidate(invocation);
+        if (reviewed.decision === "deny")
+          throw new ToolDeniedError(tool.name, reviewed.reason);
+        execCtx.signal?.throwIfAborted();
+        revalidateRegistration();
+        const claim = permissions.claim({
+          ...invocation,
+          mode: current.mode,
+        });
+        if (claim.decision === "deny")
+          throw new ToolDeniedError(tool.name, claim.reason);
+        approvedExecutionMode = narrowCodeApprovalMode(
+          invocation.mode === "plan" || current.mode === "plan"
+            ? "plan"
+            : current.mode,
+          invocation.approvalCeiling,
+        );
+      }
+      revalidateRegistration();
+      const { observeToolExecution: _observer, ...implementationContext } =
+        execCtx;
+      const output = await tool.execute(
+        normalized,
+        invocation
+          ? {
+              ...implementationContext,
+              permissionInvocation: invocation,
+              approvedExecutionMode,
+            }
+          : implementationContext,
+      );
+      executionCompleted = true;
+      await observe("completed", output);
+      return output;
+    } catch (error) {
+      if (
+        error instanceof ToolRegistrationRevokedError &&
+        invocation &&
+        permissions
+      )
+        await permissions
+          .cancel(
+            {
+              instanceId: invocation.instanceId,
+              taskId: invocation.taskId,
+              runId: invocation.runId,
+              agentId: invocation.agentId,
+              toolCallId: invocation.toolCallId,
+            },
+            "工具注册已撤销，原审批不能重用。",
+          )
+          .catch(() => {});
+      if (!executionCompleted) {
+        if (!observedStarted) await observe("started");
+        const interruption = findOwnedToolInterruption(error);
+        await observe(
+          interruption ? "cancelled" : "failed",
+          undefined,
+          interruption
+            ? undefined
+            : error instanceof Error
+              ? error.message
+              : String(error),
+        );
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * 系统提示段注册表：插件贡献段（scope/order/resolve），组装按 scope 过滤、
+ * order 升序（Map 迭代序=注册序，sort 稳定 → 同 order 保注册序）、空段剔除。
+ */
+export class SystemPromptRegistryImpl implements SystemPromptRegistry {
+  private readonly sections = new Map<string, PromptSectionDefinition>();
+
+  register(section: PromptSectionDefinition): () => void {
+    if (this.sections.has(section.name)) {
+      throw new Error(`[kernel] 提示段 ${section.name} 重复注册。`);
+    }
+    this.sections.set(section.name, section);
+    return () => {
+      this.sections.delete(section.name);
+    };
+  }
+
+  async compose(ctx: PromptCompositionContext): Promise<string> {
+    const execution = ctx.execution;
+    const workContext = execution?.workContext;
+    // Task preset identifies the execution host; the admitted Run freezes its working mode.
+    // A work snapshot is usable only with the same actual Task handle and Run actor.
+    if (
+      workContext
+        ? !ctx.scopeHandle ||
+          execution?.scopeHandle !== ctx.scopeHandle ||
+          !execution?.runId ||
+          execution?.actor?.instanceId !==
+            ctx.scopeHandle.describe().instanceId ||
+          workContext.preset !== ctx.preset
+        : ctx.scopeHandle && ctx.scopeHandle.preset !== ctx.preset
+    )
+      throw new Error("系统提示工作模式与可信Task不匹配。");
+    const active = [...this.sections.values()].filter(
+      (section) => section.scope === "always" || section.scope === ctx.preset,
+    );
+    active.sort((a, b) => a.order - b.order);
+    const texts: string[] = [];
+    for (const section of active) {
+      const text = await section.resolve(ctx);
+      if (text && text.trim().length > 0) {
+        texts.push(text);
+      }
+    }
+    return texts.join("\n\n");
   }
 }
 
@@ -222,7 +788,7 @@ export interface KernelContextOptions {
   tryGet: <K extends ServiceKey>(key: K) => ServiceMap[K] | undefined;
   events: AgentRunEventBus;
   /** kernel dispose 时 LIFO 执行的 disposer 收集器（ctx.effect 落点）。 */
-  addDisposer: (disposer: () => void) => void;
+  addDisposer: (disposer: () => void | Promise<void>) => void;
 }
 
 export function createPluginContext(

@@ -1,0 +1,770 @@
+//! KenFutWork 桌面壳（多端计划 §4，FORM-2）。
+//!
+//! 职责边界（保持薄）：窗口/托盘/自更新/深链归这里；业务一律在服务端 sidecar
+//! （同一份 apps/server 代码，桌面数据落本地数据目录）。
+//! 服务端生命周期管理见 `server_handle`（spawn / 探活 / 复用 / 优雅退出）。
+
+pub mod browser_embed;
+pub mod data_location;
+pub mod desktop_access;
+pub mod desktop_system;
+pub mod directory_picker;
+pub mod server_handle;
+pub mod shortcut_recording;
+
+pub use server_handle::{
+    ensure_server_running, port_is_free, probe_health, probe_serves_ui, HealthStatus,
+    LifecycleError, ProbeError, ServerLaunch, ServerSpawnConfig,
+};
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tauri::Manager;
+
+/// 桌面壳探活命令（前端可通过 invoke 调用确认壳活着）。
+#[tauri::command]
+fn ping() -> String {
+    "KenFutWork desktop shell".into()
+}
+
+/// 服务端默认端口（与 web 端 `NEXT_PUBLIC_SERVER_BASE_URL` 缺省值一致）。
+const SERVER_PORT: u16 = 3001;
+/**
+ * 打包态端口候选个数：3001 起往后找（3001…3010），全被占才报错。
+ *
+ * 为什么要往后找而不是死守 3001：探活 200 只说明「有东西在听」。用户自己的 dev API、
+ * 别的软件占着 3001 时，窗口指向它只能拿到 404（2026-09-17 真机截图即
+ * `{"message":"Route GET:/ not found"}`）——**Design 模式因此整块失效**（画布没了）。
+ * 换端口的前提是前端按「同源」解析 API base（见 apps/web/src/lib/env.ts）。
+ */
+#[cfg_attr(debug_assertions, allow(dead_code))]
+const PORT_CANDIDATES: u16 = 10;
+/// 退出宽限：SIGTERM 后等这么久，超时升级 SIGKILL（服务端 SIGTERM 会停 jobLoop 并停库）。
+const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
+
+/// 启动线程与退出路径共用从spawn开始托管的资源；复用外部服务时不取得其句柄。
+struct ServerState(std::sync::Arc<server_handle::ServerLifecycle>);
+
+/**
+ * 打包态（安装包装出来的形态）里那套「桌面形态」环境变量。
+ *
+ * 与 `release/启动.bat` 同一套：内嵌 PG、本机免登录、进程内队列、静态 UI 由服务端托管。
+ * **为什么把窗口指向 `http://127.0.0.1:<port>`**：本机接入只信明确的回环HTTP Origin；
+ * 壳自带的资源来源没有接入会话，而且Tauri资源协议**不认 `/canvas` 这种无扩展名路由**
+ * （服务端托管那份走 `canvas.html` 回退，见 `http/static-web.ts`）——Design 模式的画布 iframe
+ * 正是 `/canvas?id=…`，所以在壳自带 UI 上**画布永远是空白**（用户 2026-09-17 报的
+ * 「design 模式是画布啊，怎么又给我改坏了」就是这个）。
+ */
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, String)> {
+    let mut env = desktop_runtime_env(data_dir, port);
+    env.extend([
+        ("KENFUTWORK_WEB_ORIGIN".into(), format!("http://127.0.0.1:{port}")),
+        ("KENFUTWORK_WEB_DIST".into(), web_dir.to_string_lossy().to_string()),
+    ]);
+    env.extend(open_design_config_env(data_dir));
+    env
+}
+
+/// OpenDesign 承载配置（规划 §9-3 伴随容器 / 《日志》§205 桌面最小闭环）：
+/// 读 `<dataDir>/config/open-design.env`（`KEY=VALUE` 行），**白名单只放行服务端那两个键**
+/// ——任意 env 注入会把桌面变成提权面。伴随容器起停由服务端在装配期按 env 定形，
+/// 所以这里是「改文件 → 重启桌面生效」的最小注入面；写入口是设置页的 OpenDesign 分区
+/// （服务端 `GET/PUT /api/open-design/host/config` 落同一文件）。
+fn open_design_config_env(data_dir: &Path) -> Vec<(String, String)> {
+    const ALLOWED: [&str; 2] = [
+        "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL",
+        "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET",
+    ];
+    let Ok(text) = std::fs::read_to_string(data_dir.join("config").join("open-design.env")) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        if ALLOWED.contains(&key) && !value.is_empty() {
+            out.push((key.to_string(), value.to_string()));
+        }
+    }
+    out
+}
+
+fn desktop_runtime_env(data_dir: &Path, port: u16) -> Vec<(String, String)> {
+    vec![
+        ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
+        ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
+        ("KENFUTWORK_SERVER_PORT".into(), port.to_string()),
+        ("KENFUTWORK_CHECKPOINT_ROOT".into(), data_dir.join("checkpoints").to_string_lossy().to_string()),
+        ("KENFUTWORK_SANDBOX_ROOT".into(), data_dir.join("sandbox").to_string_lossy().to_string()),
+    ]
+}
+
+/** 随包服务端的启动载体：程序 + 参数（存在且可运行时返回；仓库里跑时为 None）。
+ *
+ * 判定必须**严于 exists**：打包占位的零字节文件、tauri-build 残骸都算「存在但不可运行」，
+ * 误判会让 dev 形态永远走不到 dev 拉起路径（2026-09-19 实测事故：探活盲等 90s panic）。
+ *
+ * 两种形态：
+ * - Windows：单文件 SEA（`app/KenFutWork-server.exe`）；
+ * - macOS：**不做 SEA**（darwin 27 上 postject 注入必崩，2026-09-23 实测），改用
+ *   随包静态 node 拉起 CJS 入口：`app/runtime/node/bin/node app/server/server.cjs`
+ *   （node 官方发行版签名天然有效，且该 node 本来就要随包给运行时用）。
+ */
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn bundled_server_launch(app: &tauri::AppHandle) -> Option<(PathBuf, Vec<String>, PathBuf)> {
+    use tauri::Manager;
+    let dir = app.path().resource_dir().ok()?.join("app");
+
+    #[cfg(windows)]
+    {
+        let exe = dir.join("KenFutWork-server.exe");
+        let meta = std::fs::metadata(&exe).ok()?;
+        if meta.len() == 0 {
+            return None; // 零字节 = tauri-build 的占位残骸，不是真服务端
+        }
+        Some((exe, Vec::new(), dir))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let node = dir.join("runtime").join("node").join("bin").join("node");
+        let server = dir.join("server").join("server.cjs");
+        let node_meta = std::fs::metadata(&node).ok()?;
+        let server_meta = std::fs::metadata(&server).ok()?;
+        if node_meta.len() == 0 || server_meta.len() == 0 {
+            return None; // 占位残骸
+        }
+        // Unix 上还要求可执行位（占位文件通常没有）
+        use std::os::unix::fs::PermissionsExt;
+        if node_meta.permissions().mode() & 0o111 == 0 {
+            return None;
+        }
+        Some((node, vec![server.to_string_lossy().to_string()], dir))
+    }
+}
+
+/// 打包态的拉起配置：随包服务端载体 + 桌面环境变量 + 指定端口。
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn packaged_spawn_config(
+    program: &Path,
+    args: Vec<String>,
+    app_dir: &Path,
+    data_dir: &Path,
+    port: u16,
+) -> ServerSpawnConfig {
+    let mut config = ServerSpawnConfig::new(
+        program.to_string_lossy().as_ref(),
+        args,
+        data_dir.to_path_buf(),
+        port,
+    );
+    config.cwd = app_dir.to_path_buf();
+    config.env = desktop_env(data_dir, &app_dir.join("web"), port);
+    config
+}
+
+/// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `KENFUTWORK_DESKTOP_SERVER_CWD`）。
+fn dev_spawn_config(data_dir: PathBuf, port: u16) -> ServerSpawnConfig {
+    let command = std::env::var("KENFUTWORK_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
+    let args = std::env::var("KENFUTWORK_DESKTOP_SERVER_ARGS")
+        // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
+        // 真机 `cargo check` 顺带发现——照旧名拉起会直接「找不到包」，桌面端起不来服务端。
+        .unwrap_or_else(|_| "--filter @kenfutwork/server dev:server".into())
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    let mut config = ServerSpawnConfig::new(&command, args, data_dir.clone(), port);
+    if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
+        config.cwd = cwd.into();
+    }
+    config.env.push(("KENFUTWORK_SERVER_PORT".into(), port.to_string()));
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("KENFUTWORK_DESKTOP_WEB_URL").is_some() {
+        config.env = desktop_runtime_env(&data_dir, port);
+        config.require_owned = true;
+    }
+    // 开发态与打包态共享本地实例准入，启动完成后由私有凭据换取浏览器票据。
+    config
+}
+
+/// 壳日志文件：GUI 进程没有控制台，启动决策与失败原因必须落盘才可排障。
+fn log_line(data_dir: &Path, message: &str) {
+    use std::io::Write as _;
+    let path = data_dir.join("desktop-shell.log");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "[{stamp}] {message}");
+    }
+}
+
+/**
+ * 打包态：挑一个「确实托管着我们 UI」的端口——自己人已健康就复用，撞车就往后挑端口。
+ *
+ * 顺序（每个候选端口）：探活 → 有东西在听时再验它托管的首页是不是 HTML。
+ * 是 → 复用；不是（别人的服务/dev API）→ 换下一个端口；没人听且可绑 → 拉自己的服务端。
+ */
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn launch_packaged_server(
+    data_dir: &Path,
+    launch: &(PathBuf, Vec<String>, PathBuf),
+    owner: &server_handle::ServerLifecycle,
+) -> Result<(u16, Option<u32>), String> {
+    for offset in 0..PORT_CANDIDATES {
+        if owner.is_stopping() {
+            return Err(LifecycleError::Stopped.to_string());
+        }
+        let port = SERVER_PORT + offset;
+        if probe_health(port, Duration::from_millis(300)).is_ok() {
+            if probe_serves_ui(port, Duration::from_secs(2)) {
+                log_line(data_dir, &format!("端口 {port} 已有本工作台服务端，复用"));
+                return Ok((port, None));
+            }
+            log_line(
+                data_dir,
+                &format!("端口 {port} 被别的服务占用（没有托管界面），换端口"),
+            );
+            continue;
+        }
+        if !port_is_free(port) {
+            // 在听但还没健康：可能正在启动，给一小段宽限
+            if probe_health(port, Duration::from_secs(3)).is_ok()
+                && probe_serves_ui(port, Duration::from_secs(2))
+            {
+                log_line(data_dir, &format!("端口 {port} 稍后健康，复用"));
+                return Ok((port, None));
+            }
+            log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
+            continue;
+        }
+        let config = packaged_spawn_config(&launch.0, launch.1.clone(), &launch.2, data_dir, port);
+        log_line(
+            data_dir,
+            &format!(
+                "拉起随包服务端：{} {}（端口 {port}，UI 目录 {}）",
+                launch.0.display(),
+                launch.1.join(" "),
+                launch.2.join("web").display().to_string()
+            ),
+        );
+        match owner.ensure_running(config) {
+            Ok(launch) => {
+                if !probe_serves_ui(port, Duration::from_secs(10)) {
+                    owner.stop_current(SHUTDOWN_GRACE);
+                    return Err(format!(
+                        "本机服务在端口 {port} 起来了，但它没有托管界面（KENFUTWORK_WEB_DIST 无效）。"
+                    ));
+                }
+                return Ok((port, launch));
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err(format!(
+        "端口 {SERVER_PORT}–{} 都被占用，起不了本机服务。请关掉占用端口的程序后重开。",
+        SERVER_PORT + PORT_CANDIDATES - 1
+    ))
+}
+
+/// 启动服务端；返回窗口该指向的端口（dev 形态返回 None：窗口交给 devUrl / 壳自带 UI）。
+#[cfg_attr(debug_assertions, allow(unused_variables))]
+fn start_server(
+    app: &tauri::AppHandle,
+    data_dir: &Path,
+) -> Result<(Option<u32>, Option<u16>), String> {
+    let owner = app.state::<ServerState>();
+    if owner.0.is_stopping() {
+        return Err(LifecycleError::Stopped.to_string());
+    }
+    // dev 构建（cargo run / tauri dev）**永不执行随包快照**：`target/**/app/server.cjs`
+    // 是上次打包的旧产物，优先执行会让人以为「改了源码没生效」（2026-09-27 事故：
+    // 3001 一直跑 9/23 的快照，子代理路由修复全部不可见）。dev 的意义就是跑最新
+    // 源码——一律走 dev 拉起路径（`dev:server` = node --watch + tsx，改文件自动重载）。
+    // release 打包形态不受影响：随包服务端正是打包形态的交付物。
+    #[cfg(not(debug_assertions))]
+    {
+        if let Some(server_launch) = bundled_server_launch(app) {
+            let (port, launch) = launch_packaged_server(data_dir, &server_launch, &owner.0)?;
+            return Ok((launch, Some(port)));
+        }
+    }
+    let port = match std::env::var("KENFUTWORK_SERVER_PORT") {
+        Ok(value) => value.parse::<u16>().ok().filter(|port| *port > 0)
+            .ok_or_else(|| "开发服务端端口无效。".to_string())?,
+        Err(std::env::VarError::NotPresent) => SERVER_PORT,
+        Err(_) => return Err("开发服务端端口无效。".into()),
+    };
+    owner
+        .0
+        .ensure_running(dev_spawn_config(data_dir.to_path_buf(), port))
+        .map(|launch| (launch, Some(port)))
+        .map_err(|error| error.to_string())
+}
+
+/// 把窗口指向服务端托管的 UI（回环 http）。
+fn navigate_main_window(app: &tauri::AppHandle, url: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        match url.parse() {
+            Ok(parsed) => {
+                let _ = window.navigate(parsed);
+            }
+            Err(error) => log_line(
+                &app.path().app_data_dir().unwrap_or_default(),
+                &format!("窗口跳转失败：{error}"),
+            ),
+        }
+    }
+}
+
+/**
+ * 启动中页面（打包态第一屏）。
+ *
+ * **为什么必须有**：服务端起来要时间（内嵌 Postgres 首启动要 initdb，慢的时候几十秒）。
+ * 以前 `setup` 里**同步**等健康检查（最多 90 秒）——主线程被占住，窗口连重绘都轮不上，
+ * 用户看到的就是长时间白屏（2026-09-19 用户报「启动很久 + 白屏」）。现在服务端改到后台
+ * 线程去起，窗口先画这一页，起来了再跳转到服务端托管的 UI。
+ *
+ * 用 `eval` 注入而不是另做 HTML 资源：壳自带的 UI 是 `frontendDist`（web 静态导出），
+ * 往里塞文件会被下一次前端构建覆盖；注入在这里与前端构建解耦，也不会漏发布。
+ */
+const SPLASH_SCRIPT: &str = r##"(() => {
+  const paint = () => {
+    if (!document.body) return false;
+    // 静态启动页（`_splash.html`）已经在位：它是主路径，别再盖一层
+    if (document.body.dataset.kfwSplash === "1") return true;
+    if (window.__kfwSplash) return true;
+    window.__kfwSplash = true;
+    document.title = "KenFutWork 正在启动";
+    // 用应用图标本身（静态导出里的 /app-icon.png）：换标时这里跟着换，不内联旧 logo
+    const logo = '<img src="/app-icon.png" width="52" height="52" alt="" />';
+    document.body.innerHTML =
+      '<div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;gap:16px;background:#fff;color:#2f3459;'
+      + 'font:14px/1.6 system-ui,-apple-system,\'Segoe UI\',sans-serif">'
+      + '<div style="display:flex;align-items:center;gap:10px">' + logo
+      + '<span style="font-family:'Momo Trust Display',system-ui,sans-serif;font-size:24px;'
+      + 'background:linear-gradient(90deg,#2e63fa,#214ada);-webkit-background-clip:text;'
+      + 'background-clip:text;color:transparent">KenFutWork</span></div>'
+      + '<div style="width:180px;height:3px;border-radius:999px;background:#e6e7ef;overflow:hidden">'
+      + '<div style="width:40%;height:100%;border-radius:999px;background:#2e63fa;'
+      + 'animation:kfwSlide 1.2s ease-in-out infinite"></div></div>'
+      + '<div id="kfw-splash-note" style="color:#6b6f85">正在启动本机服务…</div>'
+      + '</div>'
+      + '<style>@keyframes kfwSlide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}</style>';
+    setTimeout(() => {
+      const note = document.getElementById("kfw-splash-note");
+      if (note) note.textContent = "首次启动要在本机初始化数据库，可能要几十秒，请稍候…";
+    }, 8000);
+    return true;
+  };
+  if (!paint()) document.addEventListener("DOMContentLoaded", paint, { once: true });
+})();"##;
+
+/// 在窗口里画启动中页面（失败就算了：这不是主流程，起来了照样会跳转）。
+fn show_startup_splash(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // 窗口文档可能还没就绪：脚本自己带 DOMContentLoaded 兜底，这里多重试几次
+        for _ in 0..5 {
+            if window.eval(SPLASH_SCRIPT).is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+}
+
+/// 起不来时在窗口里如实说明原因（而不是停在壳自带 UI 上假装没事）。
+///
+/// 用 `eval` 而不是换 URL：换 URL 要经过 WebView2 的导航策略，而 `eval` 一定作用在
+/// 当前文档上。脚本串经 `serde_json` 转义，避免原因文本里的引号/换行破坏 JS。
+fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
+    log_line(data_dir, &format!("启动失败：{reason}"));
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let html = format!(
+        "<div style=\"font:14px/1.7 system-ui;padding:32px;color:#222\">\
+<h2 style=\"margin:0 0 12px;font-size:18px\">KenFutWork 启动失败</h2>\
+<p style=\"margin:0 0 12px\">{reason}</p>\
+<p style=\"margin:0;color:#666\">日志：{log}</p></div>",
+        reason = reason.replace('<', "&lt;"),
+        log = data_dir.join("desktop-shell.log").display()
+    );
+    let literal = serde_json::to_string(&html).unwrap_or_else(|_| "\"\"".into());
+    let script = format!("document.title='KenFutWork 启动失败';document.body.innerHTML={literal};");
+    for _ in 0..5 {
+        if window.eval(&script).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+}
+
+/// 外部终止信号（pkill / 系统注销 / ctrl-c）→ 同样走优雅停服，避免孤儿化服务端。
+/// 窗口关闭按钮走下面的 RunEvent::Exit，两条路径共用同一份句柄状态。
+///
+/// **只在类 Unix 上注册**：`signal_hook::iterator` 在 Windows 上不存在
+/// （上游是 `#[cfg(all(not(windows), feature = "iterator"))]`），此前这里没加门控，
+/// 结果是**这个桌面壳在 Windows 上根本编不过**（真机 `cargo check` 才发现）。Windows 侧的
+/// 正常退出由窗口关闭的 `RunEvent::Exit` 覆盖。
+#[cfg(unix)]
+fn register_signal_shutdown(app: tauri::AppHandle) {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGINT, SIGTERM]).expect("注册信号失败");
+    std::thread::spawn(move || {
+        for signal in signals.forever() {
+            if let Some(state) = app.try_state::<ServerState>() {
+                println!("[desktop] 收到信号 {signal}：优雅停服务端…");
+                state.0.shutdown(SHUTDOWN_GRACE);
+            }
+            std::process::exit(0);
+        }
+    });
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+fn application_context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
+pub fn run() {
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        // 单实例：第二个启动实例立即退出并唤起已有窗口——否则两个壳会竞态
+        // initdb 同一个内嵌集群（密码文件错位 → auth 必败，2026-09-17 实测事故）
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_dialog::init())
+        // Tauri的invoke_handler会覆盖前一个；全部命令在唯一入口装配。
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            desktop_system::save_file,
+            desktop_system::reveal_path,
+            desktop_system::open_external,
+            desktop_system::cua_permission_owner,
+            desktop_system::open_cua_permission_settings,
+            desktop_system::request_cua_screen_recording_access,
+            directory_picker::select_directory,
+            directory_picker::select_directories,
+            data_location::open_in_browser,
+            data_location::open_data_directory,
+            data_location::move_data_directory,
+            browser_embed::browser_embed_open,
+            browser_embed::browser_embed_bounds,
+            browser_embed::browser_embed_visible,
+            browser_embed::browser_embed_console,
+            browser_embed::browser_embed_devtools,
+            browser_embed::browser_embed_close,
+            shortcut_recording::set_shortcut_recording_active,
+        ]);
+    // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs；
+    // 快捷键录制态（录制期收掉原生菜单）——见 shortcut_recording.rs。
+    shortcut_recording::register_shortcut_commands(browser_embed::register_embed_commands(
+        builder,
+    ))
+        .setup(|app| {
+            let config_dir = std::env::var("KENFUTWORK_CONFIG_DIR")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| PathBuf::from(value.trim()))
+                .unwrap_or(app.path().app_config_dir()?);
+            if !config_dir.is_absolute() {
+                return Err(std::io::Error::other("系统配置目录必须是绝对路径。").into());
+            }
+            let data_dir = data_location::resolve_data_dir(
+                &app.path().app_data_dir()?.join("data"),
+                &config_dir.join("data-location.json"),
+            )
+            .map_err(std::io::Error::other)?;
+            std::fs::create_dir_all(&data_dir)?;
+            let ui_base = app
+                .config()
+                .build
+                .dev_url
+                .as_ref()
+                .map(|url| url.as_str().to_string())
+                .unwrap_or(format!("http://127.0.0.1:{SERVER_PORT}/"));
+            #[cfg(debug_assertions)]
+            let ui_base = std::env::var("KENFUTWORK_DESKTOP_WEB_URL").unwrap_or(ui_base);
+            let ui_base = desktop_access::validated_ui_url(&ui_base)
+                .map_err(std::io::Error::other)?.to_string();
+            app.manage(data_location::DataLocationState(std::sync::Mutex::new(
+                data_location::Location {
+                    data_dir: data_dir.clone(),
+                    config_dir,
+                    port: SERVER_PORT,
+                    ui_base: ui_base.clone(),
+                    moving: false,
+                },
+            )));
+            let owner = std::sync::Arc::new(server_handle::ServerLifecycle::default());
+            app.manage(ServerState(owner.clone()));
+            // 信号处理必须先注册，不能让服务端spawn早于退出路径。
+            #[cfg(unix)]
+            register_signal_shutdown(app.handle().clone());
+            // **服务端在后台线程里起**：这条路径上有两段慢活——内嵌 Postgres 首启动要
+            // `initdb`、服务端 SEA 冷启动要几秒到几十秒。以前 `setup` 里同步等健康检查，
+            // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
+            // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
+            // 起来了再把它叫到主线程跳转。
+            // 源码开发和发行包都先留在启动页，不能在API/票据就绪前挂载准入守卫。
+            // 同一URL只添加#connect不保证WebView重载，提前打开会永久保留首次连接错误。
+            show_startup_splash(app.handle());
+            let handle = app.handle().clone();
+            let thread_data_dir = data_dir.clone();
+            std::thread::spawn(move || {
+                let outcome =
+                    start_server(&handle, &thread_data_dir).and_then(|(launch, selected)| {
+                        let port = selected.unwrap_or(SERVER_PORT);
+                        let base = if !cfg!(debug_assertions) && selected.is_some() {
+                            format!("http://127.0.0.1:{port}/")
+                        } else {
+                            ui_base.clone()
+                        };
+                        let url = desktop_access::connection_url(&thread_data_dir, port, &base)?;
+                        Ok((launch, port, base, url))
+                    });
+                if outcome.is_err() {
+                    owner.stop_current(SHUTDOWN_GRACE);
+                }
+                // 窗口操作要在主线程上做
+                let ui_handle = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    if owner.is_stopping() {
+                        return;
+                    }
+                    match outcome {
+                        Ok((launch, port, base, url)) => {
+                            if let Some(pid) = launch {
+                                log_line(&thread_data_dir, &format!("服务端已拉起（pid {pid}）"));
+                            }
+                            if let Ok(mut state) = ui_handle
+                                .state::<data_location::DataLocationState>()
+                                .0
+                                .lock()
+                            {
+                                state.port = port;
+                                state.ui_base = base;
+                            }
+                            navigate_main_window(&ui_handle, &url);
+                        }
+                        Err(reason) => {
+                            show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                        }
+                    }
+                });
+            });
+            Ok(())
+        })
+        .build(application_context())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // 窗口关闭/应用退出 → 优雅停服务端（停 jobLoop + 停库），超时强杀
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<ServerState>() {
+                    println!("[desktop] 退出：优雅停服务端…");
+                    state.0.shutdown(SHUTDOWN_GRACE);
+                }
+            }
+        });
+}
+
+#[cfg(test)]
+mod local_ipc_permissions {
+    use super::ping;
+    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
+
+    struct Child<'a>(&'a tauri::Webview<tauri::test::MockRuntime>);
+    impl AsRef<tauri::Webview<tauri::test::MockRuntime>> for Child<'_> {
+        fn as_ref(&self) -> &tauri::Webview<tauri::test::MockRuntime> {
+            self.0
+        }
+    }
+
+    fn request(url: &str) -> tauri::webview::InvokeRequest {
+        tauri::webview::InvokeRequest {
+            cmd: "ping".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: url.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::default(),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        }
+    }
+
+    #[test]
+    fn loopback_main_has_explicit_ipc_but_external_origin_and_child_do_not() {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![ping])
+            .build(super::application_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            WebviewUrl::External("http://127.0.0.1:3002/workbench".parse().unwrap()),
+        )
+        .build()
+        .unwrap();
+        for url in [
+            "http://127.0.0.1:3002/workbench",
+            "http://localhost:4567/workbench",
+        ] {
+            assert_eq!(
+                tauri::test::get_ipc_response(&main, request(url))
+                    .unwrap()
+                    .deserialize::<String>()
+                    .unwrap(),
+                ping()
+            );
+        }
+        assert!(tauri::test::get_ipc_response(
+            &main,
+            request("https://untrusted.example/workbench")
+        )
+        .is_err());
+        let child = app
+            .get_window("main")
+            .unwrap()
+            .add_child(
+                WebviewBuilder::new(
+                    "browser-embed",
+                    WebviewUrl::External("http://127.0.0.1:3002/".parse().unwrap()),
+                ),
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(100.0, 100.0),
+            )
+            .unwrap();
+        assert!(tauri::test::get_ipc_response(
+            &Child(&child),
+            request("http://127.0.0.1:3002/workbench")
+        )
+        .is_err());
+    }
+}
+
+#[cfg(test)]
+mod desktop_env_tests {
+    use super::*;
+
+    /**
+     * macOS 打包态数据落点回归（2026-09-23）：检查点影子仓库与 agent 沙箱的缺省
+     * 落点是 <exeDir>/data|tmp——在 .app 包内，只读且受签名保护。desktop_env 必须
+     * 把两者注入数据目录下的子目录；基线env为内嵌PG、队列与端口。
+     */
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_packaged_env_points_checkpoint_and_sandbox_to_data_dir() {
+        let data_dir =
+            std::path::Path::new("/Users/me/Library/Application Support/com.kenfutwork.desktop");
+        let env = desktop_env(
+            data_dir,
+            &std::path::Path::new("/Applications/KenFutWork.app/Contents/Resources/app/web"),
+            3002,
+        );
+        let get = |key: &str| {
+            env.iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| panic!("缺 env {key}"))
+        };
+        assert_eq!(
+            get("KENFUTWORK_CHECKPOINT_ROOT"),
+            data_dir.join("checkpoints").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            get("KENFUTWORK_SANDBOX_ROOT"),
+            data_dir.join("sandbox").to_string_lossy().to_string()
+        );
+        // 基线不变
+        assert_eq!(get("KENFUTWORK_SERVER_PORT"), "3002");
+        assert_eq!(get("KENFUTWORK_EMBEDDED_PG"), "1");
+        assert_eq!(
+            get("KENFUTWORK_WEB_DIST"),
+            "/Applications/KenFutWork.app/Contents/Resources/app/web"
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn all_platforms_point_owned_state_to_data_root() {
+        let env = desktop_env(
+            std::path::Path::new("C:/data"),
+            std::path::Path::new("C:/app/web"),
+            3001,
+        );
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "KENFUTWORK_CHECKPOINT_ROOT" && v.ends_with("checkpoints")));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "KENFUTWORK_SANDBOX_ROOT" && v.ends_with("sandbox")));
+        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_AUTH_DRIVER"));
+        assert_eq!(env.len(), 7);
+    }
+
+    /** OpenDesign 承载文件注入（§205）：白名单两键进 env，其余一律不进。 */
+    #[test]
+    fn open_design_config_env_injects_only_whitelisted_keys() {
+        let dir = std::env::temp_dir().join(format!(
+            "kfw-od-env-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::write(
+            dir.join("config").join("open-design.env"),
+            "# 伴随容器承载\nKENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456\nKENFUTWORK_OPEN_DESIGN_EMBED_SECRET=paired\nKENFUTWORK_EMBEDDED_PG=0\nPATH=/evil\nEMPTY_VAL=\n",
+        )
+        .unwrap();
+        let injected = open_design_config_env(&dir);
+        assert_eq!(
+            injected,
+            vec![
+                (
+                    "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL".to_string(),
+                    "http://127.0.0.1:7456".to_string()
+                ),
+                (
+                    "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET".to_string(),
+                    "paired".to_string()
+                ),
+            ]
+        );
+        // 经 desktop_env 汇总后同样不得混入白名单外的键
+        let env = desktop_env(&dir, &dir.join("web"), 3001);
+        assert!(env.iter().all(|(k, _)| k != "PATH" && k != "EMPTY_VAL"));
+        assert_eq!(
+            env.iter()
+                .filter(|(k, _)| {
+                    k == "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL"
+                        || k == "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET"
+                })
+                .count(),
+            2
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 文件不存在 = 零注入（默认关闭，不影响既有 env 面）。
+    #[test]
+    fn open_design_config_env_absent_file_is_empty() {
+        let dir = std::env::temp_dir().join("kfw-od-env-absent-xyz");
+        assert!(open_design_config_env(&dir).is_empty());
+    }
+}

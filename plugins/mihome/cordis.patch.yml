@@ -1,0 +1,6 @@
+# 米家插件的能力声明（inject = 需要内核提供的能力）。
+# storage 是本项目扩展：插件键值存储（按工作区隔离、值加密落库），会话靠它跨重启。
+- insert:
+    - id: kenfutwork-mihome
+      name: kenfutwork-mihome
+      inject: [tools, routes, ui, storage]

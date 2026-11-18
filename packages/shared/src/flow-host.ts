@@ -1,0 +1,502 @@
+import { z } from "zod";
+
+/**
+ * flow 宿主适配层契约（`ff-embed/v1`）。
+ *
+ * 定位：flow 子系统（`flow/` 子模块）被主仓当**外壳**嵌进来时，走的是宿主适配层六缝
+ * ——本地身份适配 / 凭证 / 事件 / 主题 / 导航。本文件只定义**宿主侧**（本仓）对 flow 网关
+ * 暴露的回调形状；flow 网关里的同名 DTO 是另一份实现（跨仓库不共享代码），两边靠本文件
+ * 与 `flow/docs/ff-embed-v1.md` 对齐。
+ *
+ * 方向约定：
+ * - 本地身份适配（DEC-20 免账户模型）：宿主前端凭本机接入换**短时身份票据**，
+ *   经 `ff-embed/identity` 交给 flow 前端；flow 网关带票据回宿主验签，拿回稳定
+ *   `subject`（= 本实例 instanceId）。宿主接入凭据本身不出宿主进程。
+ * - 凭证 / 事件：同为 flow 网关 → 宿主（P3/P4/P5 逐个接上，形状同样落在这里）。
+ *
+ * 鉴权约定：调用方（flow 网关）用**共享密钥**做 bearer（`KENFUTWORK_FLOW_EMBED_SECRET`
+ * ↔ flow 侧 `HOST_SHARED_SECRET`）；事件的 hostSubject 必须是该宿主稳定 instanceId。
+ */
+export const FLOW_EMBED_PROTOCOL_VERSION = "v1";
+
+/**
+ * flow 插件（`plugins/flow`，FORM-11 产品入口）的 bundle 名。
+ * 工作台以「该插件已安装」+「宿主适配层已配齐」共同门控 Flow 模式入口；
+ * 名字两端（市场清单 / 前端门控）只有这一处权威。
+ */
+export const FLOW_PLUGIN_BUNDLE_NAME = "kenfutwork-flow";
+
+/**
+ * flow 宿主能力探针（`GET /api/flow/host/status`，宿主自己的前端调用，本机接入验证）。
+ *
+ * 工作台据此决定 Flow 模式入口是否出现（入口纪律：未安装插件或适配层未接通时不摆空壳）。
+ * 本期身份缝已按本地实例（DEC-20）接通：共享密钥 + 前端地址配齐即 `enabled: true`；
+ * 缺项写进 `reasons`，界面把原因如实透出（fail loud，不放无提示的假开关）。
+ */
+export const flowHostStatusResponseSchema = z.object({
+  enabled: z.boolean(),
+  /** flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）；未配置为 null。 */
+  frontendUrl: z.string().nullable(),
+  /** 未启用时缺什么（每条一句可读原因）；启用后为空数组。 */
+  reasons: z.array(z.string()),
+  /**
+   * 托管运行时的状态（本机自动托管形态）：前端据此在启动期间重试探针，
+   * 不在「正在启动」时把入口当成坏掉。外部实例为 external。
+   */
+  runtime: z
+    .object({
+      state: z.enum(["external", "starting", "ready", "error", "stopped"]),
+      detail: z.string().max(1000).optional(),
+    })
+    .optional(),
+});
+export type FlowHostStatusResponse = z.infer<
+  typeof flowHostStatusResponseSchema
+>;
+
+/**
+ * 宿主身份票据（本地实例身份适配）：宿主前端调用 `POST /api/flow/host/identity-ticket`
+ * （本机接入验证）换取一次性的短时票据，经 `ff-embed/identity` 交给 flow 前端；
+ * flow 网关再回传给宿主验签（见下）。
+ *
+ * 一次性 + 短 TTL（沿用本机接入票据的治理值 `localAccessTicketTtlMs`）：消费即失效，
+ * 重放无效；服务重启票据作废（iframe 重载会重新握手、重新签发）。
+ */
+export const flowHostIdentityTicketResponseSchema = z.object({
+  token: z.string().min(1).max(2048),
+  expiresAt: z.string().min(1).max(64),
+});
+/** 项目由宿主认证；前端只提供项目标识，不能指定目录或权限。 */
+export const flowHostIdentityTicketRequestSchema = z.object({
+  projectId: z.string().uuid().optional(),
+});
+export const flowProjectFilesBindingSchema = z.object({
+  version: z.literal("v1"),
+  generation: z.number().int().positive().safe(),
+  projectId: z.string().uuid(),
+  bindingToken: z.string().min(1).max(2048),
+});
+export type FlowHostIdentityTicketResponse = z.infer<
+  typeof flowHostIdentityTicketResponseSchema
+>;
+
+/**
+ * 身份验签（`POST /api/flow/host/identity`，flow 网关 → 宿主，共享密钥门）。
+ * 请求形状与 flow 侧 `EmbeddedIdentityProvider` 对齐（token ≤ 8KB 后拒绝）。
+ */
+export const flowHostIdentityRequestSchema = z.object({
+  token: z.string().min(1).max(8192),
+  protocolVersion: z.string().min(1).max(16).optional(),
+});
+
+/**
+ * 身份验签响应（与 flow 侧 `HostIdentityPayload` 对齐）：`subject` 是稳定外部标识，
+ * flow 侧按它 get-or-create 账户；本地实例模型下 subject = 实例 instanceId。
+ */
+export const flowHostIdentityResponseSchema = z.object({
+  subject: z.string().min(1).max(256),
+  displayName: z.string().min(1).max(128).optional(),
+  projectFiles: flowProjectFilesBindingSchema.optional(),
+});
+export type FlowHostIdentityResponse = z.infer<
+  typeof flowHostIdentityResponseSchema
+>;
+
+/**
+ * 凭证下发（P3，`POST /api/flow/host/credentials`）：请求体只有协议版本——
+ * **这条缝是部署级的**（flow 网关一个引擎配置供该本地实例），与 flow 侧
+ * `EmbeddedCredentialsProvider` 的实际调用形状一致；凭证来源是本地实例供应商列表里启用的 `protocol='dify-engine'` 实例。
+ * 门禁只有共享密钥（机器对机器、无用户数据参与；会话令牌是交互式身份交换才需要的）。
+ */
+export const flowHostCredentialsRequestSchema = z.object({
+  protocolVersion: z.string().min(1).max(16).optional(),
+});
+
+/**
+ * 凭证下发响应：本地 dify-engine 实例的引擎地址与 Key。
+ * 形状与 flow 侧 `HostCredentialsPayload`（class-validator）对齐：apiBase 必须 http(s)、
+ * apiKey ≤512、label ≤64。
+ *
+ * **红线说明**：响应含明文 apiKey 是这条缝的**目的**（把 BYOK 引擎凭证下发给持有共享
+ * 密钥的 flow 网关，服务端到服务端）——浏览器永远拿不到它；日志同样不落明文。
+ */
+export const flowHostCredentialsResponseSchema = z.object({
+  apiBase: z.string().url(),
+  apiKey: z.string().min(1).max(512),
+  label: z.string().max(64).optional(),
+});
+export type FlowHostCredentialsRequest = z.infer<
+  typeof flowHostCredentialsRequestSchema
+>;
+export type FlowHostCredentialsResponse = z.infer<
+  typeof flowHostCredentialsResponseSchema
+>;
+
+/**
+ * 事件透出（P5，`POST /api/flow/host/events`）：flow 网关按批推 run 事件，宿主
+ * 原样转发到本仓 WS 通道（`flowRun.event`）。
+ *
+ * 形状与 flow 侧 `EmbeddedEventSink` 对齐：批 ≤25 条 / 250ms 攒批，`events[].seq` 是
+ * **run 内**单调序号。每条事件带 `hostSubject`（与计费同一口径：宿主按它解析归属，
+ * 把事件投给对应用户的 WS 连接）——批次可能跨 run/跨用户，故归属键在**每条**事件上。
+ */
+export const flowHostEventsRequestSchema = z.object({
+  protocolVersion: z.string().min(1).max(16).optional(),
+  events: z
+    .array(
+      z.object({
+        runId: z.string().min(1).max(128),
+        seq: z.number().int().min(1),
+        /** flow 侧原事件类型名（宿主不解释，只透传）。 */
+        type: z.string().min(1).max(128),
+        payload: z.unknown(),
+        at: z.string().min(1).max(64),
+        hostSubject: z.string().min(1).max(256),
+        hostProjectId: z.uuid().optional(),
+        hostGeneration: z.number().int().positive().safe().optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type FlowHostEventsRequest = z.infer<typeof flowHostEventsRequestSchema>;
+
+/** 事件透出的响应：投递计数（宿主只做透传，不识别的归属逐条计入 skipped，不整批失败）。 */
+export const flowHostEventsResponseSchema = z.object({
+  accepted: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+});
+export type FlowHostEventsResponse = z.infer<
+  typeof flowHostEventsResponseSchema
+>;
+
+/**
+ * 引擎承载路径探测（P6 探测层，`GET /api/flow/host/engine`，宿主自己的前端调用）。
+ *
+ * 三条路径（《flow 集成方案》§3.5.1 的平台矩阵）：
+ * - `wsl2`：Windows 专属，轻量 VM 内跑开源容器引擎（无 Docker Desktop 授权约束）；
+ * - `container`：本机已有的 Docker / Podman（macOS 上 Colima 等 Docker 兼容运行时也走这条）；
+ * - `remote`：不本地承载，引擎指向本地供应商设置里的 Dify 地址（Provider C 兜底）。
+ *
+ * `recommended` 按平台矩阵给出首选；都不可用时为 null（界面据此引导安装或去配 Provider C）。
+ * `reason` 是**可读原因 + 怎么补**（不放无提示的不可用），`detail` 是可用时的补充事实。
+ *
+ * 边界（如实声明）：本层只做**探测**；引擎的生命周期托管（provision/start/stop/teardown）
+ * 走 `flowEngineLaunchSchema` 选定的承载目标（宿主 docker / WSL2 发行版内 docker），
+ * 由宿主侧安装状态机执行。`wsl2` 路径的 `available` 含义是「发行版内 Docker 已就绪」，
+ * 只有发行版没有 docker 时给出可读的启用指引，不假装能启动。
+ */
+export const flowEnginePathIdSchema = z.enum(["wsl2", "container", "remote"]);
+export type FlowEnginePathId = z.infer<typeof flowEnginePathIdSchema>;
+
+export const flowEnginePathSchema = z.object({
+  id: flowEnginePathIdSchema,
+  /** 界面用中文名（如「WSL2」「本机容器」「指向自管地址」）。 */
+  label: z.string().min(1),
+  available: z.boolean(),
+  /** 不可用/降级时的可读原因（缺什么、怎么补）。 */
+  reason: z.string().optional(),
+  /** 可用时的补充事实（版本、发行版名、地址来源）。 */
+  detail: z.string().optional(),
+  /** `wsl2` 路径选定的发行版名（安装时作为承载目标的 `distro`，界面直接用它，不解析 detail）。 */
+  distro: z.string().optional(),
+});
+export type FlowEnginePath = z.infer<typeof flowEnginePathSchema>;
+
+export const flowHostEngineResponseSchema = z.object({
+  /** `process.platform`（界面按平台提示不同安装指引）。 */
+  platform: z.string().min(1),
+  paths: z.array(flowEnginePathSchema),
+  recommended: flowEnginePathIdSchema.nullable(),
+});
+export type FlowHostEngineResponse = z.infer<
+  typeof flowHostEngineResponseSchema
+>;
+
+/**
+ * 引擎栈安装状态（FORM-11 探测后的「确认 → 下载 → 托管」）。
+ *
+ * `installing` = 拉镜像/起栈进行中（长任务，轮询本端点）；`ready` = 栈已起且健康；
+ * `error` = 失败（logTail 给出可读原因）；`idle` = 尚未发起。重启服务后状态归零，
+ * 由调用方按 `docker compose ps` 重新探测（后续增量）。
+ */
+export const flowEngineInstallStatusSchema = z.object({
+  state: z.enum(["idle", "installing", "ready", "error"]),
+  logTail: z.array(z.string()),
+  error: z.string().optional(),
+  startedAt: z.string().optional(),
+});
+export type FlowEngineInstallStatus = z.infer<
+  typeof flowEngineInstallStatusSchema
+>;
+
+/**
+ * 引擎栈停止/卸载（FORM-11 生命周期，`POST /api/flow/host/engine/stop`）。
+ *
+ * `deleteData` 缺省 false = 只 `down` 保容器卷数据（下次起栈沿用）；
+ * `true` = 追加 `--volumes` 全删（§9.1③ 的停止口径：**显式选择全删才动数据**）。
+ * flow 插件卸载走的是更强的 `purge`（`down --volumes --rmi all` + 清本地 env/日志/记录），
+ * 见 `flowEngineLaunchSchema` 旁的说明。
+ */
+export const flowHostEngineStopRequestSchema = z.object({
+  deleteData: z.boolean().optional(),
+});
+export type FlowHostEngineStopRequest = z.infer<
+  typeof flowHostEngineStopRequestSchema
+>;
+
+/**
+ * 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。
+ *
+ * 安装时选定并**落盘**（数据目录 `dify-stack.runtime.json`）——停止 / 查询必须用同一个
+ * 目标，否则 `down` 找不到另一侧起的容器。缺省（没有记录）= `host`。
+ *
+ * flow 插件卸载（`POST /api/plugins/kenfutwork-flow/uninstall`）按用户口径执行 purge：
+ * 删引擎本体（容器 + 卷 + 镜像 + 本地 env/日志/记录），**保留插件代码**——下次安装
+ * 重新下载镜像即可；不 purge 插件代码是「能二次安装」的前提。
+ */
+export const flowEngineLaunchSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("host") }),
+  z.object({ kind: z.literal("wsl2"), distro: z.string().min(1) }),
+]);
+export type FlowEngineLaunch = z.infer<typeof flowEngineLaunchSchema>;
+
+/** 引擎安装请求（`POST /api/flow/host/engine/install`）：选定承载目标。 */
+export const flowHostEngineInstallRequestSchema = z.object({
+  launch: flowEngineLaunchSchema.optional(),
+});
+export type FlowHostEngineInstallRequest = z.infer<
+  typeof flowHostEngineInstallRequestSchema
+>;
+
+/**
+ * 引擎栈容器（`docker compose ps --format json` 的**运行期事实**，不猜配置文件）。
+ * `ports` 是 docker 报告原文（如 `127.0.0.1:15001->5001/tcp`），查询失败时容器清单为空
+ * 且 `error` 说明原因（docker 不可用等）。
+ */
+export const flowEngineStackContainerSchema = z.object({
+  service: z.string().min(1),
+  name: z.string().min(1),
+  state: z.string().min(1),
+  health: z.string().nullable(),
+  ports: z.array(z.string()),
+});
+export type FlowEngineStackContainer = z.infer<
+  typeof flowEngineStackContainerSchema
+>;
+
+/**
+ * 引擎信息页（`GET /api/flow/host/engine/info`）：工作台「引擎」页一次取全 ——
+ * 托管状态（install）+ 承载路径探测（probe）+ 栈容器事实（stack）+ 地址/路径（addresses）。
+ * 不编不确定的信息：地址只列宿主真正知道的（flow 前端地址、宿主身份回调、compose 与数据目录）。
+ */
+export const flowHostEngineInfoResponseSchema = z.object({
+  install: flowEngineInstallStatusSchema,
+  probe: flowHostEngineResponseSchema,
+  stack: z.object({
+    containers: z.array(flowEngineStackContainerSchema),
+    error: z.string().optional(),
+  }),
+  /** 当前承载目标（落盘记录；缺省 host）。停止/查询都按它执行。 */
+  runtime: flowEngineLaunchSchema,
+  addresses: z.object({
+    /** flow 画布（前端）地址；未配置为 null。 */
+    frontendUrl: z.string().nullable(),
+    /** 宿主身份交换回调（flow 侧 HOST_IDENTITY_VERIFY_URL 应指向它）。 */
+    hostIdentityUrl: z.string().min(1),
+    /** 引擎栈 compose 文件路径。 */
+    composeFile: z.string().min(1),
+    /** 安装数据目录（自动生成的密钥 env 与安装日志都在这里）。 */
+    dataDir: z.string().min(1),
+  }),
+});
+export type FlowHostEngineInfoResponse = z.infer<
+  typeof flowHostEngineInfoResponseSchema
+>;
+
+/** 引擎日志来源：安装日志文件，或某一个运行中容器的 docker logs。 */
+export const flowEngineLogSourceSchema = z.enum(["install", "container"]);
+export type FlowEngineLogSource = z.infer<typeof flowEngineLogSourceSchema>;
+
+/** 引擎日志查询：`tail=0` 表示安装日志取全量；容器日志最多取 20000 行。 */
+export const flowHostEngineLogsQuerySchema = z
+  .object({
+    source: flowEngineLogSourceSchema.default("install"),
+    container: z.string().min(1).max(256).optional(),
+    tail: z.coerce.number().int().min(0).max(20000).optional(),
+  })
+  .refine((value) => value.source !== "container" || Boolean(value.container), {
+    message: "读取容器日志必须指定容器。",
+    path: ["container"],
+  });
+export type FlowHostEngineLogsQuery = z.infer<
+  typeof flowHostEngineLogsQuerySchema
+>;
+
+/** 引擎日志内容：只读文本，不解析、不改写。 */
+export const flowHostEngineLogsResponseSchema = z.object({
+  source: flowEngineLogSourceSchema,
+  title: z.string().min(1),
+  /** 安装日志文件路径；容器日志为 null。 */
+  path: z.string().nullable(),
+  lines: z.array(z.string()),
+  /** 是否只返回了文件尾部（安装日志按 tail 截断）。 */
+  truncated: z.boolean(),
+});
+export type FlowHostEngineLogsResponse = z.infer<
+  typeof flowHostEngineLogsResponseSchema
+>;
+
+/**
+ * Flow 模式入口门控（纯逻辑，接线在各端宿主 hook）。
+ *
+ * 入口纪律（《flow 集成方案》P2 / AGENTS.md 不变量）：flow 以插件形态交付，
+ * **入口是否出现只看插件安装态**——装了就该有入口；宿主适配层没配齐或引擎没起
+ * 属于运行期状态，入口照常出现，由主区如实报原因并给引擎页（用户 2026-10-27 口径：
+ * 「就算 dify 没启动也不应该 flow 都不显示」）。没装插件才不出现，不放无提示空壳。
+ */
+export type FlowEntry =
+  | {
+      available: true;
+      /** 适配层就绪时的 flow 前端地址；未就绪为 null（主区报 reason 并引导去引擎页）。 */
+      frontendUrl: string | null;
+      /** 未就绪原因；已就绪为 null。 */
+      reason: string | null;
+    }
+  | { available: false; reason: string };
+
+export function resolveFlowEntry(input: {
+  /** flow 插件（`kenfutwork-flow`）是否已安装。 */
+  pluginInstalled: boolean;
+  pluginEnabled: boolean;
+  /** 宿主适配层状态；null = 探针请求失败（按未就绪处理，不猜）。 */
+  status: FlowHostStatusResponse | null;
+}): FlowEntry {
+  if (!input.pluginInstalled) {
+    return {
+      available: false,
+      reason: "未安装 flow 插件（插件市场可安装）。",
+    };
+  }
+  if (!input.pluginEnabled)
+    return { available: false, reason: "Flow 插件已停用。" };
+  if (!input.status) {
+    return {
+      available: true,
+      frontendUrl: null,
+      reason: "无法获取 flow 宿主状态（/api/flow/host/status 不可达）。",
+    };
+  }
+  if (!input.status.enabled || !input.status.frontendUrl) {
+    return {
+      available: true,
+      frontendUrl: null,
+      reason: input.status.reasons.length
+        ? `Flow 运行时未就绪：${input.status.reasons.join(" ")}`
+        : "Flow 运行时未就绪。",
+    };
+  }
+  return {
+    available: true,
+    frontendUrl: input.status.frontendUrl,
+    reason: null,
+  };
+}
+
+/**
+ * `ff-embed/v1` 宿主侧出站消息（唯一权威在 `flow/docs/ff-embed-v1.md` 与
+ * flow 前端 `frontend/src/embed/protocol.ts`；这里只构造宿主要发的那几条）。
+ * web 工作台与 code-ui 壳内嵌面（FlowSurface）共用这一份，不再各留副本。
+ */
+export type FfEmbedOutboundMessage =
+  | { type: "ff-embed/hello-ack"; version: string }
+  | { type: "ff-embed/identity"; version: string; hostToken: string }
+  | { type: "ff-embed/navigate"; version: string; path: string };
+
+export function buildFlowHelloAck(version: string): FfEmbedOutboundMessage {
+  return { type: "ff-embed/hello-ack", version };
+}
+
+export function buildFlowIdentity(
+  version: string,
+  hostToken: string,
+): FfEmbedOutboundMessage {
+  return { type: "ff-embed/identity", version, hostToken };
+}
+
+export function buildFlowNavigate(
+  version: string,
+  path: string,
+): FfEmbedOutboundMessage {
+  return { type: "ff-embed/navigate", version, path };
+}
+
+/** flow 前端会发来的消息类型（宿主侧只认这个集合，其余忽略）。 */
+export type FfEmbedInboundMessage =
+  | { type: "ff-embed/hello"; version?: unknown }
+  | {
+      type: "ff-embed/ready";
+      projectId?: unknown;
+      generation?: unknown;
+      extensions?: unknown;
+    }
+  | {
+      type: "ff-embed/run-event";
+      hostProjectId?: unknown;
+      hostGeneration?: unknown;
+    }
+  | { type: "ff-embed/navigation" }
+  | { type: "ff-embed/error" }
+  | { type: "ff-embed/bye" };
+
+const FF_EMBED_INBOUND_TYPES = new Set([
+  "ff-embed/hello",
+  "ff-embed/ready",
+  "ff-embed/run-event",
+  "ff-embed/navigation",
+  "ff-embed/error",
+  "ff-embed/bye",
+]);
+
+export function isFlowProjectReady(
+  message: FfEmbedInboundMessage,
+  projectId: string,
+): message is Extract<FfEmbedInboundMessage, { type: "ff-embed/ready" }> & {
+  projectId: string;
+  generation: number;
+} {
+  if (
+    message.type !== "ff-embed/ready" ||
+    message.projectId !== projectId ||
+    typeof message.generation !== "number" ||
+    !Number.isSafeInteger(message.generation) ||
+    message.generation < 1
+  )
+    return false;
+  return (
+    message.extensions !== null &&
+    typeof message.extensions === "object" &&
+    !Array.isArray(message.extensions) &&
+    (message.extensions as Record<string, unknown>).projectFiles === "v1"
+  );
+}
+
+/**
+ * 解析一条来自 flow iframe 的消息。
+ *
+ * 安全边界（§3.3）：origin 必须等于 flow 前端 origin（服务端下发的
+ * `KENFUTWORK_FLOW_FRONTEND_URL`），白名单外的消息**静默丢弃**——页面里可能
+ * 同时有别的 iframe / 库在 postMessage，把噪音当故障会让排查看错方向。
+ */
+export function parseFlowInbound(
+  raw: unknown,
+  context: { origin: string; allowedOrigin: string },
+): FfEmbedInboundMessage | null {
+  if (context.origin !== context.allowedOrigin) return null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
+  const candidate = raw as Record<string, unknown>;
+  if (typeof candidate.type !== "string") return null;
+  if (!FF_EMBED_INBOUND_TYPES.has(candidate.type)) return null;
+  return candidate as FfEmbedInboundMessage;
+}

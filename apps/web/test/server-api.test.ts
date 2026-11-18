@@ -1,48 +1,28 @@
 // @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiAccessError,
+  connectCdp,
   createProject,
   createRun,
+  fetchDirectoryPickerStatus,
+  fetchProjectDirectoryRelinkSnapshot,
   fetchProjects,
   fetchVideoModels,
-  fetchViewer,
+  pickDirectory,
+  relinkProjectDirectory,
+  saveCanvas,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-describe("authenticated server API", () => {
+describe("本机Cookie与显式Bearer API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
-  });
-
-  it("fetchViewer sends bearer token and returns viewer response", async () => {
-    const viewer = {
-      profile: {
-        id: "u1",
-        email: "a@b.com",
-        displayName: "A",
-        avatarUrl: null,
-      },
-      workspace: { id: "w1", name: "W", type: "personal", ownerUserId: "u1" },
-      membership: { workspaceId: "w1", userId: "u1", role: "owner" },
-    };
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => viewer,
-    });
-
-    const result = await fetchViewer("token_abc");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:3001/api/viewer",
-      expect.objectContaining({
-        headers: { Authorization: "Bearer token_abc" },
-      }),
-    );
-    expect(result.profile.id).toBe("u1");
   });
 
   it("createRun sends bearer auth when access token is provided", async () => {
@@ -69,6 +49,7 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/agent/runs",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: {
           Authorization: "Bearer token_abc",
@@ -78,7 +59,7 @@ describe("authenticated server API", () => {
     );
   });
 
-  it("createRun keeps demo calls unauthenticated by default", async () => {
+  it("createRun uses the local Cookie when no explicit Bearer is provided", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 202,
@@ -99,10 +80,96 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/agent/runs",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
+      }),
+    );
+  });
+
+  it("reads the controlled project directory snapshot before relinking", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        projectId: "00000000-0000-4000-8000-000000000001",
+        workDir: "/missing/project",
+        tasks: [
+          {
+            taskId: "00000000-0000-4000-8000-000000000002",
+            scopeGeneration: 2,
+            branchGeneration: 3,
+          },
+        ],
+        missing: true,
+      }),
+    });
+
+    await fetchProjectDirectoryRelinkSnapshot(
+      "token_abc",
+      "00000000-0000-4000-8000-000000000001",
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects/00000000-0000-4000-8000-000000000001/relink-directory",
+      expect.objectContaining({
+        credentials: "include",
+        headers: { Authorization: "Bearer token_abc" },
+      }),
+    );
+  });
+
+  it("posts the selected directory with the unchanged task fences", async () => {
+    const response = {
+      projectId: "00000000-0000-4000-8000-000000000001",
+      workDir: "/workspace/new-project",
+      tasks: [
+        {
+          taskId: "00000000-0000-4000-8000-000000000002",
+          scopeGeneration: 3,
+          branchGeneration: 4,
+          status: "ready",
+        },
+      ],
+      affectedTaskIds: ["00000000-0000-4000-8000-000000000002"],
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    const input = {
+      expectedWorkDir: "/missing/project",
+      nextWorkDir: "/workspace/new-project",
+      expectedTasks: [
+        {
+          taskId: "00000000-0000-4000-8000-000000000002",
+          scopeGeneration: 2,
+          branchGeneration: 3,
+        },
+      ],
+    };
+
+    await expect(
+      relinkProjectDirectory(
+        "token_abc",
+        "00000000-0000-4000-8000-000000000001",
+        input,
+      ),
+    ).resolves.toEqual(response);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects/00000000-0000-4000-8000-000000000001/relink-directory",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: {
+          Authorization: "Bearer token_abc",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
       }),
     );
   });
@@ -130,6 +197,7 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/projects",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer token_abc",
@@ -154,6 +222,7 @@ describe("authenticated server API", () => {
       "http://localhost:3001/api/projects?kind=design",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
       }),
     );
     expect(result.projects).toHaveLength(1);
@@ -171,6 +240,7 @@ describe("authenticated server API", () => {
       "http://localhost:3001/api/projects?kind=code",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
       }),
     );
   });
@@ -183,7 +253,6 @@ describe("authenticated server API", () => {
           displayName: "MiniMax H3 (Metaso)",
           description: "Metaso H3",
           provider: "metaso",
-          creditCost: 51,
           capabilities: {
             textToVideo: true,
             imageToVideo: true,
@@ -223,10 +292,10 @@ describe("authenticated server API", () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/video-models",
+      { credentials: "include" },
     );
     expect(result.models[0]).toMatchObject({
       id: "metaso/minimax-h3",
-      creditCost: 51,
       limits: { maxDuration: 15, maxInputImages: 2 },
       pricing: { evidenceDate: "2026-08-19" },
     });
@@ -251,19 +320,7 @@ describe("authenticated server API", () => {
     }
   });
 
-  it("fetchViewer throws ApiAuthError on 401", async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: async () => ({
-        error: { code: "unauthorized", message: "Bad token." },
-      }),
-    });
-
-    await expect(fetchViewer("expired")).rejects.toThrow("unauthorized");
-  });
-
-  it("fetchProjects throws ApiAuthError on 401", async () => {
+  it("fetchProjects throws ApiAccessError on 401", async () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 401,
@@ -273,5 +330,195 @@ describe("authenticated server API", () => {
     });
 
     await expect(fetchProjects("expired")).rejects.toThrow("unauthorized");
+  });
+});
+
+describe("Canvas CAS API", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
+  });
+
+  it("发送 expectedRevision 并返回新的 revision 与文件引用", async () => {
+    const response = {
+      ok: true,
+      revision: "a".repeat(64),
+      fileReferences: { image: "oss://stable-image-reference" },
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    const content = {
+      elements: [{ id: "image" }],
+      appState: {},
+      files: { image: { dataURL: "data:image/png;base64,bytes" } },
+    };
+
+    await expect(
+      saveCanvas("token_abc", "canvas-1", content, "b".repeat(64)),
+    ).resolves.toEqual(response);
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+    };
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body ?? "{}")).toEqual({
+      content,
+      expectedRevision: "b".repeat(64),
+    });
+  });
+
+  it("keepalive save preserves the same CAS body", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        revision: "c".repeat(64),
+        fileReferences: {},
+      }),
+    });
+
+    await saveCanvas(
+      "token_abc",
+      "canvas-1",
+      { elements: [], appState: {}, files: {} },
+      null,
+      { keepalive: true },
+    );
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      body?: string;
+      keepalive?: boolean;
+    };
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body ?? "{}")).toMatchObject({
+      expectedRevision: null,
+    });
+  });
+});
+
+/**
+ * 原生目录对话框（桌面形态）：能力探测与「弹一次对话框」两个端点。
+ *
+ * 客户端按 `status` 分流：picked 走绑定、cancelled 静默、unavailable 回落浏览器
+ * 选择器、failed 报原因——四种都不能被客户端改写成别的意思。
+ */
+describe("原生目录对话框端点", () => {
+  it("探测：带 bearer、返回 available 与原因", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        available: false,
+        reason: "服务端在另一台机器上。",
+      }),
+    });
+    const status = await fetchDirectoryPickerStatus("token_abc");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/system/directory-picker",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
+      }),
+    );
+    expect(status.available).toBe(false);
+    expect(status.reason).toContain("另一台机器");
+  });
+
+  it("选择：POST，四种状态原样回给调用方", async () => {
+    const cases = [
+      { status: "picked", path: "D:Desktop\test" },
+      { status: "cancelled" },
+      { status: "unavailable", reason: "没装 zenity。" },
+      { status: "failed", reason: "退出码 3。" },
+    ] as const;
+    for (const payload of cases) {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      });
+      await expect(pickDirectory("token_abc")).resolves.toEqual(payload);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        "http://localhost:3001/api/system/pick-directory",
+        expect.objectContaining({ method: "POST" }),
+      );
+    }
+  });
+
+  it("未登录：抛 ApiAccessError（401 不落成普通应用错误）", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    });
+    await expect(pickDirectory("expired")).rejects.toBeInstanceOf(
+      ApiAccessError,
+    );
+  });
+});
+
+/**
+ * CDP 三个动作（连接 / 开调试工具 / 断开）都走 POST JSON。
+ *
+ * **回归背景（真机踩到）**：带了 `Content-Type: application/json` 却**不带 body** 时，
+ * Fastify 回 `FST_ERR_CTP_EMPTY_JSON_BODY`（400）——设置页的「连接到 Chrome」与右栏的
+ * 「打开调试工具」都因此失败，界面只显示一句泛泛的「连接浏览器失败」。这条锁住「必须带 body」。
+ */
+describe("CDP 动作的请求形状", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("connectCdp 是 POST + JSON 头 + **非空 body**", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        cdp: { status: "connected", browser: "Chrome", tabs: 1 },
+        opened: { targetId: "t", url: "https://example.com/" },
+      }),
+    });
+
+    await connectCdp("token");
+
+    const calls = mockFetch.mock.calls.map(
+      (call) => call[1] as { method?: string; body?: string },
+    );
+    expect(calls).toHaveLength(1);
+    for (const init of calls) {
+      expect(init.method).toBe("POST");
+      // 空 body + JSON 头 = 400（FST_ERR_CTP_EMPTY_JSON_BODY）
+      expect(init.body).toBe("{}");
+    }
+  });
+
+  /**
+   * 回归背景（真机踩到）：`pickDirectory` 是同一个坑的漏网之鱼——POST + JSON 头 +
+   * 空 body，服务端 400 `FST_ERR_CTP_EMPTY_JSON_BODY`，而 400 的默认响应体里
+   * `error` 是字符串（不是 `{code,message}`），客户端只认得出 `error.message`，
+   * 于是界面显示成一句无从下手的「系统文件夹对话框不可用：Request failed」。
+   */
+  it("pickDirectory 是 POST + JSON 头 + **非空 body**", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "cancelled" }),
+    });
+
+    await pickDirectory("token");
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+      headers?: Record<string, string>;
+    };
+    expect(init.method).toBe("POST");
+    expect(init.headers?.["content-type"]).toBe("application/json");
+    expect(init.body).toBe("{}");
   });
 });

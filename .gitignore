@@ -16,11 +16,15 @@
 **/.next/
 /out/
 apps/web/out/
-supabase/.temp/
 
 # production
 /build
 **/dist
+**/dist-types
+**/dist-host
+**/dist-design
+apps/web/public/code-ui/
+apps/server/data/
 **/.turbo
 
 # misc
@@ -29,10 +33,14 @@ supabase/.temp/
 .worktrees/
 .superpowers/
 
-# debug
+# debug / 运行日志（本地进程日志一律不入库）
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+
+# agent 沙箱默认根（<项目根>/tmp/sandbox/<画布UUID>，运行时数据不入库）
+/tmp/
 
 # local env files
 .env*.local
@@ -49,7 +57,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 logs/
-supabase/supabase/
 
 tmp/
 temp/.claude/worktrees/
@@ -71,12 +78,53 @@ apps/web/tmp/
 
 # 本地 blob 目录（M3.1 local 形态）：本机数据，不入库
 /data/
+# 同上：`pnpm --filter server dev` 时 cwd 在 apps/server，blob 目录落它下面
+apps/server/data/
 
 # 已安装插件（机器本地，含第三方代码，禁止提交）
-.loomic/
+.kenfutwork/
 
 # 本机临时目录（如 .tmp-mcp：E2E 测试用 MCP server 夹具，由 .env.local 的 LOOMIC_MCP_SERVERS 挂载）
 .tmp-*/
 
 # 随包分发的语言运行时（Node/Python/JDK，scripts/fetch-runtimes.mjs 拉取）
 /runtime/
+.kenfutwork-data/
+
+# 本机草稿/一次性验证脚本（真机走查用；不进 CI、不入库）
+.scratch/
+
+# Rust / Tauri 构建产物（桌面壳）
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# 安装包产物（默认落在仓库根，见 apps/desktop/scripts/collect-bundle.mjs）
+/KenFutWork_*-setup.exe
+/KenFutWork_*.dmg
+/KenFutWork_*.zip
+/KenFutWork.app/
+# 出包清单（构建读数与校验值，随产物走，不入库）
+/dist-manifest.json
+# appdmg 生成安装包后的临时可写镜像
+/rw.*.KenFutWork_*.dmg
+.playwright-mcp/
+.zcodeignore
+
+# WorkBuddy 的本地数据目录
+.workbuddy-ai/*
+.workbuddy/*
+
+# CommandCode CLI 的本地数据目录
+/.commandcode/
+
+# trae 的本地数据目录
+.trae/*
+
+# zcode 的本地数据目录
+.zcode/*
+
+# Python 字节码（随仓库引入的插件目录在构建时会生成）
+__pycache__/
+*.pyc
+
+

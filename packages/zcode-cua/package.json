@@ -1,0 +1,22 @@
+{
+  "name": "@zcode/zcode-cua",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    "./pip-session": {
+      "types": "./pip-session.d.ts",
+      "import": "./pip-session.js"
+    },
+    "./broker": {
+      "types": "./broker.d.ts",
+      "import": "./broker.js"
+    },
+    "./broker/ports": {
+      "types": "./broker-ports.d.ts",
+      "import": "./broker-ports.js"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

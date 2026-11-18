@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { checkActions } from "../scripts/check-actions.mjs";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
+import * as envModule from "../scripts/check-env.mjs";
+import { verifyZcodeInventory } from "../scripts/zcode-provenance.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,10 +27,19 @@ const rootDir = path.resolve(dirname, "..");
 
 // Enumerate actual apps instead of hardcoding names, so the test survives
 // apps being added or removed (e.g., the removed desktop app).
+//
+// 只纳入**有 npm 清单**的 app：`apps/desktop` 是纯 Cargo/Tauri 壳
+// （dev.sh + src-tauri/，没有 package.json，也不进 pnpm workspace），
+// 对它的门禁是 `apps/desktop/src-tauri` 那一侧的 cargo check/test，
+// 在这里按 npm 脚本口径要求它只会得到「文件不存在」的假警报。
 const appNames = readdirSync(path.join(rootDir, "apps"), {
   withFileTypes: true,
 })
-  .filter((entry) => entry.isDirectory())
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      existsSync(path.join(rootDir, "apps", entry.name, "package.json")),
+  )
   .map((entry) => entry.name)
   .sort();
 
@@ -48,6 +68,21 @@ test("workspace includes apps and packages globs", async () => {
 
   assert.match(workspace, /apps\/\*/);
   assert.match(workspace, /packages\/\*/);
+});
+
+test("LightCraft 中文包走上游 xtask web-site 构建链", async () => {
+  const builder = await readText("scripts/build-work-editor-zh.mjs");
+  assert.match(builder, /XTASK_APPS = new Set\(\[[^\]]*"lightcraft"/);
+  assert.match(
+    builder,
+    /app === "lightcraft"\s*\?\s*join\(source, "target", "web-site"\)/,
+  );
+});
+
+test("PDFCraft 中文包复用 Noto CJK 嵌入与许可门禁", async () => {
+  const builder = await readText("scripts/build-work-editor-zh.mjs");
+  assert.match(builder, /pdfcraft:\s*\[\s*\[\s*"crates\/fonts\/build\.rs"/);
+  assert.match(builder, /pdfcraft:\s*"noto-sans-cjk-sc"/);
 });
 
 test("root test command wires node:test and turbo package tests", async () => {
@@ -85,7 +120,7 @@ for (const appName of appNames) {
   });
 }
 
-test("@loomic/config exports a single low-drift package contract", async () => {
+test("@kenfutwork/config exports a single low-drift package contract", async () => {
   const source = await readText("packages/config/src/index.ts");
 
   assert.doesNotMatch(source, /apps\/\*/);
@@ -95,7 +130,7 @@ test("@loomic/config exports a single low-drift package contract", async () => {
 test("shared package placeholder exists for the upcoming contract task", async () => {
   const manifest = await readJson("packages/shared/package.json");
 
-  assert.equal(manifest.name, "@loomic/shared");
+  assert.equal(manifest.name, "@kenfutwork/shared");
   assert.equal(manifest.type, "module");
 });
 
@@ -129,7 +164,7 @@ const FIXTURE_README = [
   "",
   "| 文档 | 角色 |",
   "| --- | --- |",
-  "| `tech/改造计划.md` | 权威（ctx key 表属主） |",
+  "| `方案设计/改造计划.md` | 权威（ctx key 表属主） |",
   "| `sub/frozen.md` | 快照 |",
   "| `ok.md` | 权威 |",
   "",
@@ -171,17 +206,19 @@ const FIXTURE_OK = [
 ].join("\n");
 
 async function withDocsFixture(run) {
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "loomic-docs-"));
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kenfutwork-docs-"));
   try {
     await mkdir(path.join(fixtureRoot, "docs", "sub"), { recursive: true });
-    await mkdir(path.join(fixtureRoot, "docs", "tech"), { recursive: true });
+    await mkdir(path.join(fixtureRoot, "docs", "方案设计"), {
+      recursive: true,
+    });
     await writeFile(
       path.join(fixtureRoot, "docs", "README.md"),
       FIXTURE_README,
       "utf8",
     );
     await writeFile(
-      path.join(fixtureRoot, "docs", "tech", "改造计划.md"),
+      path.join(fixtureRoot, "docs", "方案设计", "改造计划.md"),
       FIXTURE_PLAN,
       "utf8",
     );
@@ -299,15 +336,33 @@ const SUPABASE_SOURCE_ROOTS = ["apps/server/src", "apps/web/src", "packages"];
 const IGNORED_DIRS = new Set([
   "node_modules",
   "dist",
+  "dist-types",
+  "dist-host",
+  "dist-design",
   ".next",
   "out",
   ".turbo",
+  // i18n 目录是纯文案键值表（如 zcode 移植的 zh-CN.ts），键名里的 `.storage.`
+  // （"resourceManager.storage.summaryTotal"）会被 storageRefs 误计为存储客户端
+  // 访问——文案不是代码，与 ctx/deps 接收者同一条误报排除原则（口径修正 2026-09-30）。
+  "i18n",
 ]);
 
 /** 全部源文件（排除测试）——按全量统计才能同口径比较：只统计「已耦合文件」时，
  *  把一处存储调用从一个耦合文件挪到另一个，指标会凭空变化。 */
 function listSupabaseSources() {
   const files = [];
+  const inventoryPath = path.join(
+    rootDir,
+    "packages/third-party/zcode/来源清单.json",
+  );
+  const upstreamSources = existsSync(inventoryPath)
+    ? new Map(
+        JSON.parse(readFileSync(inventoryPath, "utf8")).records.map(
+          (record) => [path.resolve(rootDir, record.target), record],
+        ),
+      )
+    : new Map();
 
   const walk = (dir) => {
     let entries;
@@ -329,6 +384,16 @@ function listSupabaseSources() {
         !/\.(ts|tsx)$/.test(entry.name) ||
         /\.test\.(ts|tsx)$/.test(entry.name)
       ) {
+        continue;
+      }
+      const upstream = upstreamSources.get(target);
+      if (
+        upstream?.source.startsWith("references/zcode/") &&
+        createHash("sha256").update(readFileSync(target)).digest("hex") ===
+          upstream.copiedSha256
+      ) {
+        // 经来源清单锁定的外部源码不是第一方 Supabase 迁移对象。
+        // 宿主代码及任何未登记改动仍纳入原棘轮，不放宽基线。
         continue;
       }
       files.push(target);
@@ -372,11 +437,18 @@ async function collectSupabaseResiduals() {
         /(?<!storage)(?<!Buffer)(?<!Array)(?<!Uint8Array)(?<!String)\.from\(/g,
       ) ?? []
     ).length;
-    // 口径（2026-09-14 三次修正）：只数**存储客户端成员访问**（`.storage.` / `.storage(`），
-    // 不数产品数据字段 `storageUrl`。原口径把 `el.storageUrl` 也算成存储耦合，
-    // 实测让服务端清零后指标仍卡在 11 处（全在 web 且全是字段名）——
+    // 口径（2026-09-14 三次修正 + 2026-09-19 第四次修正）：只数**存储客户端成员访问**
+    // （`.storage.` / `.storage(`），不数产品数据字段 `storageUrl`。原口径把 `el.storageUrl`
+    // 也算成存储耦合，实测让服务端清零后指标仍卡在 11 处（全在 web 且全是字段名）——
     // 那样的指标永远到不了 0，M1.5 的「全清」门禁也就永远过不去。
-    code.storageRefs += countOccurrences(flat, /\.storage(?=[.(])/g);
+    // 第四次修正：新增的插件存储能力（能力名 `storage`，访问面固定是 `ctx.storage` /
+    // `deps.storage`）与 Supabase 的 storage 客户端同名，属指标**误报**。按本文件自己的
+    // 原则（不为了让指标好看而绕开正常命名），把这两个接收者排除；真正的存储客户端调用
+    // （其它接收者的 `.storage.from(` / `.storage.upload(` 等）照旧计入。
+    code.storageRefs += countOccurrences(
+      flat,
+      /(?<!ctx)(?<!deps)\.storage(?=[.(])/g,
+    );
   }
 
   const { stdout } = await execFileAsync(
@@ -392,8 +464,7 @@ async function collectSupabaseResiduals() {
     storageObjectsRefs: inventory.rewrite["storage.objects 引用"],
     // 用「排除中性化迁移」的净值：中性化迁移的语句里必然出现被改写的字面量，
     // 计入它等于惩罚「去除残留」本身（历史迁移不可改，指标会永久卡住）。
-    cloudUrls:
-      inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
+    cloudUrls: inventory.rewrite["硬编码云端 URL（排除中性化迁移后的净值）"],
   };
 
   return { code, sql };
@@ -443,4 +514,1253 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
     [],
     `残留已下降，请在本 PR 同步下调 tests/supabase-cleanup-baseline.json：\n    ${improvements.join("\n    ")}`,
   );
+});
+
+// --- 项目类型契约 ↔ 库约束一致性（《flow 集成方案》P1 接缝 #2）---
+//
+// `projects.kind` 的枚举（packages/shared）与 CHECK（docker/pg/migrations）是**必须同改**的
+// 两处：只改一处时，要么写入被库拒绝（契约先扩），要么契约拒绝一个库里合法的值（库先扩）。
+// 加第三类 `flow` 时补上这条对账——跨文件的契约靠脚本校验落地，不靠自觉。
+test("projects.kind 的库约束与共享契约枚举一致", async () => {
+  const contracts = await readText("packages/shared/src/contracts.ts");
+  const enumMatch = contracts.match(
+    /projectKindSchema = z\.enum\(\[([^\]]*)\]\)/,
+  );
+  assert.ok(enumMatch, "contracts.ts 里应有 projectKindSchema 的封闭枚举");
+  const contractKinds = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+
+  // 迁移按文件名顺序执行，故取**最后一处**定义（后面的 drop/add 覆盖前面的）。
+  let constraintKinds = null;
+  for (const dir of ["docker/pg/bootstrap", "docker/pg/migrations"]) {
+    for (const name of readdirSync(path.join(rootDir, dir)).sort()) {
+      if (!name.endsWith(".sql")) continue;
+      const sql = readFileSync(path.join(rootDir, dir, name), "utf8");
+      for (const match of sql.matchAll(
+        /add constraint projects_kind_check check \(kind in \(([^)]*)\)\)/g,
+      )) {
+        constraintKinds = [...match[1].matchAll(/'([^']+)'/g)].map(
+          (literal) => literal[1],
+        );
+      }
+    }
+  }
+  assert.ok(constraintKinds, "应存在 projects_kind_check 的 CHECK 约束定义");
+  assert.deepEqual(
+    [...contractKinds].sort(),
+    [...constraintKinds].sort(),
+    "契约枚举与库约束必须一致：加项目类型时两处同改，漏改即此门禁红灯",
+  );
+});
+
+// --- 会话模式契约 ↔ 库约束一致性（《work 模式集成规划》WD-1 同族约束）---
+//
+// `chat_sessions.mode` 与 projects.kind 同源（共享会话宿主按当前工作方式落 mode），
+// 库里的 mode_check 与 mode_canvas_check（work 与 code 同形态：无画布）必须与
+// projectKindSchema 同改。对账取**最后一处**定义（前向迁移的 drop/add 覆盖初值）。
+test("chat_sessions.mode 的库约束与共享契约枚举一致", async () => {
+  const contracts = await readText("packages/shared/src/contracts.ts");
+  const enumMatch = contracts.match(
+    /projectKindSchema = z\.enum\(\[([^\]]*)\]\)/,
+  );
+  assert.ok(enumMatch, "contracts.ts 里应有 projectKindSchema 的封闭枚举");
+  const contractKinds = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+
+  let constraintKinds = null;
+  for (const dir of ["docker/pg/bootstrap", "docker/pg/migrations"]) {
+    for (const name of readdirSync(path.join(rootDir, dir)).sort()) {
+      if (!name.endsWith(".sql")) continue;
+      const sql = readFileSync(path.join(rootDir, dir, name), "utf8");
+      for (const match of sql.matchAll(
+        /add constraint chat_sessions_mode_check\s+check \(mode in \(([^)]*)\)\)/g,
+      )) {
+        constraintKinds = [...match[1].matchAll(/'([^']+)'/g)].map(
+          (literal) => literal[1],
+        );
+      }
+    }
+  }
+  assert.ok(
+    constraintKinds,
+    "应存在 chat_sessions_mode_check 的 CHECK 约束定义",
+  );
+  assert.deepEqual(
+    [...contractKinds].sort(),
+    [...constraintKinds].sort(),
+    "会话模式库约束必须与项目类型契约一致：加工作方式时两处同改",
+  );
+});
+
+// --- 供应商协议契约 ↔ 库约束一致性（《flow 集成方案》P3 凭证缝接缝 #5）---
+//
+// `provider_instances.protocol` 的封闭集合（packages/shared 的 providerProtocolSchema）与
+// 库 CHECK 是必须同改的两处：漏改库则创建实例直接 SQL 失败，漏改契约则库里的合法值
+// 被应用层拒绝。与 projects.kind 同一条对账纪律，跨文件契约靠脚本校验落地。
+test("provider_instances.protocol 的库约束与共享契约枚举一致", async () => {
+  const contracts = await readText("packages/shared/src/provider-contracts.ts");
+  const enumMatch = contracts.match(
+    /providerProtocolSchema = z\.enum\(\[([^\]]*)\]\)/,
+  );
+  assert.ok(
+    enumMatch,
+    "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举",
+  );
+  const contractProtocols = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+
+  // 迁移按文件名顺序执行，取**最后一处**定义（前向迁移的 drop/add 覆盖建表时的初值）。
+  let constraintProtocols = null;
+  for (const name of readdirSync(
+    path.join(rootDir, "docker/pg/migrations"),
+  ).sort()) {
+    if (!name.endsWith(".sql")) continue;
+    const sql = readFileSync(
+      path.join(rootDir, "docker/pg/migrations", name),
+      "utf8",
+    );
+    for (const match of sql.matchAll(/CHECK \(protocol IN \(([^)]*)\)\)/gi)) {
+      constraintProtocols = [...match[1].matchAll(/'([^']+)'/g)].map(
+        (literal) => literal[1],
+      );
+    }
+  }
+  assert.ok(
+    constraintProtocols,
+    "应存在 provider_instances 协议 CHECK 约束定义",
+  );
+  assert.deepEqual(
+    [...contractProtocols].sort(),
+    [...constraintProtocols].sort(),
+    "协议封闭集合两处必须同改：shared 枚举与库 CHECK 漏改任一即此门禁红灯",
+  );
+});
+
+// --- 桌面版本四处一致 + SEA 宿主与 .nvmrc 钉死（CI 出包可复现性的前置门）---
+//
+// 版本声明散在四个文件（tauri.conf.json 权威、Cargo.toml 的 [package]、Cargo.lock 的包条目、
+// desktop package.json），历史上每次发版手改四处，0.1.1→0.1.3 皆如此；漏改的代价是安装包元数据
+// 与产物互不相认。唯一写入入口是 `pnpm version:bump`，本门禁只负责在合入前拦住漂移。
+// SEA 宿主另算一件：`package-win.mjs` 拿 `process.execPath` 当宿主，构建机上的 node 版本就是
+// 随包服务端未来的运行版本，所以必须与 `.nvmrc` 精确一致——而且脚本里得**真的存在**这道断言，
+// 否则「加了 pin 但没人读」比没有 pin 更危险。
+test("桌面版本四处一致，且 SEA 宿主与 .nvmrc 钉死", async () => {
+  const tauri = await readJson("apps/desktop/src-tauri/tauri.conf.json");
+  const desktopManifest = await readJson("apps/desktop/package.json");
+  const cargoToml = await readText("apps/desktop/src-tauri/Cargo.toml");
+  const cargoLock = await readText("apps/desktop/src-tauri/Cargo.lock");
+
+  const packageTomlVersion = cargoToml.match(
+    /\[package\][^[]*?version = "([^"]+)"/,
+  )?.[1];
+  const lockVersion = cargoLock.match(
+    /name = "kenfutwork-desktop"\nversion = "([^"]+)"/,
+  )?.[1];
+
+  const declared = {
+    "tauri.conf.json": tauri.version,
+    "Cargo.toml [package]": packageTomlVersion,
+    "Cargo.lock": lockVersion,
+    "desktop package.json": desktopManifest.version,
+  };
+  for (const [where, value] of Object.entries(declared)) {
+    assert.ok(
+      value,
+      `${where} 里没读出版本号——文件形状变了，改 bump-version.mjs 对齐真实结构`,
+    );
+    assert.equal(
+      value,
+      tauri.version,
+      `版本漂移：${where}=${value} 但 tauri.conf.json=${tauri.version}；用 pnpm version:bump ${tauri.version} 改齐`,
+    );
+  }
+
+  // SEA 宿主：.nvmrc 必须是精确版本（非范围），且与 engines.node 同值，package-win 必须读它。
+  const pin = (await readText(".nvmrc")).trim();
+  assert.match(
+    pin,
+    /^\d+\.\d+\.\d+$/,
+    `.nvmrc 应是精确版本（SEA 宿主按它对账），当前是 "${pin}"`,
+  );
+  const rootManifest = await readJson("package.json");
+  assert.equal(
+    rootManifest.engines?.node,
+    pin,
+    "根 engines.node 与 .nvmrc 必须同值，否则本地与 CI 各跑一套 node",
+  );
+  const winScript = await readText("scripts/package-win.mjs");
+  assert.match(
+    winScript,
+    /\.nvmrc/,
+    "package-win.mjs 必须读 .nvmrc 校验 SEA 宿主版本——只加 pin 不做断言等于没锁",
+  );
+
+  // CI 容器 job 的 node 也归 .nvmrc 管：`node:24-bookworm` 是浮动 tag（实测解析到 24.21.0），
+  // 用它跑出来的「真沙箱绿」不代表发布运行时（SEA 宿主 / 桌面捆绑都是 pin 版本）。
+  const ciText = await readText(".github/workflows/ci.yml");
+  for (const [, image] of ciText.matchAll(/^.*image:\s*(node:\S+)\s*$/gm)) {
+    assert.match(
+      image,
+      new RegExp(`^node:${pin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-`),
+      `CI 容器镜像「${image}」没钉到 .nvmrc 的 ${pin}；浮动 tag 让 CI 与出包用的 node 不是同一份`,
+    );
+  }
+});
+
+// --- 随包运行时锁定表：对账规则与合并写 ---
+//
+// `fetch-runtimes.mjs` 的 python/uv/jdk/git 都解析「最新发布」，同一 commit 隔天出包可以拿到
+// 不同内容；`runtime-lock.json` 把这层不确定性显式化。这里用夹具验四条规则，外加
+// 「永远 PASS 的检查等于没有检查」的反例（不匹配必须判红）。
+test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标平台合并写", async () => {
+  const lockModule = await import("../scripts/runtime-lock.mjs");
+  const {
+    assertLockAssetName,
+    assertLockSha,
+    buildLockEntry,
+    lockEntryFor,
+    mergeLockTargets,
+    readRuntimeLock,
+    LOCK_FILE_NAME,
+    LOCK_SCHEMA,
+  } = lockModule;
+
+  const entry = buildLockEntry({
+    version: "3.12",
+    fileName:
+      "cpython-3.12.11+20260101-aarch64-apple-darwin-install_only.tar.gz",
+    sha256: "a".repeat(64),
+    url: "https://example.invalid/x.tar.gz",
+  });
+
+  // 1) 无锁定条目（本机开发过渡态）：放行但要说清是哪一种
+  const none = assertLockSha({
+    entry: null,
+    sha256: "b".repeat(64),
+    name: "python",
+    target: "darwin-arm64",
+  });
+  assert.equal(none.ok, true);
+  assert.match(none.reason, /无锁定条目/);
+
+  // 2) 哈希不符：必须拦，且报错要给出「去哪改」
+  const drift = assertLockSha({
+    entry,
+    sha256: "b".repeat(64),
+    name: "python",
+    target: "darwin-arm64",
+  });
+  assert.equal(drift.ok, false, "内容变了却放行，lock 就成了摆设");
+  assert.match(drift.reason, /write-lock/);
+
+  // 3) 资产名变了：下载前就该拦（省一趟几百 MB）；名字取不到时交给哈希兜底
+  assert.equal(
+    assertLockAssetName({
+      entry,
+      fileName:
+        "cpython-3.12.9+20251201-aarch64-apple-darwin-install_only.tar.gz",
+      name: "python",
+      target: "darwin-arm64",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    assertLockAssetName({
+      entry,
+      fileName: null,
+      name: "jdk",
+      target: "darwin-arm64",
+    }).ok,
+    true,
+    "Adoptium 直链没有文件名时不许误拦",
+  );
+
+  // 4) 合并写：mac 打包机重锁不能抹掉 Windows 那一节
+  const seed = { schema: LOCK_SCHEMA, targets: { "win-x64": { node: entry } } };
+  const merged = mergeLockTargets(seed, "darwin-arm64", { python: entry });
+  assert.deepEqual(Object.keys(merged.targets).sort(), [
+    "darwin-arm64",
+    "win-x64",
+  ]);
+  assert.equal(
+    merged.targets["win-x64"].node,
+    entry,
+    "另一平台的条目必须原样保留",
+  );
+  assert.equal(lockEntryFor(merged, "darwin-arm64", "python"), entry);
+  assert.equal(lockEntryFor(merged, "darwin-arm64", "git"), null);
+
+  // 5) 结构不符 / 非法 JSON 一律 fail loud，不静默当作「没有 lock」
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-runtime-lock-"));
+  try {
+    assert.equal(
+      readRuntimeLock(fixtureRoot),
+      null,
+      "文件不存在=无 lock（允许）",
+    );
+    writeFileSync(path.join(fixtureRoot, LOCK_FILE_NAME), "{ 坏掉的 JSON");
+    assert.throws(() => readRuntimeLock(fixtureRoot), /不是合法 JSON/);
+    writeFileSync(
+      path.join(fixtureRoot, LOCK_FILE_NAME),
+      JSON.stringify({ schema: 99, targets: {} }),
+    );
+    assert.throws(() => readRuntimeLock(fixtureRoot), /结构不符/);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("runtime-lock：随包 Python 附加包清单（钉死版本）读写与合并保留", async () => {
+  const lockModule = await import("../scripts/runtime-lock.mjs");
+  const { readPythonPackages, mergeLockTargets, buildLockEntry, LOCK_SCHEMA } =
+    lockModule;
+
+  // 1) 缺省=空数组（过渡态不阻断），不是错误
+  assert.deepEqual(readPythonPackages(null), []);
+  assert.deepEqual(readPythonPackages({ schema: LOCK_SCHEMA }), []);
+  assert.deepEqual(readPythonPackages({ pythonPackages: [] }), []);
+
+  // 2) 合法清单原样返回并去空白
+  assert.deepEqual(
+    readPythonPackages({
+      pythonPackages: ["pytest==9.1.1", " pluggy==1.6.0 "],
+    }),
+    ["pytest==9.1.1", "pluggy==1.6.0"],
+  );
+
+  // 3) 结构不符 fail loud（不静默当空表——那会让出包悄悄少装包）
+  assert.throws(
+    () => readPythonPackages({ pythonPackages: "pytest==9.1.1" }),
+    /必须是数组/,
+  );
+  for (const bad of ["pytest", "pytest==", "==1.0", "", 42, null]) {
+    assert.throws(
+      () => readPythonPackages({ pythonPackages: [bad] }),
+      /name==version/,
+      `非法项必须拦下：${JSON.stringify(bad)}`,
+    );
+  }
+
+  // 4) 合并写只换 targets 一节，顶层 pythonPackages 必须原样保留
+  //    （否则打包机跑一次 --write-lock 就会把附加包清单悄悄抹掉）
+  const merged = mergeLockTargets(
+    { schema: LOCK_SCHEMA, pythonPackages: ["pytest==9.1.1"], targets: {} },
+    "win-x64",
+    {
+      python: buildLockEntry({
+        version: "3.12",
+        fileName: "python.zip",
+        sha256: "b".repeat(64),
+        url: "https://example.invalid/python.zip",
+      }),
+    },
+  );
+  assert.deepEqual(merged.pythonPackages, ["pytest==9.1.1"]);
+
+  // 5) 仓库里那份真 lock 必须能被本函数读通（真实文件护栏）
+  const realLock = JSON.parse(
+    readFileSync(path.join(rootDir, "runtime-lock.json"), "utf8"),
+  );
+  const real = readPythonPackages(realLock);
+  assert.ok(real.length > 0, "随包 Python 至少要钉一个包（当前：pytest）");
+  assert.ok(
+    real.some((item) => item.startsWith("pytest==")),
+    "清单里必须有 pytest——沙箱内跑 Python 测试靠它",
+  );
+});
+
+// --- GitHub Actions 护栏 ---
+//
+// 拦的是「Actions UI 显示绿色、实际什么都没干」这一类失败：job 级 `if` 与 workflow 级
+// `concurrency` 拿不到 `matrix` 上下文，表达式不报错只取空值；复用工作流的顶层 `permissions`
+// 只能收窄会把调用方给的 write 压回 read；`pnpm dev` 在 CI 里因 --env-file 缺文件必死。
+// 本轮在同一次提交里撞中三种，所以护栏必须带**反例夹具**——只验真仓通过等于没验。
+test("Actions 护栏：真仓通过，七类「静默不干活/假红」各自被拦", async () => {
+  const real = checkActions({ rootDir });
+  assert.ok(
+    real.files.length >= 4,
+    `应扫到 .github/workflows 下的工作流，实际 ${real.files.length} 个`,
+  );
+  assert.deepEqual(
+    real.errors,
+    [],
+    `真仓护栏不应红：\n  - ${real.errors.join("\n  - ")}`,
+  );
+
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-actions-"));
+  const dir = path.join(fixtureRoot, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  const put = (name, text) =>
+    writeFileSync(path.join(dir, `${name}.yml`), text, "utf8");
+  const clean = `name: clean
+on: push
+jobs:
+  a:
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 干活
+        run: |
+          echo hi
+`;
+  try {
+    put("clean", clean);
+    assert.deepEqual(
+      checkActions({ rootDir: fixtureRoot }).errors,
+      [],
+      "干净夹具必须通过，否则护栏在误伤",
+    );
+
+    put(
+      "a1",
+      `name: a1
+on: push
+jobs:
+  mac:
+    if: github.event.inputs.platform == 'both' || github.event.inputs.platform == matrix.os
+    runs-on: macos-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    let result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /job「mac」.*matrix/s.test(line)),
+      `A1 应拦住 job 级 matrix：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a1.yml"));
+
+    put(
+      "a2",
+      `name: a2
+on: push
+concurrency:
+  group: codeql-\${{ matrix.language }}
+  cancel-in-progress: true
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /concurrency\.group/.test(line)),
+      `A2 应拦住 concurrency 引用 matrix：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a2.yml"));
+
+    put(
+      "a3",
+      `name: a3
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /复用工作流写了顶层/.test(line)),
+      `A3 应拦住复用工作流的顶层 permissions：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a3.yml"));
+
+    put(
+      "a4",
+      `name: a4
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 起服务
+        run: |
+          pnpm dev
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /pnpm dev/.test(line)),
+      `A4 应拦住 run 里的 pnpm dev：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a4.yml"));
+
+    put(
+      "a5",
+      `name: a5
+on: push
+permissions:
+  contents: read
+jobs:
+  a:
+    permissions:
+      contents: \${{ github.event_name == 'push' && 'write' || 'read' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) =>
+        /permissions 的 contents 写了表达式/.test(line),
+      ),
+      `A5 应拦住 permissions 里的表达式：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a5.yml"));
+
+    put(
+      "a6",
+      `name: a6
+on: push
+jobs:
+  a:
+    runs-on: windows-latest
+    steps:
+      - name: 干活
+        run: |
+          set -euo pipefail
+          echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /没有任何显式 shell/.test(line)),
+      `A6 应拦住「整 job 没声明 shell」的 bash 写法：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a6.yml"));
+
+    put(
+      "a7",
+      `name: a7
+on: push
+jobs:
+  a:
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取退出码
+        run: |
+          set -uo pipefail
+          scan --out x.sarif
+          code=$?
+          echo "code=$code"
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /取退出码/.test(line)),
+      `A7 应拦住 bash -e 下裸写 code=$?（这一步永远执行不到）：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a7.yml"));
+
+    // 正确写法：先置 0，再用 || 捕获——不得被 A7 误伤
+    put(
+      "a7ok",
+      `name: a7ok
+on: push
+jobs:
+  a:
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取退出码
+        run: |
+          set -uo pipefail
+          code=0
+          scan --out x.sarif || code=$?
+          echo "code=$code"
+`,
+    );
+    assert.deepEqual(
+      checkActions({ rootDir: fixtureRoot }).errors,
+      [],
+      "A7 不得误伤 `cmd || code=$?` 的正确写法",
+    );
+    rmSync(path.join(dir, "a7ok.yml"));
+
+    // 回到干净态必须再次全绿（证明上面每条都是「这一处」引起的，不是常驻误报）
+    assert.deepEqual(checkActions({ rootDir: fixtureRoot }).errors, []);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+// --- fetch-runtimes 的 `--only` 解析 ---
+// 文件头用法写的是空格形式（`--only node,python`），而解析器曾只认 `--only=`：
+// 结果是这条命令**静默变成「全部运行时」**，既慢又误导（实测过一次）。
+test("fetch-runtimes 的 --only 两种写法都必须生效", async () => {
+  const { parseArgs } = await import("../scripts/fetch-runtimes.mjs");
+  const available = ["node", "python", "uv", "jdk"];
+  assert.deepEqual(
+    parseArgs(["--only", "uv"], available).only,
+    ["uv"],
+    "空格形式的 --only 必须真的过滤，不能退回全部",
+  );
+  assert.deepEqual(parseArgs(["--only=node,uv"], available).only, [
+    "node",
+    "uv",
+  ]);
+  assert.deepEqual(parseArgs([], available).only, available);
+  assert.equal(parseArgs(["--only", "uv", "--force"], available).force, true);
+});
+
+// --- SEA 产物必须自带「以发布 exe 为基准」的文件型 require ---
+//
+// 懒解析只解决了**我们源码里**的四处外部包；`--external` 的包一旦被第三方代码
+// `require("pkg")` 命中，SEA 的内置 require 仍会抛 ERR_UNKNOWN_BUILTIN_MODULE。
+// 所以产物头部必须重绑定 require 并把 import.meta.url 指到 <exe>/server.cjs；
+// 「加了 external 但没加 banner」是最容易漏的一半。
+test("SEA 产物头部建立 exe 锚点的文件型 require", async () => {
+  const script = await readText("scripts/package-win.mjs");
+  const banner = /const seaBanner = `([\s\S]*?)`;/.exec(script)?.[1];
+  assert.ok(
+    banner,
+    "package-win.mjs 里找不到 seaBanner——external 会退回启动期裸 require",
+  );
+  assert.match(
+    banner,
+    /createRequire\(base\)/,
+    "banner 必须用 createRequire(base) 重绑定 require",
+  );
+  assert.match(
+    banner,
+    /require\("node:sea"\)\.isSea\(\)/,
+    "banner 必须区分 SEA 与普通 node 运行（否则 node server.cjs 会被错误锚定）",
+  );
+  assert.match(
+    banner,
+    /process\.execPath/,
+    "解析基准必须是发布 exe 位置，不能是构建机路径",
+  );
+  assert.match(
+    script,
+    /--banner:js=\$\{seaBanner\}/,
+    "banner 必须真的传给 esbuild，只写在字符串里等于没生效",
+  );
+  assert.match(
+    script,
+    /--define:import\.meta\.url=globalThis\.__kfwModuleUrl/,
+    "import.meta.url 必须映射到 banner 计算的 exe 基准（SEA 里 __filename 是构建机路径）",
+  );
+});
+
+// --- 外部原生包不许顶层静态 import ---
+//
+// Windows 打包走 Node SEA：`require` 在 SEA 内只认内建模块。esbuild 把
+// `--external` 的包（node-pty / @vscode/ripgrep / @napi-rs/canvas / sherpa-onnx-node）
+// 的顶层静态 import 打成**启动期** require，于是整个服务端启动即抛
+// `ERR_UNKNOWN_BUILTIN_MODULE`（实测：canvas 让 win 安装包 1 秒退出；ripgrep 同形）。
+// 正确写法是懒解析 `createRequire(import.meta.url)`——`import type` 会被编译器擦除，放行。
+test("SEA 外部原生包只能懒解析，禁止顶层值导入", async () => {
+  const SEA_EXTERNAL = [
+    "node-pty",
+    "@vscode/ripgrep",
+    "@napi-rs/canvas",
+    "sherpa-onnx-node",
+  ];
+  const pattern = new RegExp(
+    `^import\\s+(?!type\\b)[^;]*?from\\s+"(${SEA_EXTERNAL.join("|")})"`,
+    "mu",
+  );
+  // 先自证规则抓得住：这两条必须被识别，否则门禁是摆设。
+  assert.match(
+    'import { rgPath } from "@vscode/ripgrep";\n',
+    pattern,
+    "值级顶层 import 必须被抓到",
+  );
+  assert.doesNotMatch('import type * as pty from "node-pty";\n', pattern);
+
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name))
+        continue;
+      const source = readFileSync(full, "utf8");
+      if (pattern.test(source))
+        offenders.push(path.relative(rootDir, full).replaceAll("\\", "/"));
+    }
+  };
+  walk(path.join(rootDir, "apps/server/src"));
+  assert.deepEqual(
+    offenders,
+    [],
+    `以下文件顶层静态 import 了 SEA 外部原生包，会让 Windows 包启动即死：\n  ${offenders.join("\n  ")}`,
+  );
+});
+
+// 安装向导的品牌图必须**超采样**出图，不能按名义尺寸（页头 150×57 / 侧边 164×314）出：
+// 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
+// `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。
+// 按名义尺寸出图 = 上线就被放大 1.5 倍，用户看到的就是糊图（2026-09-19 实测，见
+// docs/日志.md §三十八）。这条守门禁只拦「退回名义尺寸」这种改法。
+test("安装向导品牌图按 DPI 超采样出图（退回名义尺寸即被拉伸成糊图）", async () => {
+  for (const [file, nominal] of [
+    ["installer-header.bmp", [150, 57]],
+    ["installer-sidebar.bmp", [164, 314]],
+  ]) {
+    const filePath = path.join(rootDir, "apps/desktop/src-tauri", file);
+    const bmp = await readFile(filePath);
+    assert.equal(bmp.toString("ascii", 0, 2), "BM", `${file} 不是 BMP`);
+    assert.equal(
+      bmp.readUInt16LE(28),
+      24,
+      `${file} 必须是 24 位 BMP（MUI 只吃这个）`,
+    );
+    const width = bmp.readInt32LE(18);
+    const height = Math.abs(bmp.readInt32LE(22));
+    assert.ok(
+      width >= nominal[0] * 2 && height >= nominal[1] * 2,
+      `${file} 是 ${width}×${height}，低于 2× 下限（名义 ${nominal[0]}×${nominal[1]}）——` +
+        "MUI 会把它拉伸到 DPI 缩放后的控件大小，按名义尺寸出图在 150% 屏上就是糊的",
+    );
+  }
+});
+
+test("env 权威表：真仓校验通过（全部 KENFUTWORK_/LOOMIC_ 引用已登记）", () => {
+  const { checkEnv } = envModule;
+  const { errors, files } = checkEnv({ rootDir });
+  assert.ok(files.length > 0, "env 扫描面不应为空");
+  assert.deepEqual(errors, [], `env 校验失败：\n  - ${errors.join("\n  - ")}`);
+});
+
+test("env 门禁 fixture：未登记名 / 读者漂移 / 样例互锁各自被拦截", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-env-fixture-"));
+  const registryPath = path.join(fixtureRoot, "tests", "env-registry.json");
+  const examplePath = path.join(fixtureRoot, ".env.example");
+  const readerRel = "apps/server/src/a.ts";
+  const readerPath = path.join(fixtureRoot, readerRel);
+
+  const registry = {
+    vars: {
+      KFW_FIXTURE_A: {
+        surface: "server",
+        readers: [readerRel],
+        inExamples: true,
+        status: "active",
+      },
+    },
+    legacy: {
+      LOOMIC_FIXTURE_OLD: { allowedIn: ["src/legacy.ts"], reason: "兼容" },
+    },
+  };
+
+  await mkdir(path.join(fixtureRoot, "tests"), { recursive: true });
+  await mkdir(path.join(fixtureRoot, "apps/server/src"), { recursive: true });
+  writeFileSync(registryPath, JSON.stringify(registry));
+  writeFileSync(examplePath, "KFW_FIXTURE_A=1\n");
+  writeFileSync(readerPath, "use KFW_FIXTURE_A;");
+
+  // 干净基线：全链路通过
+  let result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.deepEqual(result.errors, []);
+
+  // 读者文件消失（契约漂移·文件被删）→ fail
+  await rm(readerPath);
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /读者文件不存在或不可读/.test(line)),
+    `读者文件消失应被拦截：${JSON.stringify(result.errors)}`,
+  );
+
+  // 读者漂移（文件在但不引用该名）→ fail
+  writeFileSync(readerPath, "export {};");
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /已不再引用/.test(line)),
+    `读者漂移应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  writeFileSync(readerPath, "use KFW_FIXTURE_A;");
+
+  // 未登记的新名出现 → fail
+  mkdirSync(path.join(fixtureRoot, "src"), { recursive: true });
+  writeFileSync(
+    path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"),
+    "KENFUTWORK_FIXTURE_NEW=1;",
+  );
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /未登记进/.test(line)),
+    `表外新名应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  rmSync(path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"));
+
+  // 旧前缀出现在白名单之外的文件 → fail
+  writeFileSync(
+    path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"),
+    "LOOMIC_FIXTURE_OLD=1;",
+  );
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.ok(
+    result.errors.some((line) => /旧前缀 LOOMIC_FIXTURE_OLD/.test(line)),
+    `白名单外的 LOOMIC_ 引用应被拦截：${JSON.stringify(result.errors)}`,
+  );
+  rmSync(path.join(fixtureRoot, "apps", "server", "src", "rogue.ts"));
+
+  // 回到干净态：应通过
+  result = envModule.checkEnv({ rootDir: fixtureRoot });
+  assert.deepEqual(result.errors, []);
+});
+
+// --- 桌面打包的 SEA 边界：external 原生模块只能运行时懒加载 ---
+//
+// 打包服务端是**单文件 SEA**（Node 22）：esbuild 把 `--external:` 的依赖留成 require，
+// 而 SEA 的内建 require **只认内置模块**——模块顶层的静态 import 会在**加载期**抛
+// `ERR_UNKNOWN_BUILTIN_MODULE`，把整个服务端起不来（2026-10-09 打包冒烟实测：
+// `@napi-rs/canvas` 与 `@vscode/ripgrep` 各自拖死过一次，桌面端当时直接打不开）。
+// 这些依赖只允许走 `createRequire(import.meta.url)("…")` 的懒加载（见 node-pty 先例）。
+// 本门禁用静态扫描把「再写回顶层 import / 裸 require」挡在提交前——运行期证据是
+// `pnpm smoke:desktop`，但那条要打包数分钟，坏掉的写法不该等到那时才发现。
+test("打包 external 原生模块不得静态 import（SEA 加载期会崩）", () => {
+  const externals = [
+    "node-pty",
+    "@napi-rs/canvas",
+    "@vscode/ripgrep",
+    "sherpa-onnx-node",
+  ];
+  const sourceRoot = path.join(rootDir, "apps", "server", "src");
+  const files = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (/\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name))
+        files.push(absolute);
+    }
+  };
+  walk(sourceRoot);
+  assert.ok(files.length > 0, "应扫描到服务端源码");
+
+  const offenders = [];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    for (const dependency of externals) {
+      const escaped = dependency.replace(/[.*+?^${}()|[\]\\/@]/g, "\\$&");
+      const patterns = [
+        // 值导入：`import x from "dep"`、`import "dep"`、`import { y } from "dep"`
+        // （`import type` 在编译期擦除，放行；type 位置的 `typeof import("dep")` 也放行）
+        new RegExp(
+          `^\\s*import\\s+(?!type\\b)[^;]*from\\s+["']${escaped}["']`,
+          "m",
+        ),
+        new RegExp(`^\\s*import\\s+["']${escaped}["']`, "m"),
+        // 裸 require("dep")：`requireFrom("dep")`、`nodeRequire("dep")` 不算
+        new RegExp(`(^|[^.\\w])require\\(\\s*["']${escaped}["']\\s*\\)`, "m"),
+        new RegExp(`(?<!typeof\\s)import\\(\\s*["']${escaped}["']`, "m"),
+      ];
+      if (patterns.some((pattern) => pattern.test(source)))
+        offenders.push(`${path.relative(rootDir, file)} → ${dependency}`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `这些文件把打包 external 写成了静态 import/裸 require（SEA 加载期会崩，改用 createRequire 懒加载）：\n${offenders.join("\n")}`,
+  );
+});
+
+async function zcodeProvenanceFixture(t) {
+  const root = await mkdtemp(path.join(tmpdir(), "kfw-provenance-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const donor = path.join(root, "references/zcode");
+  await mkdir(path.join(donor, "src"), { recursive: true });
+  await mkdir(path.join(root, "copied"));
+  await mkdir(path.join(root, "packages/third-party/zcode"), {
+    recursive: true,
+  });
+  const git = async (...args) =>
+    (await execFileAsync("git", ["-C", donor, ...args])).stdout.trim();
+  const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  await git("init", "-q");
+  await git("config", "user.name", "provenance-fixture");
+  await git("config", "user.email", "provenance@example.invalid");
+  await git("config", "core.autocrlf", "false");
+  const original = "original source\n",
+    copied = "explicit adaptation\n";
+  const binary = Buffer.from([0, 10, 13, 255, 10]);
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "1.0.0" }),
+  );
+  await writeFile(path.join(donor, "src/example.ts"), original);
+  await writeFile(path.join(donor, "src/说明 空白.bin"), binary);
+  await git("add", "package.json", "src/example.ts", "src/说明 空白.bin");
+  await git("commit", "-qm", "original fixture");
+  const revision = await git("rev-parse", "HEAD");
+  await writeFile(path.join(root, "copied/example.ts"), copied);
+  await writeFile(path.join(root, "copied/说明 空白.bin"), binary);
+  const inventory = {
+    revision,
+    version: "1.0.0",
+    records: [
+      {
+        source: "references/zcode/src/example.ts",
+        target: "copied/example.ts",
+        sha256: hash(original),
+        copiedSha256: hash(copied),
+      },
+      {
+        source: "references/zcode/src/说明 空白.bin",
+        target: "copied/说明 空白.bin",
+        sha256: hash(binary),
+        copiedSha256: hash(binary),
+      },
+    ],
+  };
+  const save = () =>
+    writeFile(
+      path.join(root, "packages/third-party/zcode/来源清单.json"),
+      JSON.stringify(inventory),
+    );
+  await save();
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "2.0.0" }),
+  );
+  await writeFile(path.join(donor, "src/example.ts"), "new upstream source\n");
+  await git("add", "package.json", "src/example.ts");
+  await git("commit", "-qm", "upstream update fixture");
+  return { root, donor, git, hash, inventory, save, original, binary };
+}
+
+test("ZCode provenance reads inventory commit without depending on reference HEAD or dirty files", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const head = await f.git("rev-parse", "HEAD");
+  await writeFile(
+    path.join(f.donor, "src/example.ts"),
+    "uncommitted upstream research\n",
+  );
+  const status = await f.git("status", "--porcelain");
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("status", "--porcelain"), status);
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "unregistered target edit\n",
+  );
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["副本字节漂移"] },
+  ]);
+});
+
+test("ZCode baseline upgrades are driven by inventory metadata and real source/target hashes", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  f.inventory.revision = await f.git("rev-parse", "HEAD");
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单版本/);
+  f.inventory.version = "2.0.0";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift[0].reasons, [
+    "清单基线来源不符",
+  ]);
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  f.inventory.records[0].copiedSha256 = f.hash("new explicit adaptation\n");
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "new explicit adaptation\n",
+  );
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  f.inventory.records[0].source = "references/zcode/src/missing.ts";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift[0].reasons, [
+    "清单基线来源不符",
+  ]);
+});
+
+test("ZCode staged upgrades verify each file against its declared upstream commit", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  Object.assign(f.inventory.records[0], {
+    sourceRevision: revision,
+    sha256: f.hash("new upstream source\n"),
+  });
+  await f.save();
+  await writeFile(
+    path.join(f.donor, "src/example.ts"),
+    "parallel upstream research\n",
+  );
+  const status = await f.git("status", "--porcelain");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  assert.equal(await f.git("status", "--porcelain"), status);
+  assert.equal(await f.git("show-ref"), refs);
+});
+
+test("ZCode provenance rejects malformed or unregistered per-file revisions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const sourceRevision of [null, "HEAD", "f".repeat(40)]) {
+    f.inventory.records[0].sourceRevision = sourceRevision;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /来源提交无效或未登记/,
+    );
+  }
+});
+
+test("ZCode provenance rejects invalid revision registries and conflicting baseline versions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const revisions of [
+    null,
+    [],
+    { HEAD: "2.0.0" },
+    { [f.inventory.revision]: "different-version" },
+    { [f.inventory.revision]: "" },
+  ]) {
+    f.inventory.revisions = revisions;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /提交版本登记无效/,
+    );
+  }
+});
+
+test("ZCode mixed revisions require Git objects instead of one working-tree mirror", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root, sourceRoot: f.root }),
+    /混合来源.*Git/,
+  );
+});
+
+test("ZCode staged sources retain independent version, original and copied-byte checks", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "wrong-version" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单版本/);
+  f.inventory.revisions[revision] = "2.0.0";
+  f.inventory.records[0].source = "references/zcode/src/missing.ts";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["清单基线来源不符"] },
+  ]);
+  f.inventory.records[0].source = "references/zcode/src/example.ts";
+  await f.save();
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "unregistered edit\n",
+  );
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["副本字节漂移"] },
+  ]);
+  const missing = "f".repeat(40);
+  f.inventory.records[0].sourceRevision = missing;
+  f.inventory.revisions[missing] = "3.0.0";
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root }),
+    /--prepare-source/,
+  );
+});
+
+test("ZCode staged CI prepares every declared commit without moving reference refs", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  await writeFile(path.join(f.donor, "package.json"), '{"version":"3.0.0"}');
+  await f.git("add", "package.json");
+  await f.git("commit", "-qm", "later upstream fixture");
+  const origin = `${f.donor}-origin`;
+  await execFileAsync("git", ["clone", "-q", "--bare", f.donor, origin]);
+  await rm(f.donor, { recursive: true });
+  await execFileAsync("git", [
+    "clone",
+    "-q",
+    "--depth=1",
+    pathToFileURL(origin).href,
+    f.donor,
+  ]);
+  const head = await f.git("rev-parse", "HEAD");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, prepare: true }).drift,
+    [],
+  );
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("show-ref"), refs);
+  assert.equal(await f.git("status", "--porcelain"), "");
+});
+
+test("ZCode shallow CI preparation fetches baseline objects without moving any existing refs", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const origin = `${f.donor}-origin`;
+  await execFileAsync("git", ["clone", "-q", "--bare", f.donor, origin]);
+  await rm(f.donor, { recursive: true });
+  await execFileAsync("git", [
+    "clone",
+    "-q",
+    "--depth=1",
+    pathToFileURL(origin).href,
+    f.donor,
+  ]);
+  const head = await f.git("rev-parse", "HEAD"),
+    refs = await f.git("show-ref");
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root }),
+    /--prepare-source/,
+  );
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, prepare: true }).drift,
+    [],
+  );
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("show-ref"), refs);
+  assert.equal(await f.git("status", "--porcelain"), "");
+});
+
+test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/target integrity", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const mirror = path.join(f.root, "mirror");
+  const donor = path.join(mirror, "references/zcode");
+  await mkdir(path.join(donor, "src"), { recursive: true });
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "1.0.0" }),
+  );
+  await writeFile(
+    path.join(donor, "src/example.ts"),
+    f.original.replaceAll("\n", "\r\n"),
+  );
+  await writeFile(path.join(donor, "src/说明 空白.bin"), f.binary);
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, sourceRoot: mirror }).drift,
+    [],
+  );
+  await writeFile(
+    path.join(donor, "src/说明 空白.bin"),
+    Buffer.from([0, 13, 10, 13, 255, 10]),
+  );
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, sourceRoot: mirror }).drift[0].reasons,
+    ["清单基线来源不符"],
+  );
+  f.inventory.records[0].target = "../outside";
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单记录无效/);
+});
+
+test("contribution, CLA, and commercial-license documents are wired", async () => {
+  const required = [
+    "CONTRIBUTING.md",
+    "legal/CLA.md",
+    "legal/GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "legal/COMMERCIAL-LICENSING.md",
+    "legal/COPYRIGHT.md",
+    "licenses/loomic-MIT.txt",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/ISSUE_TEMPLATE/feature_request.yml",
+    ".github/ISSUE_TEMPLATE/config.yml",
+    ".github/CODEOWNERS",
+  ];
+  for (const file of required) {
+    assert.ok(existsSync(path.join(rootDir, file)), `${file} 应存在`);
+  }
+
+  const readme = await readText("README.md");
+  for (const link of [
+    "CONTRIBUTING.md",
+    "legal/CLA.md",
+    "legal/COMMERCIAL-LICENSING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "legal/COPYRIGHT.md",
+  ]) {
+    assert.match(
+      readme,
+      new RegExp(`\\]\\(${link.replaceAll(".", "\\.")}\\)`),
+      `README 应链接 ${link}`,
+    );
+  }
+
+  for (const script of ["scripts/package-mac.mjs", "scripts/package-win.mjs"]) {
+    const source = await readText(script);
+    assert.match(source, /COPYRIGHT\.md/);
+    assert.match(source, /licenses\/loomic-MIT\.txt/);
+  }
+
+  const eula = await readText("legal/EULA.md");
+  assert.match(eula, /社区版/);
+  assert.match(eula, /商业版/);
+  assert.match(eula, /版本：2026-10-21/);
+  assert.match(eula, /不会为了仅在商业版提供/);
+
+  const commercial = await readText("legal/COMMERCIAL-LICENSING.md");
+  assert.match(commercial, /社区版承诺/);
+
+  const cla = await readText("legal/CLA.md");
+  assert.match(cla, /1\.8 \*\*关联方\*\*/);
+  assert.match(cla, /本协议第 3–9、11、12 条（包括第 6 条陈述与保证）/);
+  assert.match(cla, /本协议不授予你对商业版的任何使用许可/);
+  assert.match(cla, /中英文不一致时以中文为准/);
+  assert.match(cla, /13\.1\.1 \*\*个人信息处理告知\*\*/);
+  assert.match(cla, /15\. 项目方签署与授权/);
+  assert.match(cla, /future73807 授权 IsKenKenYa/);
+  assert.match(cla, /8\.5 \*\*社区版永久开源承诺\*\*/);
+  assert.match(cla, /未披露的第三方作品不视为本协议项下的贡献/);
+  assert.match(cla, /你无义务为贡献提供支持/);
+  assert.match(cla, /附件 B-1：授权员工/);
+  assert.match(cla, /issue、讨论、邮件列表/);
+
+  const privacy = await readText("legal/PRIVACY.md");
+  assert.match(privacy, /## 13\. 贡献者 CLA 签署记录/);
+  assert.match(privacy, /SAP/);
+  assert.match(privacy, /## 14\. 变更与联系/);
+
+  const thirdParty = await readText("legal/THIRD-PARTY-NOTICES.md");
+  assert.match(thirdParty, /Loomic/);
+  assert.match(thirdParty, /商业版资产合规/);
+
+  const docsIndex = await readText("docs/README.md");
+  assert.match(docsIndex, /DEC-24/);
+  assert.match(docsIndex, /DEC-25/);
+
+  const plan = await readText("docs/方案设计/改造计划.md");
+  assert.match(plan, /\[DEC-24\]/);
+  assert.match(plan, /\[DEC-25\]/);
 });

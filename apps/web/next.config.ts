@@ -1,7 +1,60 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import type { NextConfig } from "next";
+
+/**
+ * 读取仓库根 `.env.local`（server 用 `--env-file` 读同一个文件）。
+ *
+ * 为什么要在 web 侧也读：Next 默认只看 `apps/web/.env*` 与 shell 环境，于是
+ * 「改一个文件配好前后端」做不到——`NEXT_PUBLIC_SERVER_BASE_URL`（请求 baseUrl）
+ * 写在根文件里对 web 无效。这里在配置期显式加载一次：**已存在的环境变量优先**
+ * （shell/CI 注入的不会被覆盖），只补缺的键。
+ *
+ * 解析刻意不用正则：按换行切、`trim()` 收掉行尾 CR，全程普通字符串。
+ */
+function loadRootEnvLocal(): void {
+  const file = path.resolve(process.cwd(), "..", "..", ".env.local");
+  if (!existsSync(file)) return;
+  for (const rawLine of readFileSync(file, "utf8").split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    const first = value.slice(0, 1);
+    const last = value.slice(-1);
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadRootEnvLocal();
 
 const nextConfig: NextConfig = {
   output: "export",
+  // Next 16 dev 默认把 127.0.0.1 视为跨源，直接拦截 /_next/*（含 HMR）资源请求。
+  // 后果极具迷惑性：SSR 的 HTML 与加载屏正常返回、curl 也能取到所有 chunk，但浏览器
+  // 拿不到客户端脚本 → 永不 hydrate → 启动加载屏常驻，且服务端看不到 /api/instance。
+  // 项目常规入口是 localhost（KENFUTWORK_WEB_ORIGIN），但开发/自动化常用 127.0.0.1，
+  // 故显式放行该 host。生产为静态导出，不经 dev server，不受影响。
+  allowedDevOrigins: ["127.0.0.1"],
+  // 开发代理下的 SSE 必须不压缩：`/api/code-ui/events` 是长连接事件流，被 gzip 后
+  // 压缩器要攒满一块才吐字节，首帧永远到不了浏览器 → Code 壳的 connect() 永不 resolve，
+  // 整个工作台卡在启动加载屏（实测：直连 3001 首帧 10ms，经 3000 代理 7s 无首帧且
+  // content-encoding=gzip）。生产是静态导出，不经这个代理，不受影响。
+  compress: false,
+  experimental: {
+    // 「打开文件夹」在服务端弹系统对话框，请求要等人选完（服务端预算 10 分钟）。
+    // dev 代理默认几十秒就 socket hang up，浏览器只拿到 500，看起来像「点了没反应」。
+    // 桌面 / 自托管形态 UI 与服务端同源，不经这个代理，不受影响。
+    proxyTimeout: 12 * 60 * 1000,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -12,12 +65,11 @@ const nextConfig: NextConfig = {
   },
 };
 
-// 开发期同源代理：NEXT_PUBLIC_SERVER_BASE_URL 留空时，/api/* 经 dev server
-// 代理到本地 API（3001），避免跨域。静态导出（production build）不受影响。
-if (
-  process.env.NODE_ENV !== "production" &&
-  !process.env.NEXT_PUBLIC_SERVER_BASE_URL
-) {
+// 开发期同源代理：/api/* 一律经 dev server 代理到本地 API（3001），避免跨域。
+// 不看 NEXT_PUBLIC_SERVER_BASE_URL 是否设置——code-ui 内嵌面（surfaceApi）拿到的
+// apiBase 在部分启动时序下会回落同源（workbench 实测：菜单词表 404 静默隐藏执行方式组），
+// 同源代理永远在线才能保证 iframe 内相对路径可用。静态导出（production build）不受影响。
+if (process.env.NODE_ENV !== "production") {
   nextConfig.rewrites = async () => ({
     beforeFiles: [
       {

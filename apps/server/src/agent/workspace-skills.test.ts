@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
-import { createWorkspaceSkillsLoader } from "./workspace-skills.js";
+import { createInstanceSkillsLoader } from "./workspace-skills.js";
 
 const CANVAS_ID = "canvas-1";
-const WORKSPACE_ID = "ws-1";
+const INSTANCE_ID = "ws-1";
 
 function createFakes(
   options: {
-    canvasWorkspaceId?: string | null;
+    canvasInstanceId?: string | null;
     files?: Array<{ content: string; path: string; skillId: string }>;
     skills?: Array<{
       description: string;
@@ -24,25 +24,28 @@ function createFakes(
   const canvasQueries: string[] = [];
 
   const canvases = {
-    findById: async () => null,
-    findWorkspaceIdByCanvas: async (canvasId: string) => {
+    findById: async (instanceId: string, canvasId: string) => {
       canvasQueries.push(canvasId);
-      return options.canvasWorkspaceId === undefined
-        ? WORKSPACE_ID
-        : options.canvasWorkspaceId;
+      const canvasInstanceId =
+        options.canvasInstanceId === undefined
+          ? INSTANCE_ID
+          : options.canvasInstanceId;
+      return canvasInstanceId === instanceId
+        ? { id: canvasId, content: {} }
+        : null;
     },
     saveContent: async () => 1,
   } as unknown as CanvasRepository;
 
   const skills = {
     listSkillFiles: async (
-      _workspaceId: string,
+      _instanceId: string,
       skillIds: readonly string[],
     ) => {
       fileQueries.push(skillIds);
       return options.files ?? [];
     },
-    listWorkspaceSkills: async () =>
+    listInstanceSkills: async () =>
       options.skills ?? [
         {
           description: "海报生成",
@@ -57,14 +60,14 @@ function createFakes(
   return {
     canvasQueries,
     fileQueries,
-    loader: createWorkspaceSkillsLoader({ canvases, skills }),
+    loader: createInstanceSkillsLoader({ canvases, skills }),
   };
 }
 
 describe("workspace-skills loader（技能加载缝）", () => {
-  it("经画布解析工作区，返回启用技能的元数据与正文", async () => {
+  it("显式实例归属校验画布后加载，返回启用技能的元数据与正文", async () => {
     const { canvasQueries, loader } = createFakes();
-    const entries = await loader(CANVAS_ID);
+    const entries = await loader(INSTANCE_ID, CANVAS_ID);
 
     expect(canvasQueries).toEqual([CANVAS_ID]);
     expect(entries).toEqual([
@@ -98,7 +101,7 @@ describe("workspace-skills loader（技能加载缝）", () => {
       ],
     });
 
-    const entries = await loader(CANVAS_ID);
+    const entries = await loader(INSTANCE_ID, CANVAS_ID);
     expect(entries.map((e) => e.name)).toEqual(["on"]);
     expect(fileQueries).toEqual([["s-on"]]);
   });
@@ -112,7 +115,7 @@ describe("workspace-skills loader（技能加载缝）", () => {
       ],
     });
 
-    const [entry] = await loader(CANVAS_ID);
+    const [entry] = await loader(INSTANCE_ID, CANVAS_ID);
     expect(entry?.files).toEqual([
       { content: "print(1)", path: "scripts/a.py" },
       { content: "ref", path: "references/b.md" },
@@ -133,27 +136,27 @@ describe("workspace-skills loader（技能加载缝）", () => {
       ],
     });
 
-    await expect(loader(CANVAS_ID)).resolves.toEqual([]);
+    await expect(loader(INSTANCE_ID, CANVAS_ID)).resolves.toEqual([]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("empty-skill"));
     warn.mockRestore();
   });
 
-  it("画布解析不到工作区时返回空（不起查询）", async () => {
-    const { fileQueries, loader } = createFakes({ canvasWorkspaceId: null });
-    await expect(loader(CANVAS_ID)).resolves.toEqual([]);
+  it("画布不属于显式实例时返回空（不起查询）", async () => {
+    const { fileQueries, loader } = createFakes({ canvasInstanceId: null });
+    await expect(loader(INSTANCE_ID, CANVAS_ID)).resolves.toEqual([]);
     expect(fileQueries).toEqual([]);
   });
 
   it("数据访问失败降级为空数组（技能是增强，不炸主链路）", async () => {
-    const broken = createWorkspaceSkillsLoader({
+    const broken = createInstanceSkillsLoader({
       canvases: {
-        findWorkspaceIdByCanvas: async () => {
+        findById: async () => {
           throw new Error("connection reset");
         },
       } as unknown as CanvasRepository,
       skills: {} as unknown as SkillCatalogRepository,
     });
 
-    await expect(broken(CANVAS_ID)).resolves.toEqual([]);
+    await expect(broken(INSTANCE_ID, CANVAS_ID)).resolves.toEqual([]);
   });
 });

@@ -1,0 +1,84 @@
+{
+  "name": "@zcode/shared",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./runtime-env": {
+      "types": "./dist/runtimeEnv.d.ts",
+      "default": "./dist/runtimeEnv.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "default": "./dist/mcp.js"
+    },
+    "./runtime-tool-runtime": {
+      "types": "./dist/runtime-tool-runtime.d.ts",
+      "default": "./dist/runtime-tool-runtime.js"
+    },
+    "./node-repl-browser-broker": {
+      "types": "./dist/browser-use/nodeReplBroker.d.ts",
+      "default": "./dist/browser-use/nodeReplBroker.js"
+    },
+    "./process-diagnostic": {
+      "types": "./dist/process-diagnostic.d.ts",
+      "default": "./dist/process-diagnostic.js"
+    },
+    "./model-selection": {
+      "types": "./dist/model-selection.d.ts",
+      "default": "./dist/model-selection.js"
+    },
+    "./account-provider-state": {
+      "types": "./dist/account-provider-state.d.ts",
+      "default": "./dist/account-provider-state.js"
+    },
+    "./model-config": {
+      "types": "./dist/model-config.d.ts",
+      "default": "./dist/model-config.js"
+    },
+    "./config-schema": {
+      "types": "./dist/config-schema.d.ts",
+      "default": "./dist/config-schema.js"
+    },
+    "./zcodeEndpoint": {
+      "types": "./dist/zcodeEndpoint.d.ts",
+      "default": "./dist/zcodeEndpoint.js"
+    },
+    "./workspaceFileSearch": {
+      "types": "./dist/workspaceFileSearch.d.ts",
+      "default": "./dist/workspaceFileSearch.js"
+    },
+    "./workspaceFileEntriesCodec": {
+      "types": "./dist/workspaceFileEntriesCodec.d.ts",
+      "default": "./dist/workspaceFileEntriesCodec.js"
+    },
+    "./zcode-protocol-v4": {
+      "types": "./dist/zcode-protocol-v4/index.d.ts",
+      "default": "./dist/zcode-protocol-v4/index.js"
+    },
+    "./workspace-hook-discovery": {
+      "types": "./dist/workspace-hook-discovery.d.ts",
+      "default": "./dist/workspace-hook-discovery.js"
+    },
+    "./workspace-hook-review-monotonicity": {
+      "types": "./dist/workspace-hook-review-monotonicity.d.ts",
+      "default": "./dist/workspace-hook-review-monotonicity.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zcode/model-option-map": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,647 @@
+"use client";
+
+import type {
+  VoiceDiagnoseReport,
+  VoiceModelCandidate,
+  VoiceSettings,
+} from "@kenfutwork/shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { VOICE_SETTINGS_CHANGED_EVENT } from "@/components/composer-voice";
+import { formatBytes } from "@/components/workbench/index-library-section";
+import { ListLoading } from "@/components/workbench/list-state";
+import {
+  cancelVoiceModelDownload,
+  downloadVoiceModel,
+  fetchVoiceDiagnose,
+  fetchVoiceModels,
+  fetchVoiceSettings,
+  removeVoiceModel,
+  runVoiceDiagnose,
+  updateVoiceSettings,
+} from "@/lib/server-api";
+import {
+  SETTINGS_ROW,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
+import {
+  adviseVoiceProfile,
+  gradeAsrRtf,
+  gradeLlm,
+  type VoiceProfileAdvice,
+} from "@/lib/voice-profile";
+
+/**
+ * 设置 → 语音。
+ *
+ * **文案只写标签，不写句子**（用户口径 2026-09-27）：不解释「松开后会怎样」、
+ * 不推导性能、不把需求或实现说明抄进界面——一眼看完才算合格。
+ * 方案与理由留在 `docs/插件/语音助手插件规划.md` 与代码注释里。
+ */
+
+type SegmentKey = "listen" | "think" | "speak";
+
+const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
+  { key: "listen", label: "听" },
+  { key: "think", label: "想" },
+  { key: "speak", label: "说" },
+];
+
+export function VoiceSettingsSection({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
+  const [settings, setSettings] = useState<VoiceSettings | null>(null);
+  const [models, setModels] = useState<VoiceModelCandidate[]>([]);
+  const [report, setReport] = useState<VoiceDiagnoseReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  /** 在跑的检测（取消按钮按它中止；服务端在客户端断开时停止探针）。 */
+  const diagnoseAbort = useRef<AbortController | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [settingsResponse, modelsResponse, diagnoseResponse] =
+        await Promise.all([
+          fetchVoiceSettings(accessToken),
+          fetchVoiceModels(accessToken),
+          fetchVoiceDiagnose(accessToken),
+        ]);
+      setSettings(settingsResponse.settings);
+      setModels(modelsResponse.models);
+      setReport(diagnoseResponse.report);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "读取失败。");
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const downloading = models.some(
+    (model) => model.download.state === "downloading",
+  );
+  useEffect(() => {
+    if (!downloading) {
+      return;
+    }
+    const timer = setInterval(() => {
+      void fetchVoiceModels(accessToken)
+        .then((response) => setModels(response.models))
+        .catch(() => undefined);
+    }, 1_000);
+    return () => clearInterval(timer);
+  }, [accessToken, downloading]);
+
+  const advice: VoiceProfileAdvice = useMemo(() => adviceOf(report), [report]);
+  const performanceWarning = useMemo(
+    () => (report ? insufficientNote(report, advice) : null),
+    [advice, report],
+  );
+
+  const patch = useCallback(
+    async (body: Parameters<typeof updateVoiceSettings>[1], label: string) => {
+      setBusy(label);
+      setMessage(null);
+      try {
+        const response = await updateVoiceSettings(accessToken, body);
+        setSettings(response.settings);
+        // 同页输入框据此立刻换档，不必重载页面
+        window.dispatchEvent(
+          new CustomEvent(VOICE_SETTINGS_CHANGED_EVENT, {
+            detail: response.settings,
+          }),
+        );
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "保存失败。");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [accessToken],
+  );
+
+  const select = useCallback(
+    (segment: SegmentKey, candidate: VoiceModelCandidate | null) =>
+      patch(
+        {
+          [segment]: candidate
+            ? {
+                kind: candidate.kind,
+                id: candidate.id,
+                ...(candidate.model ? { model: candidate.model } : {}),
+              }
+            : null,
+        } as Record<string, unknown>,
+        segment,
+      ),
+    [patch],
+  );
+
+  const modelAction = useCallback(
+    async (action: "download" | "cancel" | "remove", modelId: string) => {
+      setBusy(modelId);
+      setMessage(null);
+      try {
+        await (action === "download"
+          ? downloadVoiceModel(accessToken, modelId)
+          : action === "cancel"
+            ? cancelVoiceModelDownload(accessToken, modelId)
+            : removeVoiceModel(accessToken, modelId));
+        const refreshed = await fetchVoiceModels(accessToken);
+        setModels(refreshed.models);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "操作失败。");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [accessToken],
+  );
+
+  const runDiagnose = useCallback(async () => {
+    const controller = new AbortController();
+    diagnoseAbort.current = controller;
+    setDiagnosing(true);
+    setMessage(null);
+    try {
+      const response = await runVoiceDiagnose(accessToken, controller.signal);
+      setReport(response.report);
+    } catch (error) {
+      // 取消不是失败：点了「取消检测」不该看到一条红色报错
+      if (!controller.signal.aborted) {
+        setMessage(error instanceof Error ? error.message : "检测失败。");
+      }
+    } finally {
+      if (diagnoseAbort.current === controller) {
+        diagnoseAbort.current = null;
+        setDiagnosing(false);
+      }
+    }
+  }, [accessToken]);
+
+  const applyAdvice = useCallback(async () => {
+    await patch(
+      {
+        mode: advice.recommendedMode,
+        speakReplies: advice.recommendedSpeakReplies,
+      },
+      "advice",
+    );
+  }, [advice, patch]);
+
+  if (loading || !settings) {
+    return <ListLoading label="读取中…" rows={2} />;
+  }
+
+  return (
+    <section aria-label="语音" className="w-full">
+      <h3 className={SETTINGS_TITLE}>语音</h3>
+      <div className={`${SETTINGS_SECTION_GAP} w-full`}>
+        {/* 两个模式**横排**（能左右就别说上下）；听/想/说是模型清单，列表本身要竖排 */}
+        <fieldset aria-label="模式" className="w-full min-w-0">
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { value: "transcribe" as const, label: "只转文本" },
+                { value: "loop" as const, label: "完整回路" },
+              ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
+            ).map((option) => (
+              <label
+                key={option.value}
+                data-active={settings.mode === option.value}
+                className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted`}
+              >
+                <input
+                  type="radio"
+                  name="voice-mode"
+                  value={option.value}
+                  checked={settings.mode === option.value}
+                  onChange={() => void patch({ mode: option.value }, "mode")}
+                  className="shrink-0"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {SEGMENTS.map((segment) => (
+          <fieldset
+            key={segment.key}
+            aria-label={`${segment.label}段模型`}
+            className="w-full min-w-0 space-y-2"
+          >
+            <legend className="text-sm text-muted-foreground">
+              {segment.label}：
+              {selectedLabel(settings[segment.key], models, segment.key)}
+            </legend>
+            <label
+              className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60`}
+            >
+              <input
+                type="radio"
+                name={`voice-${segment.key}`}
+                value="none"
+                checked={settings[segment.key] === null}
+                onChange={() => void select(segment.key, null)}
+                className="shrink-0"
+              />
+              不用
+            </label>
+            {candidatesFor(models, segment.key).map((candidate) => (
+              <CandidateRow
+                key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
+                candidate={candidate}
+                selected={isSelected(settings[segment.key], candidate)}
+                busy={busy === candidate.id}
+                onSelect={() => void select(segment.key, candidate)}
+                onAction={(action) => void modelAction(action, candidate.id)}
+              />
+            ))}
+          </fieldset>
+        ))}
+
+        {settings.mode === "loop" ? (
+          <label
+            className={`${SETTINGS_ROW} cursor-pointer justify-between transition-colors hover:bg-muted/60`}
+          >
+            <span>朗读回复</span>
+            <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
+              <span
+                aria-hidden="true"
+                className={`h-5 w-9 rounded-full transition-colors ${
+                  settings.speakReplies
+                    ? "bg-primary"
+                    : "bg-muted-foreground/30"
+                }`}
+              />
+              <span
+                aria-hidden="true"
+                className={`absolute left-0.5 size-4 rounded-full bg-background transition-transform ${
+                  settings.speakReplies ? "translate-x-4" : ""
+                }`}
+              />
+              <input
+                type="checkbox"
+                aria-label="朗读回复"
+                checked={settings.speakReplies}
+                onChange={(event) =>
+                  void patch(
+                    { speakReplies: event.target.checked },
+                    "speakReplies",
+                  )
+                }
+                className="sr-only"
+              />
+            </span>
+          </label>
+        ) : null}
+
+        <div className="w-full space-y-2">
+          <div className="flex w-full items-center gap-2">
+            <span className="text-sm text-muted-foreground">性能检测</span>
+            <button
+              type="button"
+              onClick={() =>
+                diagnosing ? diagnoseAbort.current?.abort() : void runDiagnose()
+              }
+              className="rounded-md border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              {diagnosing ? "取消检测" : "重新检测"}
+            </button>
+            <button
+              type="button"
+              disabled={busy === "advice"}
+              onClick={() => void applyAdvice()}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              应用推荐
+            </button>
+          </div>
+          {report ? (
+            <div className="w-full space-y-1 rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+              <p>
+                {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·{" "}
+                {formatBytes(report.hardware.totalMemoryBytes)}
+                {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
+              </p>
+              <p>{segmentSummary(report)}</p>
+              <p>
+                推荐{" "}
+                {advice.recommendedMode === "loop"
+                  ? advice.recommendedSpeakReplies
+                    ? "完整回路 + 朗读"
+                    : "完整回路"
+                  : "只转文本"}
+              </p>
+              {/*
+                规划 §6「检测不删功能」：实测不足给红字警告 + 实测代价，用户可强制开。
+                只给数字读数（数字不写成句子），建议始终可被下一行的档位控件覆盖。
+              */}
+              {performanceWarning ? (
+                <p className="text-destructive">{performanceWarning}</p>
+              ) : null}
+              {/*
+                规划 §3.4「检测到 NVIDIA GPU 时提示『可接 GPU 服务』」——只写这句结论，
+                **不再重复 GPU 名字**（上一行的硬件清单里已经有了）。
+              */}
+              {report.hardware.gpu ? <p>可接 GPU 服务</p> : null}
+            </div>
+          ) : null}
+        </div>
+
+        {message ? (
+          <p role="status" className="text-sm text-destructive">
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** 报告 → 总体建议（渲染与红字警告共用同一次判定，避免两处口径漂移）。 */
+function adviceOf(report: VoiceDiagnoseReport | null): VoiceProfileAdvice {
+  return adviseVoiceProfile({
+    ...(report?.listen.state === "measured" &&
+    report.listen.listen?.rtfMedian !== undefined
+      ? { asr: gradeAsrRtf(report.listen.listen.rtfMedian) }
+      : {}),
+    ...(report?.think.state === "measured" && report.think.think
+      ? {
+          llm: gradeLlm({
+            ttftSeconds: report.think.think.ttftSeconds,
+            ...(report.think.think.tokensPerSecond === undefined
+              ? {}
+              : { tokensPerSecond: report.think.think.tokensPerSecond }),
+          }),
+        }
+      : {}),
+  });
+}
+
+/**
+ * 实测不足时的红字警告（规划 §6「给红字警告 + 实测代价，用户可强制开」）。
+ *
+ * 只拼**数字读数**（`听 2.30× · 想 1.80s 6t/s · 建议只转文本`），不搬
+ * `advice.reasons` 里的整句——那是判定依据（含句子标点），界面按硬约束只写标签。
+ * 未实测（pending）不算性能不足：没有读数就无从下结论，也不该吓用户。
+ */
+function insufficientNote(
+  report: VoiceDiagnoseReport,
+  advice: VoiceProfileAdvice,
+): string | null {
+  if (advice.recommendedMode === "loop") {
+    return null;
+  }
+  const parts: string[] = [];
+  const rtf = report.listen.listen?.rtfMedian;
+  if (
+    report.listen.state === "measured" &&
+    rtf !== undefined &&
+    !gradeAsrRtf(rtf).recommended
+  ) {
+    parts.push(`听 ${rtf.toFixed(2)}×`);
+  }
+  const think = report.think.think;
+  if (
+    report.think.state === "measured" &&
+    think &&
+    !gradeLlm({
+      ttftSeconds: think.ttftSeconds,
+      ...(think.tokensPerSecond === undefined
+        ? {}
+        : { tokensPerSecond: think.tokensPerSecond }),
+    }).recommended
+  ) {
+    const speed =
+      think.tokensPerSecond === undefined
+        ? ""
+        : ` ${think.tokensPerSecond.toFixed(0)}t/s`;
+    parts.push(`想 ${think.ttftSeconds.toFixed(2)}s${speed}`);
+  }
+  return parts.length > 0 ? `${parts.join(" · ")} · 建议只转文本` : null;
+}
+
+/** 段的实测读数（只给数字，不写成句子）。 */
+function listenMetric(report: VoiceDiagnoseReport): string {
+  const rtf = report.listen.listen?.rtfMedian;
+  if (rtf === undefined) {
+    return report.listen.state === "unavailable" ? "不可用" : "未实测";
+  }
+  const load = report.listen.listen?.modelLoadMs;
+  return load === undefined
+    ? `${rtf.toFixed(2)}×`
+    : `${rtf.toFixed(2)}× 首载 ${(load / 1000).toFixed(1)}s`;
+}
+
+function thinkMetric(report: VoiceDiagnoseReport): string {
+  const ttft = report.think.think?.ttftSeconds;
+  if (ttft === undefined) {
+    return report.think.state === "unavailable" ? "不可用" : "未实测";
+  }
+  const speed = report.think.think?.tokensPerSecond;
+  return speed === undefined
+    ? `${ttft.toFixed(2)}s`
+    : `${ttft.toFixed(2)}s ${speed.toFixed(0)}t/s`;
+}
+
+function speakMetric(report: VoiceDiagnoseReport): string {
+  const match = report.speak.summary.match(/首包 ([\d.]+)s、实时率 ([\d.]+)/);
+  if (match) {
+    return `${match[2]}× 首包 ${match[1]}s`;
+  }
+  return report.speak.state === "unavailable" ? "不可用" : "未实测";
+}
+
+/** 状态词（与实测读数区分：只有状态词才允许合并） */
+function isStateMetric(value: string): boolean {
+  return value === "不可用" || value === "未实测";
+}
+
+/**
+ * 三段读数压成一行：`听 0.07× 首载 4.4s · 想/说 不可用`。
+ *
+ * 相邻两段读到同一**状态**时并成一个标签（「想 不可用 · 说 不可用」→「想/说 不可用」）；
+ * 实测读数**不合并**——两个段偶尔量到同样的数字，并起来（「听/说 0.50×」）会读成一段。
+ */
+function segmentSummary(report: VoiceDiagnoseReport): string {
+  const parts: Array<[string, string]> = [
+    ["听", listenMetric(report)],
+    ["想", thinkMetric(report)],
+    ["说", speakMetric(report)],
+  ];
+  const merged: Array<{ labels: string[]; value: string }> = [];
+  for (const [label, value] of parts) {
+    const last = merged[merged.length - 1];
+    if (last && last.value === value && isStateMetric(value)) {
+      last.labels.push(label);
+    } else {
+      merged.push({ labels: [label], value });
+    }
+  }
+  return merged
+    .map((item) => `${item.labels.join("/")} ${item.value}`)
+    .join(" · ");
+}
+
+function candidatesFor(
+  models: VoiceModelCandidate[],
+  segment: SegmentKey,
+): VoiceModelCandidate[] {
+  return models.filter((model) => model.segment === segment);
+}
+
+function isSelected(
+  selection: VoiceSettings[SegmentKey],
+  candidate: VoiceModelCandidate,
+): boolean {
+  return Boolean(
+    selection &&
+      selection.kind === candidate.kind &&
+      selection.id === candidate.id &&
+      (selection.model ?? undefined) === candidate.model,
+  );
+}
+
+function selectedLabel(
+  selection: VoiceSettings[SegmentKey],
+  models: VoiceModelCandidate[],
+  segment: SegmentKey,
+): string {
+  if (!selection) {
+    return "不用";
+  }
+  return (
+    candidatesFor(models, segment).find((candidate) =>
+      isSelected(selection, candidate),
+    )?.label ?? selection.id
+  );
+}
+
+function CandidateRow({
+  candidate,
+  selected,
+  busy,
+  onSelect,
+  onAction,
+}: {
+  candidate: VoiceModelCandidate;
+  selected: boolean;
+  busy: boolean;
+  onSelect: () => void;
+  onAction: (action: "download" | "cancel" | "remove") => void;
+}) {
+  const download = candidate.download;
+  return (
+    <label
+      data-active={selected}
+      className={`${SETTINGS_ROW} transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted ${
+        candidate.unavailableReason ? "cursor-not-allowed opacity-60" : ""
+      }`}
+    >
+      <input
+        type="radio"
+        name={`voice-${candidate.segment}`}
+        value={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
+        checked={selected}
+        disabled={Boolean(candidate.unavailableReason)}
+        onChange={onSelect}
+        className="shrink-0"
+      />
+      <span className="min-w-0 flex-1">
+        {candidate.label}
+        <span className="ml-2 text-xs text-muted-foreground">
+          {candidateMeta(candidate)}
+        </span>
+        {candidate.unavailableReason ? (
+          <span className="ml-2 text-xs text-destructive">
+            {candidate.unavailableReason}
+          </span>
+        ) : null}
+        {download.error ? (
+          <span className="ml-2 text-xs text-destructive">
+            {download.error}
+          </span>
+        ) : null}
+      </span>
+      {candidate.needsDownload ? (
+        <DownloadControl
+          state={download.state}
+          percent={Math.round(
+            (download.downloadedBytes / Math.max(1, download.totalBytes)) * 100,
+          )}
+          busy={busy}
+          onAction={onAction}
+        />
+      ) : null}
+    </label>
+  );
+}
+
+/** 运行位置标注（规划 §3.4：本机 CPU / 本机 GPU / 远端，是标注不是配置通道）。 */
+const LOCATION_LABELS: Record<VoiceModelCandidate["location"], string> = {
+  cpu: "本机 CPU",
+  gpu: "本机 GPU",
+  remote: "远端",
+};
+
+/** 候选的元信息：来源 · 体积 · 运行位置 · 性能（数字，不是句子）。 */
+function candidateMeta(candidate: VoiceModelCandidate): string {
+  const parts = [candidate.kind === "builtin" ? "离线" : "在线"];
+  if (candidate.sizeBytes > 0) {
+    parts.push(formatBytes(candidate.sizeBytes));
+  }
+  parts.push(LOCATION_LABELS[candidate.location]);
+  if (candidate.performanceNote) {
+    parts.push(candidate.performanceNote);
+  }
+  return parts.join(" · ");
+}
+
+function DownloadControl({
+  state,
+  percent,
+  busy,
+  onAction,
+}: {
+  state: VoiceModelCandidate["download"]["state"];
+  percent: number;
+  busy: boolean;
+  onAction: (action: "download" | "cancel" | "remove") => void;
+}) {
+  const label =
+    state === "downloading"
+      ? `取消 ${percent}%`
+      : state === "ready"
+        ? "删除"
+        : "下载";
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={(event) => {
+        // 按钮包在 label 里：点它不该顺带改选择
+        event.preventDefault();
+        onAction(
+          state === "downloading"
+            ? "cancel"
+            : state === "ready"
+              ? "remove"
+              : "download",
+        );
+      }}
+      className="inline-flex h-6 shrink-0 items-center rounded-md border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+    >
+      {label}
+    </button>
+  );
+}

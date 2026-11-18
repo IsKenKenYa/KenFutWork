@@ -38,7 +38,12 @@ export function InlineInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") {
+      // 输入法组合态的 Enter 是上屏，不是失焦提交
+      if (
+        e.key === "Enter" &&
+        !e.nativeEvent.isComposing &&
+        e.keyCode !== 229
+      ) {
         inputRef.current?.blur();
       } else if (e.key === "Escape") {
         setDraft(value);

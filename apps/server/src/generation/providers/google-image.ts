@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import {
   aspectRatioToDimensions,
+  createGenerationFetch,
   fetchAsBase64,
   GenerationError,
 } from "../utils.js";
@@ -79,28 +80,50 @@ export class GoogleImageProvider implements ImageProvider {
 
   private client: GoogleGenAI;
 
-  constructor(apiKey: string, headers?: Record<string, string>) {
+  constructor(
+    apiKey: string,
+    headers?: Record<string, string>,
+    baseUrl?: string,
+  ) {
     this.client = new GoogleGenAI({
       apiKey,
       // 自定义头（§4.8）：x-goog-api-key 等保留头由 SDK 按 apiKey 生成，不受其影响
-      ...(headers ? { httpOptions: { headers } } : {}),
+      httpOptions: {
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(headers ? { headers } : {}),
+        retryOptions: { attempts: 1 },
+        fetch: createGenerationFetch(PROVIDER_NAME, [apiKey]),
+      },
     });
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const apiModel = MODEL_MAP[params.model];
-    if (!apiModel) {
+    const apiModel = MODEL_MAP[params.model] ?? params.model;
+    if (params.outputFormat != null) {
       throw new GenerationError(
         PROVIDER_NAME,
-        "model_not_found",
-        `Unknown Google image model: ${params.model}`,
+        "unsupported",
+        "当前 Google 图片接口不能指定输出格式，请清空格式选项。",
+      );
+    }
+    if (params.width != null || params.height != null) {
+      throw new GenerationError(
+        PROVIDER_NAME,
+        "unsupported",
+        "当前 Google 图片接口不能指定像素宽高，请改用比例与质量。",
+      );
+    }
+    if (apiModel === "gemini-2.5-flash-image" && params.quality != null) {
+      throw new GenerationError(
+        PROVIDER_NAME,
+        "unsupported",
+        "Gemini 2.5 图片模型不能指定质量，请清空质量选项。",
       );
     }
 
     const aspectRatio = params.aspectRatio ?? "1:1";
-    const imageSize = QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? "2K";
-    // Note: outputFormat is ignored — Gemini API does not support output format
-    // selection; it always returns PNG via inlineData.
+    const imageSize =
+      QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? params.quality ?? "2K";
 
     // Build content parts: text prompt + optional input images.
     const parts: Array<
@@ -127,15 +150,17 @@ export class GoogleImageProvider implements ImageProvider {
           responseModalities: ["IMAGE"],
           imageConfig: {
             aspectRatio,
-            imageSize,
+            // Gemini 2.5 Flash Image 仅支持默认尺寸；3 系及实例自定义模型沿用尺寸选项。
+            ...(apiModel === "gemini-2.5-flash-image" ? {} : { imageSize }),
           },
         },
       });
     } catch (err) {
+      if (err instanceof GenerationError) throw err;
       throw new GenerationError(
         PROVIDER_NAME,
         "api_error",
-        `Gemini API error: ${err instanceof Error ? err.message : String(err)}`,
+        "Google 图片请求失败，请检查供应商设置。",
       );
     }
 

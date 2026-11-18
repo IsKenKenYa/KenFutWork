@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BrandKitAsset,
   BrandKitAssetCreateRequest,
@@ -6,10 +7,13 @@ import type {
   BrandKitDetail,
   BrandKitSummary,
   BrandKitUpdateRequest,
-} from "@loomic/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
+} from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
+import { binaryMimeType } from "../code-tools/file-media.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type {
   BrandKitAssetPatch,
   BrandKitAssetRow,
@@ -55,47 +59,49 @@ export class BrandKitServiceError extends Error {
 }
 
 export type BrandKitService = {
-  listKits(user: AuthenticatedUser): Promise<BrandKitSummary[]>;
-  getKit(user: AuthenticatedUser, kitId: string): Promise<BrandKitDetail>;
+  readAsset(
+    actor: LocalActor,
+    kitId: string,
+    assetId: string,
+    maxBytes: number,
+  ): Promise<{ bytes: Uint8Array; mimeType: string; version: string }>;
+  listKits(actor: LocalActor): Promise<BrandKitSummary[]>;
+  getKit(actor: LocalActor, kitId: string): Promise<BrandKitDetail>;
   createKit(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     input: BrandKitCreateRequest,
   ): Promise<BrandKitDetail>;
   updateKit(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kitId: string,
     input: BrandKitUpdateRequest,
   ): Promise<BrandKitDetail>;
-  deleteKit(user: AuthenticatedUser, kitId: string): Promise<void>;
+  deleteKit(actor: LocalActor, kitId: string): Promise<void>;
   createAsset(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kitId: string,
     input: BrandKitAssetCreateRequest,
   ): Promise<BrandKitAsset>;
   updateAsset(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kitId: string,
     assetId: string,
     input: BrandKitAssetUpdateRequest,
   ): Promise<BrandKitAsset>;
-  deleteAsset(
-    user: AuthenticatedUser,
-    kitId: string,
-    assetId: string,
-  ): Promise<void>;
+  deleteAsset(actor: LocalActor, kitId: string, assetId: string): Promise<void>;
   uploadAsset(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kitId: string,
     assetType: "logo" | "image",
     fileName: string,
     fileBuffer: Buffer,
     mimeType: string,
   ): Promise<BrandKitAsset>;
-  duplicateKit(user: AuthenticatedUser, kitId: string): Promise<BrandKitDetail>;
+  duplicateKit(actor: LocalActor, kitId: string): Promise<BrandKitDetail>;
 };
 
 /**
- * brand-kit 服务。数据访问经 repository（`brand_kits` 按 `user_id` 定权、
+ * brand-kit 服务。数据访问经 repository（`brand_kits` 按 `instance_id` 定权、
  * `brand_kit_assets` 经父链校验归属）；对象存储经 `blob` 缝，
  * 随 M3 blob 缝落地移除。
  */
@@ -103,16 +109,18 @@ export function createBrandKitService(options: {
   /** 对象存储走 blob 缝（本聚合的桶非公开 → 用签名 URL）。 */
   blob: BlobStore;
   repository: BrandKitRepository;
+  localInstance: LocalInstanceService;
 }): BrandKitService {
   const { repository } = options;
 
   async function fetchKitDetail(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kitId: string,
   ): Promise<BrandKitDetail> {
+    await options.localInstance.resolve(actor);
     let kit: BrandKitRow | null;
     try {
-      kit = await repository.findKit(user.id, kitId);
+      kit = await repository.findKit(actor.instanceId, kitId);
     } catch {
       throw new BrandKitServiceError(
         "brand_kit_not_found",
@@ -131,7 +139,7 @@ export function createBrandKitService(options: {
 
     let assetRows: BrandKitAssetRow[];
     try {
-      assetRows = await repository.listAssets(user.id, kitId);
+      assetRows = await repository.listAssets(actor.instanceId, kitId);
     } catch {
       throw new BrandKitServiceError(
         "brand_kit_query_failed",
@@ -143,9 +151,13 @@ export function createBrandKitService(options: {
     const mappedAssets = assetRows.map(mapAssetRow);
 
     // Resolve signed URLs for file-based assets (logo/image)
-    const fileAssets = mappedAssets.filter((a) => a.file_url);
+    // 谓词形式让 file_url 在后续循环里保持非空收窄（普通 filter 不收窄）
+    const fileAssets = mappedAssets.filter(
+      (asset): asset is BrandKitAsset & { file_url: string } =>
+        Boolean(asset.file_url),
+    );
     if (fileAssets.length > 0) {
-      const paths = fileAssets.map((a) => a.file_url!);
+      const paths = fileAssets.map((a) => a.file_url);
       const signedEntries = await options.blob
         .bucket(BRAND_KIT_BUCKET)
         .createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
@@ -157,7 +169,7 @@ export function createBrandKitService(options: {
           ),
         );
         for (const asset of fileAssets) {
-          const url = urlByPath.get(asset.file_url!);
+          const url = urlByPath.get(asset.file_url);
           if (url) asset.file_url = url;
         }
       }
@@ -176,10 +188,65 @@ export function createBrandKitService(options: {
   }
 
   return {
-    async listKits(user) {
+    async readAsset(actor, kitId, assetId, maxBytes) {
+      await options.localInstance.resolve(actor);
+      const asset = await repository.findAsset(
+        actor.instanceId,
+        kitId,
+        assetId,
+      );
+      if (!asset?.file_url || !["logo", "image"].includes(asset.asset_type))
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材已删除或不属于所选品牌，请重新选择。",
+          404,
+        );
+      const bytes = await options.blob
+        .bucket(BRAND_KIT_BUCKET)
+        .download(asset.file_url, { maxBytes });
+      if (bytes.byteLength > maxBytes)
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材超过读取限制，请调整设置。",
+          413,
+        );
+      const mimeType = binaryMimeType(Buffer.from(bytes));
+      if (!mimeType.startsWith("image/"))
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材格式无法识别，请重新上传PNG、JPG或WebP。",
+          400,
+        );
+      const version = createHash("sha256").update(bytes).digest("hex");
+      const metadata = asset.metadata as Record<string, unknown> | null;
+      if (typeof metadata?.sha256 === "string" && metadata.sha256 !== version)
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材文件已变化，请重新上传或选择。",
+          409,
+        );
+      const current = await repository.findAsset(
+        actor.instanceId,
+        kitId,
+        assetId,
+      );
+      if (
+        !current ||
+        current.file_url !== asset.file_url ||
+        JSON.stringify(current.metadata) !== JSON.stringify(asset.metadata)
+      )
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材在读取期间变化，请重新选择。",
+          409,
+        );
+      return { bytes, mimeType, version };
+    },
+    async listKits(actor) {
+      await options.localInstance.resolve(actor);
       let kits: Awaited<ReturnType<typeof repository.listKits>>;
       try {
-        kits = await repository.listKits(user.id);
+        kits = await repository.listKits(actor.instanceId);
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_query_failed",
@@ -195,7 +262,7 @@ export function createBrandKitService(options: {
       let assets: Array<{ asset_type: string; kit_id: string }>;
       try {
         assets = await repository.listAssetCounts(
-          user.id,
+          actor.instanceId,
           kits.map((k) => k.id),
         );
       } catch {
@@ -238,15 +305,17 @@ export function createBrandKitService(options: {
       );
     },
 
-    async getKit(user, kitId) {
-      return fetchKitDetail(user, kitId);
+    async getKit(actor, kitId) {
+      await options.localInstance.resolve(actor);
+      return fetchKitDetail(actor, kitId);
     },
 
-    async createKit(user, input) {
+    async createKit(actor, input) {
+      await options.localInstance.resolve(actor);
       const name = input.name?.trim() || "未命名";
 
       const kitId = await repository
-        .insertKit(user.id, { name })
+        .insertKit(actor.instanceId, { name })
         .catch(() => null);
 
       if (!kitId) {
@@ -257,13 +326,14 @@ export function createBrandKitService(options: {
         );
       }
 
-      return fetchKitDetail(user, kitId);
+      return fetchKitDetail(actor, kitId);
     },
 
-    async updateKit(user, kitId, input) {
+    async updateKit(actor, kitId, input) {
+      await options.localInstance.resolve(actor);
       // If setting as default, clear existing default first
       if (input.is_default === true) {
-        await repository.clearDefault(user.id).catch(() => {
+        await repository.clearDefault(actor.instanceId).catch(() => {
           throw new BrandKitServiceError(
             "brand_kit_update_failed",
             KIT_UPDATE_FAILED_MESSAGE,
@@ -280,10 +350,10 @@ export function createBrandKitService(options: {
       if (input.is_default !== undefined) patch.is_default = input.is_default;
 
       if (Object.keys(patch).length === 0) {
-        return fetchKitDetail(user, kitId);
+        return fetchKitDetail(actor, kitId);
       }
 
-      await repository.updateKit(user.id, kitId, patch).catch(() => {
+      await repository.updateKit(actor.instanceId, kitId, patch).catch(() => {
         throw new BrandKitServiceError(
           "brand_kit_update_failed",
           KIT_UPDATE_FAILED_MESSAGE,
@@ -292,13 +362,14 @@ export function createBrandKitService(options: {
       });
 
       // 未命中的判定交给后续 fetchKitDetail（与旧实现的 count 语义一致）
-      return fetchKitDetail(user, kitId);
+      return fetchKitDetail(actor, kitId);
     },
 
-    async deleteKit(user, kitId) {
+    async deleteKit(actor, kitId) {
+      await options.localInstance.resolve(actor);
       let exists: string | null;
       try {
-        exists = await repository.findKitRef(user.id, kitId);
+        exists = await repository.findKitRef(actor.instanceId, kitId);
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
@@ -317,14 +388,14 @@ export function createBrandKitService(options: {
 
       // Clean up storage objects for file-based assets
       const paths = await repository
-        .listAssetFilePaths(user.id, kitId)
+        .listAssetFilePaths(actor.instanceId, kitId)
         .catch(() => []);
 
       if (paths.length > 0) {
         await options.blob.bucket(BRAND_KIT_BUCKET).remove(paths);
       }
 
-      await repository.deleteKit(user.id, kitId).catch(() => {
+      await repository.deleteKit(actor.instanceId, kitId).catch(() => {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
           KIT_DELETE_FAILED_MESSAGE,
@@ -333,11 +404,12 @@ export function createBrandKitService(options: {
       });
     },
 
-    async createAsset(user, kitId, input) {
+    async createAsset(actor, kitId, input) {
+      await options.localInstance.resolve(actor);
       // Verify kit exists（查询失败 500 / 无行 404 与旧实现一致）
       let kitId_: string | null;
       try {
-        kitId_ = await repository.findKitRef(user.id, kitId);
+        kitId_ = await repository.findKitRef(actor.instanceId, kitId);
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
@@ -356,11 +428,11 @@ export function createBrandKitService(options: {
 
       // Get max sort_order for this kit + asset_type
       const maxSortOrder = await repository
-        .maxAssetSortOrder(user.id, kitId, input.asset_type)
+        .maxAssetSortOrder(actor.instanceId, kitId, input.asset_type)
         .catch(() => null);
 
       const asset = await repository
-        .insertAsset(user.id, kitId, {
+        .insertAsset(actor.instanceId, kitId, {
           asset_type: input.asset_type,
           display_name: input.display_name,
           metadata: input.metadata ?? {},
@@ -381,7 +453,8 @@ export function createBrandKitService(options: {
       return mapAssetRow(asset);
     },
 
-    async updateAsset(user, kitId, assetId, input) {
+    async updateAsset(actor, kitId, assetId, input) {
+      await options.localInstance.resolve(actor);
       const patch: BrandKitAssetPatch = {};
       if (input.display_name !== undefined)
         patch.display_name = input.display_name;
@@ -395,7 +468,11 @@ export function createBrandKitService(options: {
         // Nothing to update, just fetch and return current state
         let current: BrandKitAssetRow | null;
         try {
-          current = await repository.findAsset(user.id, kitId, assetId);
+          current = await repository.findAsset(
+            actor.instanceId,
+            kitId,
+            assetId,
+          );
         } catch {
           throw new BrandKitServiceError(
             "brand_kit_asset_not_found",
@@ -417,7 +494,12 @@ export function createBrandKitService(options: {
 
       let updated: BrandKitAssetRow | null;
       try {
-        updated = await repository.updateAsset(user.id, kitId, assetId, patch);
+        updated = await repository.updateAsset(
+          actor.instanceId,
+          kitId,
+          assetId,
+          patch,
+        );
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_update_failed",
@@ -437,10 +519,15 @@ export function createBrandKitService(options: {
       return mapAssetRow(updated);
     },
 
-    async deleteAsset(user, kitId, assetId) {
+    async deleteAsset(actor, kitId, assetId) {
+      await options.localInstance.resolve(actor);
       let existing: { file_url: string | null; id: string } | null;
       try {
-        existing = await repository.findAssetRef(user.id, kitId, assetId);
+        existing = await repository.findAssetRef(
+          actor.instanceId,
+          kitId,
+          assetId,
+        );
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_delete_failed",
@@ -462,20 +549,23 @@ export function createBrandKitService(options: {
         await options.blob.bucket(BRAND_KIT_BUCKET).remove([existing.file_url]);
       }
 
-      await repository.deleteAsset(user.id, kitId, assetId).catch(() => {
-        throw new BrandKitServiceError(
-          "brand_kit_delete_failed",
-          KIT_DELETE_FAILED_MESSAGE,
-          500,
-        );
-      });
+      await repository
+        .deleteAsset(actor.instanceId, kitId, assetId)
+        .catch(() => {
+          throw new BrandKitServiceError(
+            "brand_kit_delete_failed",
+            KIT_DELETE_FAILED_MESSAGE,
+            500,
+          );
+        });
     },
 
-    async uploadAsset(user, kitId, assetType, fileName, fileBuffer, mimeType) {
+    async uploadAsset(actor, kitId, assetType, fileName, fileBuffer, mimeType) {
+      await options.localInstance.resolve(actor);
       // Verify kit exists and belongs to user
       let kitId_: string | null;
       try {
-        kitId_ = await repository.findKitRef(user.id, kitId);
+        kitId_ = await repository.findKitRef(actor.instanceId, kitId);
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
@@ -497,7 +587,7 @@ export function createBrandKitService(options: {
       // Upload to storage
       const timestamp = Date.now();
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectPath = `${user.id}/${kitId}/${timestamp}-${safeName}`;
+      const objectPath = `${actor.instanceId}/${kitId}/${timestamp}-${safeName}`;
 
       try {
         await bucket.upload(objectPath, fileBuffer, {
@@ -515,16 +605,21 @@ export function createBrandKitService(options: {
       }
 
       const maxSortOrder = await repository
-        .maxAssetSortOrder(user.id, kitId, assetType)
+        .maxAssetSortOrder(actor.instanceId, kitId, assetType)
         .catch(() => null);
 
       // Create asset record — store object path in file_url
       const displayName = fileName.replace(/\.[^.]+$/, "");
       const asset = await repository
-        .insertAsset(user.id, kitId, {
+        .insertAsset(actor.instanceId, kitId, {
           asset_type: assetType,
           display_name: displayName,
           file_url: objectPath,
+          metadata: {
+            mime_type: mimeType,
+            sha256: createHash("sha256").update(fileBuffer).digest("hex"),
+            byte_size: fileBuffer.byteLength,
+          },
           sort_order: (maxSortOrder ?? -1) + 1,
         })
         .catch(() => null);
@@ -552,10 +647,11 @@ export function createBrandKitService(options: {
       return mapped;
     },
 
-    async duplicateKit(user, kitId) {
+    async duplicateKit(actor, kitId) {
+      await options.localInstance.resolve(actor);
       let source: { guidance_text: string | null; name: string } | null;
       try {
-        source = await repository.findKitSource(user.id, kitId);
+        source = await repository.findKitSource(actor.instanceId, kitId);
       } catch {
         throw new BrandKitServiceError(
           "brand_kit_not_found",
@@ -574,7 +670,7 @@ export function createBrandKitService(options: {
 
       // Create new kit (never copy is_default)
       const newKitId = await repository
-        .insertKit(user.id, {
+        .insertKit(actor.instanceId, {
           guidance_text: source.guidance_text,
           name: `${source.name} (副本)`,
         })
@@ -590,7 +686,7 @@ export function createBrandKitService(options: {
 
       // Copy assets (file-based ones copy the storage object too)
       const assets = await repository
-        .listAssets(user.id, kitId)
+        .listAssets(actor.instanceId, kitId)
         .catch(() => []);
 
       if (assets.length > 0) {
@@ -603,7 +699,7 @@ export function createBrandKitService(options: {
           // For file-based assets, copy the storage object
           if (asset.file_url) {
             const ext = asset.file_url.split(".").pop() ?? "bin";
-            const newPath = `${user.id}/${newKitId}/${Date.now()}-copy.${ext}`;
+            const newPath = `${actor.instanceId}/${newKitId}/${Date.now()}-copy.${ext}`;
             try {
               await bucket.copy(asset.file_url, newPath);
               newFileUrl = newPath;
@@ -623,10 +719,10 @@ export function createBrandKitService(options: {
           });
         }
 
-        await repository.insertAssets(user.id, newKitId, copies);
+        await repository.insertAssets(actor.instanceId, newKitId, copies);
       }
 
-      return fetchKitDetail(user, newKitId);
+      return fetchKitDetail(actor, newKitId);
     },
   };
 }

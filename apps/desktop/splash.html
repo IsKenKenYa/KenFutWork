@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>KenFutWork 正在启动</title>
+    <!--
+      启动中页面（打包态第一屏）。
+
+      为什么需要它：壳起来时要先拉起随包服务端（内嵌 Postgres 首启动要 initdb、服务端 SEA
+      冷启动也要几秒到几十秒）。这段时间窗口里没有别的东西可显示——以前用户看到的是一大片白屏
+      （2026-09-19 反馈「启动很久 + 白屏」）。这一页由 `package-win.mjs` 拷进静态导出目录，
+      作为窗口的初始 URL（`tauri.conf.json` 的 `windows[].url`），服务端健康后壳再导航到
+      它托管的 UI。
+
+      这一页**不引任何脚本依赖**（纯 HTML/CSS + 几行内联计时提示），因为它要能在
+      「什么都还没起来」的时候把画面撑住。
+
+      视觉口径（2026-10-11 终版）：白底黑标——与壳内品牌行/加载徽标同一套，全程不变色。
+    -->
+    <style>
+      /* 字标字体：Momo Trust Display（OFL），自托管一份（桌面端离线也要能显示） */
+      @font-face {
+        font-family: "Momo Trust Display";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url("/fonts/momo-trust-display.woff2") format("woff2");
+      }
+      :root {
+        --kfw-ink: #16181d;
+        --kfw-muted: #6b6f85;
+        --kfw-track: #e6e7ef;
+        --kfw-accent: #4f6bd0;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        /* 淡入：从「窗口一出就是黑底」的硬切换变成柔和过渡，减轻启动时的闪烁感 */
+        animation: kfw-fade-in 260ms ease-out both;
+        /* 居中用 grid + place-items（比 flex column 稳：内容宽度变化、出现滚动条都不会偏），
+           并显式锁住不滚动——启动页没有任何需要滚动的内容 */
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 16px;
+        grid-auto-rows: min-content;
+        overflow: hidden;
+        background: #fff;
+        color: var(--kfw-ink);
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          "Segoe UI",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        /* 标记与字标之间的间隙 */
+        gap: 15px;
+        /* 品牌块比**进度条**再左一点点（历史口径；进度条本身保持正中） */
+        transform: translateX(-10px);
+      }
+      .brand img {
+        /* 白标：品牌图为蓝色墨迹，brightness-0 invert 转纯白（黑底唯一可读形态） */
+        filter: brightness(0) invert(1);
+      }
+      .brand span {
+        color: var(--kfw-ink);
+        font-family: "Momo Trust Display", system-ui, -apple-system, "Segoe UI",
+          "Microsoft YaHei", sans-serif;
+        /* 字号抬到与标记视觉等高（历史口径「字体和 logo 不一样大」） */
+        font-size: 40px;
+        letter-spacing: 0.2px;
+      }
+      .track {
+        width: 180px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--kfw-track);
+        overflow: hidden;
+      }
+      .bar {
+        width: 40%;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--kfw-accent);
+        animation: kfw-slide 1.2s ease-in-out infinite;
+      }
+      @keyframes kfw-fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes kfw-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+      .note {
+        color: var(--kfw-muted);
+      }
+    </style>
+  </head>
+  <body data-kfw-splash="1">
+    <div class="brand">
+      <!-- 用**应用图标**本身（打包时随静态导出一起走），不内联旧版 logo 的 SVG：
+           图标换了、启动页跟着换，不会两处打架 -->
+      <!-- 尺寸：标在 1024² 透明画布里墨迹占 80%（icons.mjs 统一口径），40px 盒 → 墨迹高 28.5px，
+           与下方 40px 字号的字标视觉等高；换比例只改这里的高度 -->
+      <img src="/logo-mark.png" width="40" height="40" alt="" style="width:auto;height:40px" />
+      <span>KenFutWork</span>
+    </div>
+    <div class="track"><div class="bar"></div></div>
+    <div class="note" id="note">正在启动本机服务…</div>
+    <script>
+      // 8 秒后换一句话：首次启动要 initdb，用户需要知道「慢是正常的、不是卡死」
+      setTimeout(() => {
+        const note = document.getElementById("note");
+        if (note) {
+          note.textContent = "首次启动要在本机初始化数据库，可能要几十秒，请稍候…";
+        }
+      }, 8000);
+    </script>
+  </body>
+</html>

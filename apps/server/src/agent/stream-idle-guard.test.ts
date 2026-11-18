@@ -119,7 +119,12 @@ describe("stream idle 看门狗", () => {
 
   it("事件产出后重置空闲计时（持续活跃的流不会被误杀）", async () => {
     const source = controllableStream<string>();
-    const guarded = withStreamIdleGuard(source.stream, { idleMs: 60 });
+    /**
+     * 阈值 400ms、每 20ms 推一个事件：**余量给足**。
+     * 原来写 60ms——机器一忙（turbo 并行跑全仓测试时）事件循环卡一下就被判「上游停滞」，
+     * 用例偶发变红（本轮实测遇到一次）。这条要验的是「有事件就重置计时」，与阈值大小无关。
+     */
+    const guarded = withStreamIdleGuard(source.stream, { idleMs: 400 });
     const received: string[] = [];
     const consuming = (async () => {
       for await (const item of guarded) {

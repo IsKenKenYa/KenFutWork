@@ -1,0 +1,24 @@
+{
+  "name": "kenfutwork-computer-use",
+  "version": "0.1.0",
+  "description": "Computer Use：安装后 code/design 两种模式的 agent 都可观察与操控本机桌面应用（无障碍树观察 + 截图 + 点击/输入）。macOS 需辅助功能与屏幕录制授权；Windows 使用 UIAutomation 与 User32。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "skills",
+    "assets/icon.svg"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Computer Use",
+    "category": "Agent 能力",
+    "assets": true,
+    "icon": "assets/icon.svg"
+  }
+}

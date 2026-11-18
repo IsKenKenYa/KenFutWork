@@ -1,0 +1,642 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import {
+  cancelEngineInstall,
+  composeCommand,
+  ensureStackEnvFile,
+  getEngineInstallSnapshot,
+  planEngineAutoInstall,
+  purgeEngineStack,
+  readStackLogTail,
+  readStackRuntime,
+  STACK_LOG_FILE,
+  startEngineInstall,
+  stopEngineStack,
+  syncGatewayCredentials,
+  toWslPath,
+  writeStackRuntime,
+} from "./install.js";
+
+/**
+ * 引擎栈停止/卸载（FORM-11 生命周期）：
+ *  - 默认 `down` 保数据卷；`deleteData` 才 `--volumes`（§9.1③ 显式选择才动数据）；
+ *  - 失败原样给可读原因（退出码 + stderr 首行），不假装停止成功；
+ *  - 取消安装是非安装态的幂等 no-op。
+ *
+ * 承载目标（双 Provider）：
+ *  - `host` → `docker compose …`；`wsl2` → `wsl.exe -d <distro> -- docker compose …`
+ *    （路径换 `/mnt/<盘>/…`）；
+ *  - 安装时落盘承载记录，停止/查询读它（另一侧的 docker 找不到这套容器）；
+ *  - 卸载 purge：`down --volumes --rmi all` + 清本地 env/日志/记录（插件代码保留）。
+ */
+function fakeRun(result: { code: number; stdout?: string; stderr?: string }) {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  return {
+    calls,
+    run: async (file: string, args: readonly string[]) => {
+      calls.push({ file, args });
+      return {
+        code: result.code,
+        stdout: Buffer.from(result.stdout ?? ""),
+        stderr: Buffer.from(result.stderr ?? ""),
+      };
+    },
+  };
+}
+
+function options() {
+  const dataDir = mkdtempSync(join(tmpdir(), "flow-engine-stop-"));
+  return { dataDir, composeFile: join(dataDir, "docker-compose.dify.yml") };
+}
+
+describe("引擎栈停止", () => {
+  it("默认保留数据卷；deleteData 才追加 --volumes", async () => {
+    const first = fakeRun({ code: 0 });
+    const kept = await stopEngineStack(options(), { run: first.run });
+    expect(kept.ok).toBe(true);
+    expect(getEngineInstallSnapshot().state).toBe("idle");
+    expect(first.calls).toHaveLength(1);
+    expect(first.calls[0]?.file).toBe("docker");
+    const keptArgs = first.calls[0]?.args ?? [];
+    expect(keptArgs).toContain("down");
+    expect(keptArgs).toContain("dify");
+    expect(keptArgs).toContain("--profile");
+    expect(keptArgs).not.toContain("--volumes");
+
+    const second = fakeRun({ code: 0 });
+    const wiped = await stopEngineStack(
+      { ...options(), deleteData: true },
+      { run: second.run },
+    );
+    expect(wiped.ok).toBe(true);
+    expect(second.calls[0]?.args).toContain("--volumes");
+  });
+
+  it("生成的 env 文件随数据目录走（down 与 up 同一份密钥口径）", async () => {
+    const run = fakeRun({ code: 0 });
+    const target = options();
+    await stopEngineStack(target, { run: run.run });
+    const envFile = join(target.dataDir, "dify-stack.env");
+    expect(run.calls[0]?.args).toContain(envFile);
+    expect(readFileSync(envFile, "utf8")).toContain("DIFY_ADMIN_API_KEY=");
+  });
+
+  it("down 失败原样给原因（退出码 + stderr 首行）", async () => {
+    const run = fakeRun({ code: 1, stderr: "no such project\n其余噪音" });
+    const result = await stopEngineStack(options(), { run: run.run });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("退出码 1");
+    expect(result.error).toContain("no such project");
+  });
+
+  it("取消安装：非安装态是幂等 no-op（进行中杀子进程的路径由真机启停覆盖）", () => {
+    expect(cancelEngineInstall().state).toBe("idle");
+    expect(getEngineInstallSnapshot().state).toBe("idle");
+  });
+});
+
+describe("引擎承载目标（双 Provider）", () => {
+  it("toWslPath：盘符路径换 /mnt/<盘>/…；已是 POSIX 的原样", () => {
+    expect(toWslPath("C:\\Users\\a\\b")).toBe("/mnt/c/Users/a/b");
+    expect(toWslPath("D:/repo/dify/docker-compose.dify.yml")).toBe(
+      "/mnt/d/repo/dify/docker-compose.dify.yml",
+    );
+    expect(toWslPath("/mnt/c/x")).toBe("/mnt/c/x");
+  });
+
+  it("composeCommand：host 走 docker；wsl2 走 wsl.exe 且 compose/env 路径换成 /mnt/…", () => {
+    const host = composeCommand(
+      {
+        composeFile: "C:\\repo\\dify\\docker-compose.dify.yml",
+        envFile: "C:\\data\\dify-stack.env",
+      },
+      ["--profile", "dify", "down"],
+    );
+    expect(host.command).toBe("docker");
+    expect(host.args).toEqual([
+      "compose",
+      "--env-file",
+      "C:\\data\\dify-stack.env",
+      "-f",
+      "C:\\repo\\dify\\docker-compose.dify.yml",
+      "--profile",
+      "dify",
+      "down",
+    ]);
+
+    const wsl = composeCommand(
+      {
+        composeFile: "C:\\repo\\dify\\docker-compose.dify.yml",
+        envFile: "C:\\data\\dify-stack.env",
+        launch: { kind: "wsl2", distro: "Ubuntu" },
+      },
+      ["--profile", "dify", "down"],
+    );
+    expect(wsl.command).toBe("wsl.exe");
+    expect(wsl.args.slice(0, 4)).toEqual(["-d", "Ubuntu", "--", "docker"]);
+    expect(wsl.args).toContain("/mnt/c/data/dify-stack.env");
+    expect(wsl.args).toContain("/mnt/c/repo/dify/docker-compose.dify.yml");
+    // 不带 env 的只读查询路径：没有 --env-file（不创建密钥文件）
+    const ps = composeCommand({ composeFile: "/x/docker-compose.dify.yml" }, [
+      "ps",
+    ]);
+    expect(ps.args).not.toContain("--env-file");
+  });
+
+  it("承载记录：写读一致；无记录/坏文件回落 host（不猜）", () => {
+    const { dataDir } = options();
+    expect(readStackRuntime(dataDir)).toEqual({ kind: "host" });
+    writeStackRuntime(dataDir, { kind: "wsl2", distro: "Ubuntu-24.04" });
+    expect(readStackRuntime(dataDir)).toEqual({
+      kind: "wsl2",
+      distro: "Ubuntu-24.04",
+    });
+    writeFileSync(join(dataDir, "dify-stack.runtime.json"), "{ 坏 JSON");
+    expect(readStackRuntime(dataDir)).toEqual({ kind: "host" });
+  });
+
+  it("WSL2 安装：命令经 wsl.exe，承载目标落盘（停止按同一目标执行）", () => {
+    const { dataDir } = options();
+    const composeFile = join(dataDir, "docker-compose.dify.yml");
+    writeFileSync(composeFile, "services: {}\n");
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    const fakeChild = {
+      stdout: { on: () => undefined },
+      stderr: { on: () => undefined },
+      on: () => undefined,
+      kill: () => undefined,
+    };
+    const { started } = startEngineInstall(
+      { composeFile, dataDir, launch: { kind: "wsl2", distro: "Ubuntu" } },
+      {
+        spawn: ((command: string, args: readonly string[]) => {
+          calls.push({ command, args });
+          return fakeChild;
+        }) as never,
+      },
+    );
+    expect(started).toBe(true);
+    expect(calls[0]?.command).toBe("wsl.exe");
+    expect(calls[0]?.args.slice(0, 4)).toEqual([
+      "-d",
+      "Ubuntu",
+      "--",
+      "docker",
+    ]);
+    expect(calls[0]?.args).toContain("up");
+    // 落盘：停止/查询都按它执行（否则 down 找不到另一侧起的容器）
+    expect(readStackRuntime(dataDir)).toEqual({
+      kind: "wsl2",
+      distro: "Ubuntu",
+    });
+    // 收尾：模块级安装态归零，不给后续用例留「installing」
+    cancelEngineInstall();
+    expect(getEngineInstallSnapshot().state).toBe("idle");
+  });
+
+  it("WSL2 停止：down 经同一承载目标（wsl.exe），随后回收发行版", async () => {
+    const target = options();
+    const run = fakeRun({ code: 0 });
+    const result = await stopEngineStack(
+      { ...target, launch: { kind: "wsl2", distro: "Ubuntu" } },
+      { run: run.run },
+    );
+    expect(result.ok).toBe(true);
+    expect(run.calls[0]?.file).toBe("wsl.exe");
+    expect(run.calls[0]?.args).toContain("Ubuntu");
+    expect(run.calls[0]?.args).toContain("down");
+    // §9-② 的「退出 flow 时零常驻」：回收只针对本栈所在发行版（不是全局 --shutdown）
+    expect(run.calls[1]).toEqual({
+      file: "wsl.exe",
+      args: ["--terminate", "Ubuntu"],
+    });
+  });
+
+  it("宿主 docker 停止不碰 WSL；回收失败也不影响「栈已停」", async () => {
+    const hostTarget = options();
+    const hostRun = fakeRun({ code: 0 });
+    await stopEngineStack(hostTarget, { run: hostRun.run });
+    expect(hostRun.calls.every((call) => call.file !== "wsl.exe")).toBe(true);
+
+    // 回收那一步失败（发行版已被手工停掉/命令不可用）：停止仍算成功
+    const wslTarget = options();
+    const calls: Array<{ file: string; args: readonly string[] }> = [];
+    const result = await stopEngineStack(
+      { ...wslTarget, launch: { kind: "wsl2", distro: "Ubuntu" } },
+      {
+        run: async (file, args) => {
+          calls.push({ file, args });
+          if (args.includes("--terminate")) throw new Error("wsl 不可用");
+          return { code: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("卸载 purge：down --volumes --rmi all，并清掉本地 env/日志/承载记录", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    writeStackRuntime(target.dataDir, { kind: "host" });
+    const run = fakeRun({ code: 0 });
+    const result = await purgeEngineStack(target, { run: run.run });
+    expect(result.ok).toBe(true);
+    const args = run.calls[0]?.args ?? [];
+    expect(args).toContain("down");
+    expect(args).toContain("--volumes");
+    expect(args).toContain("--rmi");
+    expect(args).toContain("all");
+    // 本地产物清掉（下次安装重新生成）；compose 文件与插件代码不动
+    expect(readStackRuntime(target.dataDir)).toEqual({ kind: "host" });
+    expect(() =>
+      readFileSync(join(target.dataDir, "dify-stack.env"), "utf8"),
+    ).toThrow();
+    expect(() =>
+      readFileSync(join(target.dataDir, "dify-stack.runtime.json"), "utf8"),
+    ).toThrow();
+  });
+
+  it("卸载 purge：从未安装（无 env/记录）不碰 docker，直接成功", async () => {
+    const target = options();
+    const run = fakeRun({ code: 0 });
+    const result = await purgeEngineStack(target, { run: run.run });
+    expect(result.ok).toBe(true);
+    expect(run.calls).toHaveLength(0);
+  });
+
+  it("卸载 purge：down 失败原样给原因（不静默吞掉，也不清本地产物）", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    writeStackRuntime(target.dataDir, { kind: "host" });
+    const run = fakeRun({ code: 1, stderr: "daemon not running\n其余" });
+    const result = await purgeEngineStack(target, { run: run.run });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("daemon not running");
+    // 失败保留记录（用户可重试；否则下次会按 host 去清 WSL2 起的栈）
+    expect(readStackRuntime(target.dataDir)).toEqual({ kind: "host" });
+  });
+});
+
+describe("Dify 初始化接入安装状态机", () => {
+  it("旧 env 保留原密钥，宿主补齐管理员凭据且重启不轮换", () => {
+    const { dataDir } = options();
+    const file = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      file,
+      "DIFY_SECRET_KEY=keep-secret\nDIFY_INIT_PASSWORD=keep-init\n",
+    );
+
+    ensureStackEnvFile(dataDir);
+    const first = readFileSync(file, "utf8");
+    ensureStackEnvFile(dataDir);
+    const second = readFileSync(file, "utf8");
+
+    expect(first).toContain("DIFY_SECRET_KEY=keep-secret");
+    expect(first).toContain("DIFY_INIT_PASSWORD=keep-init");
+    // 零手工初始化：管理员账号与栈凭据一律由宿主生成，不再要求 flow/.env 手填。
+    expect(first).toContain("DIFY_ADMIN_EMAIL=admin@kenfutwork.local");
+    expect(first).toMatch(/DIFY_ADMIN_PASSWORD=.+/);
+    expect(first).toContain("DIFY_DB_PASSWORD=");
+    expect(first).toContain("DIFY_SANDBOX_API_KEY=");
+    expect(second).toBe(first);
+  });
+
+  it("网关 env 只补缺失凭据，不覆盖用户显式配置，幂等且不碰不存在的文件", () => {
+    const { dataDir } = options();
+    const envFile = ensureStackEnvFile(dataDir);
+    const gatewayEnv = join(dataDir, "flow.env");
+    const missingEnv = join(dataDir, "not-created.env");
+    writeFileSync(
+      gatewayEnv,
+      "POSTGRES_PORT=5433\nDIFY_ADMIN_EMAIL=human@example.com\n",
+    );
+
+    syncGatewayCredentials(envFile, [gatewayEnv, missingEnv]);
+    const once = readFileSync(gatewayEnv, "utf8");
+    syncGatewayCredentials(envFile, [gatewayEnv, missingEnv]);
+    const twice = readFileSync(gatewayEnv, "utf8");
+
+    expect(once).toContain("POSTGRES_PORT=5433");
+    // 用户显式配置优先：不覆盖人工填的管理员邮箱。
+    expect(once).toContain("DIFY_ADMIN_EMAIL=human@example.com");
+    expect(once).toMatch(/DIFY_ADMIN_PASSWORD=.+/);
+    expect(once).toContain("DIFY_SECRET_KEY=");
+    expect(twice).toBe(once);
+    expect(() => readFileSync(missingEnv, "utf8")).toThrow();
+  });
+
+  it("网关 env 已有旧管理员凭据时反向对齐栈 env，不覆盖网关且幂等", () => {
+    const { dataDir } = options();
+    const envFile = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      envFile,
+      [
+        "DIFY_INIT_PASSWORD=stack-init",
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=stack-random-password",
+        "DIFY_SECRET_KEY=stack-secret",
+        "DIFY_ADMIN_API_KEY=stack-admin-key",
+        "",
+      ].join("\n"),
+    );
+    const gatewayEnv = join(dataDir, "flow.env");
+    writeFileSync(
+      gatewayEnv,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=legacy-gateway-password",
+        "",
+      ].join("\n"),
+    );
+
+    syncGatewayCredentials(envFile, [gatewayEnv]);
+    const alignedStack = readFileSync(envFile, "utf8");
+    const gateway = readFileSync(gatewayEnv, "utf8");
+
+    // bootstrap 将用这份口令建管理员，网关 loginConsole 才能登录成功。
+    expect(alignedStack).toContain(
+      "DIFY_ADMIN_PASSWORD=legacy-gateway-password",
+    );
+    expect(alignedStack).not.toContain("stack-random-password");
+    // 用户显式配置优先：网关 env 一个字节都不改。
+    expect(gateway).toContain("DIFY_ADMIN_PASSWORD=legacy-gateway-password");
+    expect(gateway).not.toContain("stack-random-password");
+    // 非管理员键仍按只补缺失处理。
+    expect(gateway).toContain("DIFY_SECRET_KEY=stack-secret");
+    expect(gateway).toContain("DIFY_INIT_PASSWORD=stack-init");
+
+    syncGatewayCredentials(envFile, [gatewayEnv]);
+    expect(readFileSync(envFile, "utf8")).toBe(alignedStack);
+    expect(readFileSync(gatewayEnv, "utf8")).toBe(gateway);
+  });
+
+  it("多个网关 env 凭据冲突时按 envFilePath 优先级取值，跳过缺键文件", () => {
+    const { dataDir } = options();
+    const envFile = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      envFile,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=stack-password",
+        "",
+      ].join("\n"),
+    );
+    // 顺序与网关 envFilePath 一致：runtime 优先，且它没有管理员键。
+    const primary = join(dataDir, "runtime.env");
+    const fallback = join(dataDir, "fallback.env");
+    writeFileSync(primary, "POSTGRES_PORT=5433\n");
+    writeFileSync(
+      fallback,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=fallback-password",
+        "",
+      ].join("\n"),
+    );
+
+    syncGatewayCredentials(envFile, [primary, fallback]);
+    expect(readFileSync(envFile, "utf8")).toContain(
+      "DIFY_ADMIN_PASSWORD=fallback-password",
+    );
+
+    // 优先文件一旦含凭据，就不能被次级文件的值覆盖。
+    writeFileSync(primary, "DIFY_ADMIN_PASSWORD=primary-password\n");
+    syncGatewayCredentials(envFile, [primary, fallback]);
+    expect(readFileSync(envFile, "utf8")).toContain(
+      "DIFY_ADMIN_PASSWORD=primary-password",
+    );
+    expect(readFileSync(envFile, "utf8")).not.toContain("fallback-password");
+  });
+
+  it("compose 成功后先初始化再 ready，并发安装不重复触发", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const listeners = new Map<string, (value: unknown) => unknown>();
+    const child = {
+      stdout: { on: () => undefined },
+      stderr: { on: () => undefined },
+      on: (event: string, handler: (value: unknown) => unknown) => {
+        listeners.set(event, handler);
+      },
+      kill: () => undefined,
+    };
+    const bootstrapStack = vi.fn(async () => ({
+      status: "initialized" as const,
+    }));
+    const bootstrap = {
+      consoleBase: "http://127.0.0.1:15001/console/api",
+      attempts: 1,
+      retryDelayMs: 0,
+      requestTimeoutMs: 1000,
+    };
+    const first = startEngineInstall(
+      { ...target, bootstrap: async () => bootstrap },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+    const second = startEngineInstall(
+      { ...target, bootstrap: async () => bootstrap },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+
+    expect(first.started).toBe(true);
+    expect(second.started).toBe(false);
+    expect(getEngineInstallSnapshot().state).toBe("installing");
+    await listeners.get("close")?.(0);
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("ready"),
+    );
+    expect(bootstrapStack).toHaveBeenCalledTimes(1);
+    expect(bootstrapStack).toHaveBeenCalledWith(
+      expect.objectContaining({ consoleBase: bootstrap.consoleBase }),
+      expect.anything(),
+    );
+  });
+
+  function readyChild() {
+    const listeners = new Map<string, (value: unknown) => unknown>();
+    const child = {
+      stdout: { on: () => undefined },
+      stderr: { on: () => undefined },
+      on: (event: string, handler: (value: unknown) => unknown) => {
+        listeners.set(event, handler);
+      },
+      kill: () => undefined,
+    };
+    return { child, close: () => listeners.get("close")?.(0) };
+  }
+
+  it("安装完成后补一次网关控制面授权，成功才置 ready", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const onReady = vi.fn(async () => undefined);
+
+    startEngineInstall(
+      { ...target, onReady },
+      { spawn: (() => child) as never },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("ready"),
+    );
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("补授权失败不谎报 ready，错误进安装态", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const onReady = vi.fn(async () => {
+      throw new Error("网关控制面补授权失败（HTTP 503）");
+    });
+
+    startEngineInstall(
+      { ...target, onReady },
+      { spawn: (() => child) as never },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    expect(getEngineInstallSnapshot().error).toContain("网关控制面补授权失败");
+  });
+
+  it("补授权失败不写成「Dify 初始化失败」：栈已起来时错误必须指到网关", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const bootstrapStack = vi.fn(async () => ({
+      status: "initialized" as const,
+    }));
+
+    startEngineInstall(
+      {
+        ...target,
+        bootstrap: async () => ({
+          consoleBase: "http://127.0.0.1:15001/console/api",
+          attempts: 1,
+          retryDelayMs: 1,
+          requestTimeoutMs: 1_000,
+        }),
+        onReady: async () => {
+          throw new Error("网关不可达（http://127.0.0.1:15010）：fetch failed");
+        },
+      },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    // 实测踩过的坑：Dify 的 /init 与 /setup 都 201 成功了，报错却顶着
+    // 「Dify 初始化失败：fetch failed」，把人引去查引擎而不是网关。
+    expect(bootstrapStack).toHaveBeenCalledTimes(1);
+    const error = getEngineInstallSnapshot().error ?? "";
+    expect(error).not.toContain("Dify 初始化失败");
+    expect(error).toContain("引擎已装好");
+    expect(error).toContain("http://127.0.0.1:15010");
+  });
+
+  it("初始化真失败时才标「Dify 初始化失败」", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+
+    startEngineInstall(
+      {
+        ...target,
+        bootstrap: async () => ({
+          consoleBase: "http://127.0.0.1:15001/console/api",
+          attempts: 1,
+          retryDelayMs: 1,
+          requestTimeoutMs: 1_000,
+        }),
+        onReady: async () => undefined,
+      },
+      {
+        spawn: (() => child) as never,
+        bootstrapStack: vi.fn(async () => {
+          throw new Error("创建管理员失败（HTTP 400）");
+        }),
+      },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    const error = getEngineInstallSnapshot().error ?? "";
+    expect(error).toContain("Dify 初始化失败");
+    expect(error).toContain("创建管理员失败");
+    expect(error).not.toContain("引擎已装好");
+  });
+});
+
+describe("安装日志尾部", () => {
+  it("进程重启后按数据目录读最后 50 行", () => {
+    const dir = mkdtempSync(join(tmpdir(), "flow-log-"));
+    const lines = Array.from({ length: 60 }, (_, index) => `line-${index + 1}`);
+    writeFileSync(join(dir, STACK_LOG_FILE), lines.join("\n"));
+    const tail = readStackLogTail(dir);
+    expect(tail).toHaveLength(50);
+    expect(tail[0]).toBe("line-11");
+    expect(tail.at(-1)).toBe("line-60");
+  });
+  it("没有日志文件时返回空数组", () => {
+    const dir = mkdtempSync(join(tmpdir(), "flow-log-empty-"));
+    expect(readStackLogTail(dir)).toEqual([]);
+  });
+});
+
+describe("引擎栈「装上即用」自动安装判据", () => {
+  it("本机承载可用且栈不在 → 自动安装（不再等用户点按钮）", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "idle",
+        stackContainerCount: 0,
+        recommended: "container",
+      }),
+    ).toEqual({ action: "install" });
+    expect(
+      planEngineAutoInstall({
+        installState: "error",
+        stackContainerCount: 0,
+        recommended: "wsl2",
+      }),
+    ).toEqual({ action: "install" });
+  });
+
+  it("已有安装任务在跑 → 不重复拉起", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "installing",
+        stackContainerCount: 0,
+        recommended: "container",
+      }).action,
+    ).toBe("skip");
+  });
+
+  it("栈容器已在（哪怕全停）→ 也跑一次幂等初始化，补上中断的 Dify 管理员创建", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "idle",
+        stackContainerCount: 12,
+        recommended: "container",
+      }).action,
+    ).toBe("install");
+  });
+
+  it("承载是用户自管地址或压根没探到 → 不自动装本机栈", () => {
+    for (const recommended of ["remote", null] as const) {
+      expect(
+        planEngineAutoInstall({
+          installState: "idle",
+          stackContainerCount: 0,
+          recommended,
+        }),
+      ).toMatchObject({ action: "skip" });
+    }
+  });
+});

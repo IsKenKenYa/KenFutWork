@@ -1,139 +1,217 @@
 import type { PersistenceService } from "../persistence/types.js";
+import { claimCanvasRootInTransaction } from "./root-directory.js";
 
 export type CanvasRow = {
   id: string;
   name: string;
   project_id: string;
   content: unknown;
+  root_directory?: string | null;
+  is_primary?: boolean;
+  deleted_at?: string | null;
 };
 
 /**
  * canvas 聚合的数据访问（`canvases`）。
- * `canvases` 无 `workspace_id` 列，故一律 JOIN `projects` 后施加谓词
+ * `canvases` 无 `instance_id` 列，故一律 JOIN `projects` 后施加谓词
  * （`FORM-9` 单一隔离入口）——归属校验与查询是同一条语句。
  */
 export interface CanvasRepository {
+  notificationTarget(canvasId: string): Promise<{
+    instance_id: string;
+    project_id: string;
+    deleted_at: string | null;
+  } | null>;
+  notifyChanged(instanceId: string, canvasId: string): Promise<void>;
+  withDocumentLock<T>(
+    instanceId: string,
+    canvasId: string,
+    operation: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T>;
+  list(
+    instanceId: string,
+    projectId: string,
+    query?: string,
+  ): Promise<CanvasRow[]>;
+  create(input: {
+    instanceId: string;
+    projectId: string;
+    canvasId: string;
+    name: string;
+  }): Promise<CanvasRow | null>;
+  rename(
+    instanceId: string,
+    canvasId: string,
+    expectedName: string,
+    name: string,
+  ): Promise<number>;
+  remove(instanceId: string, canvasId: string): Promise<number>;
+  claimRoot(
+    instanceId: string,
+    canvasId: string,
+    resolveDefault: (workDir: string | null) => Promise<string>,
+  ): Promise<string>;
   /** 读画布（含内容）；不属本工作区或不存在均返回 null。 */
-  findById(workspaceId: string, canvasId: string): Promise<CanvasRow | null>;
+  findById(
+    instanceId: string,
+    canvasId: string,
+    options?: { includeDeleted: boolean },
+  ): Promise<CanvasRow | null>;
   /**
    * 由画布反查工作区（画布 → 项目链）。
    * 无工作区谓词可言（查的就是「这块画布属于谁」），故走根客户端；
    * 调用方是已鉴权的 agent 运行（画布 id 来自本次运行），不是外部输入。
    */
-  findWorkspaceIdByCanvas(canvasId: string): Promise<string | null>;
   /** 画布 → 项目 → 品牌套件 id（run 启动时解析 brandKitId 用，单条 JOIN）。 */
   findProjectBrandKitId(
-    workspaceId: string,
+    instanceId: string,
     canvasId: string,
   ): Promise<string | null>;
   /** 覆盖写画布内容；返回受影响行数（0 = 不存在或不属本工作区）。 */
-  saveContent(
-    workspaceId: string,
-    canvasId: string,
-    content: unknown,
-  ): Promise<number>;
-  /**
-   * **原子追加**元素与文件（单条 SQL 内做 jsonb 合并）；返回受影响行数。
-   *
-   * 为什么必须原子：生成物落画布原先走「读 content → 追加 → 覆盖写」，两个任务并发
-   * 落同一块画布时后写者会覆盖前者，**丢元素**（与《AGENTS.md》「持久副作用与幂等性」
-   * 冲突）。把合并放进语句里，读-改-写之间就不存在窗口。
-   *
-   * 位置计算仍基于调用前的读取：并发插入**不会丢**元素，但可能算出相近落点（元素重叠，
-   * 可拖动）。这是「不丢数据」与「不为落图加行锁」之间的取舍。
-   */
-  appendContent(
-    workspaceId: string,
-    canvasId: string,
-    input: {
-      elements: readonly unknown[];
-      files?: Record<string, unknown> | undefined;
-    },
-  ): Promise<number>;
+  recordFileIndex(instanceId: string, canvasId: string): Promise<number>;
 }
 
-const CANVAS_COLUMNS = "c.id, c.name, c.project_id, c.content";
+const CANVAS_COLUMNS =
+  "c.id, c.name, c.project_id, c.content, c.root_directory, c.is_primary, c.deleted_at";
 
 export function createCanvasRepository(
   persistence: PersistenceService,
 ): CanvasRepository {
   return {
-    async findWorkspaceIdByCanvas(canvasId) {
-      const row = await persistence.queryOne<{ workspace_id: string }>(
-        `select p.workspace_id
-           from public.canvases c
-           join public.projects p on p.id = c.project_id
-          where c.id = $1`,
+    notificationTarget: (canvasId) =>
+      persistence.queryOne(
+        `select p.instance_id,c.project_id,c.deleted_at from public.canvases c
+       join public.projects p on p.id=c.project_id where c.id=$1 and p.archived_at is null`,
+        [canvasId],
+      ),
+    async notifyChanged(instanceId, canvasId) {
+      await persistence.forInstance(instanceId).execute(
+        `select pg_notify('kenfutwork_canvas_changed',$1::text) where exists
+         (select 1 from public.canvases c join public.projects p on p.id=c.project_id
+          where c.id=$1::uuid and p.instance_id=:instance and p.archived_at is null)`,
         [canvasId],
       );
-      return row?.workspace_id ?? null;
     },
-
-    async findProjectBrandKitId(workspaceId, canvasId) {
+    withDocumentLock: (instanceId, canvasId, operation) =>
+      persistence.withSessionTransaction(async (tx, signal) => {
+        await tx
+          .forInstance(instanceId)
+          .execute(
+            `select pg_advisory_xact_lock(hashtextextended('canvas-document:' || :instance || ':' || $1,0))`,
+            [canvasId],
+          );
+        return operation(signal);
+      }),
+    async list(instanceId, projectId, query) {
+      return persistence.forInstance(instanceId).query<CanvasRow>(
+        `select ${CANVAS_COLUMNS} from public.canvases c
+         join public.projects p on p.id=c.project_id
+         where p.id=$1 and p.instance_id=:instance and p.archived_at is null
+           and c.deleted_at is null and ($2::text is null or strpos(lower(c.name), lower($2)) > 0)
+         order by c.is_primary desc, c.updated_at desc, c.id`,
+        [projectId, query || null],
+      );
+    },
+    async create(input) {
+      return persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(input.instanceId);
+        const project = await sql.queryOne(
+          `select p.id from public.projects p where p.id=$1 and p.instance_id=:instance
+           and p.archived_at is null and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes)) for update`,
+          [input.projectId],
+        );
+        if (!project) return null;
+        const previous = await sql.queryOne<CanvasRow>(
+          `select ${CANVAS_COLUMNS} from public.canvases c join public.projects p on p.id=c.project_id
+           where c.id=$1 and p.instance_id=:instance and p.archived_at is null and c.deleted_at is null`,
+          [input.canvasId],
+        );
+        if (previous)
+          return previous.project_id === input.projectId &&
+            previous.name === input.name
+            ? previous
+            : null;
+        return sql.queryOne<CanvasRow>(
+          `insert into public.canvases(id,project_id,name,is_primary,content)
+           select $1,$2,$3,not exists(select 1 from public.canvases where project_id=$2 and is_primary and deleted_at is null),$4::jsonb
+           from public.projects p where p.id=$2 and p.instance_id=:instance and p.archived_at is null
+             and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes))
+           on conflict(id) do nothing
+           returning id,name,project_id,content,root_directory,is_primary`,
+          [
+            input.canvasId,
+            input.projectId,
+            input.name,
+            JSON.stringify({ elements: [], appState: {}, files: {} }),
+          ],
+        );
+      });
+    },
+    rename(instanceId, canvasId, expectedName, name) {
+      return persistence.forInstance(instanceId).execute(
+        `update public.canvases c set name=$3 from public.projects p
+         where c.id=$1 and c.name=$2 and c.deleted_at is null and p.id=c.project_id
+           and p.instance_id=:instance and p.archived_at is null`,
+        [canvasId, expectedName, name],
+      );
+    },
+    remove(instanceId, canvasId) {
+      return persistence.forInstance(instanceId).execute(
+        `update public.canvases c set deleted_at=now(),is_primary=false from public.projects p
+         where c.id=$1 and c.deleted_at is null and p.id=c.project_id
+           and p.instance_id=:instance and p.archived_at is null`,
+        [canvasId],
+      );
+    },
+    claimRoot: (instanceId, canvasId, resolveDefault) =>
+      persistence.transaction((tx) =>
+        claimCanvasRootInTransaction(
+          tx.forInstance(instanceId),
+          canvasId,
+          resolveDefault,
+        ),
+      ),
+    async findProjectBrandKitId(instanceId, canvasId) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<{ brand_kit_id: string | null }>(
           `select p.brand_kit_id
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = $1
-              and p.workspace_id = :workspace`,
+              and p.instance_id = :instance and p.archived_at is null and c.deleted_at is null`,
           [canvasId],
         );
       return row?.brand_kit_id ?? null;
     },
 
-    async findById(workspaceId, canvasId) {
-      const row = await persistence
-        .forWorkspace(workspaceId)
-        .queryOne<CanvasRow>(
-          `select ${CANVAS_COLUMNS}
+    async findById(instanceId, canvasId, options) {
+      const row = await persistence.forInstance(instanceId).queryOne<CanvasRow>(
+        `select ${CANVAS_COLUMNS}
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = $1
-              and p.workspace_id = :workspace`,
-          [canvasId],
-        );
+              and p.instance_id = :instance and p.archived_at is null ${options?.includeDeleted ? "" : "and c.deleted_at is null"}`,
+        [canvasId],
+      );
       return row ?? null;
     },
 
-    async saveContent(workspaceId, canvasId, content) {
+    async recordFileIndex(instanceId, canvasId) {
       // jsonb 写入：显式序列化后由 cast 落库，避免驱动对对象做隐式推断。
-      return persistence.forWorkspace(workspaceId).execute(
+      return persistence.forInstance(instanceId).execute(
         `update public.canvases c
             set content = $2::jsonb
            from public.projects p
           where p.id = c.project_id
             and c.id = $1
-            and p.workspace_id = :workspace`,
-        [canvasId, JSON.stringify(content)],
-      );
-    },
-
-    async appendContent(workspaceId, canvasId, input) {
-      // 合并全在语句内完成：elements 数组拼接、files 顶层键合并（缺失即建）。
-      // 空 content（新建画布）与缺 elements/files 键都由 coalesce 兜住。
-      return persistence.forWorkspace(workspaceId).execute(
-        `update public.canvases c
-            set content = jsonb_set(
-                  jsonb_set(
-                    coalesce(c.content, '{}'::jsonb),
-                    '{elements}',
-                    coalesce(c.content -> 'elements', '[]'::jsonb) || $2::jsonb,
-                    true
-                  ),
-                  '{files}',
-                  coalesce(c.content -> 'files', '{}'::jsonb) || $3::jsonb,
-                  true
-                )
-           from public.projects p
-          where p.id = c.project_id
-            and c.id = $1
-            and p.workspace_id = :workspace`,
+            and p.instance_id = :instance and p.archived_at is null and c.deleted_at is null`,
         [
           canvasId,
-          JSON.stringify(input.elements),
-          JSON.stringify(input.files ?? {}),
+          JSON.stringify({
+            storage: "project-files",
+            path: `.kenfutwork/canvases/${canvasId}.json`,
+          }),
         ],
       );
     },

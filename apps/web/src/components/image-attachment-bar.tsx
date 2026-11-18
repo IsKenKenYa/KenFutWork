@@ -23,6 +23,7 @@ export function ImageAttachmentBar({
           className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-muted"
         >
           {att.preview ? (
+            // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
               src={att.preview}
               alt="Attachment"
@@ -31,6 +32,7 @@ export function ImageAttachmentBar({
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <svg
+                aria-hidden="true"
                 className="h-5 w-5 text-muted-foreground"
                 viewBox="0 0 24 24"
                 fill="none"
@@ -51,12 +53,15 @@ export function ImageAttachmentBar({
 
           {/* Error overlay with retry */}
           {att.error && (
-            <div
-              className={`absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-red-500/20 ${onRetry && att.file ? "cursor-pointer" : ""}`}
+            <button
+              type="button"
+              disabled={!onRetry || !att.file}
+              className={`absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-red-500/20 ${onRetry && att.file ? "cursor-pointer" : "cursor-default"}`}
               onClick={onRetry && att.file ? () => onRetry(att.id) : undefined}
               title={att.error}
             >
               <svg
+                aria-hidden="true"
                 className="h-3.5 w-3.5 text-red-500"
                 viewBox="0 0 20 20"
                 fill="currentColor"
@@ -72,7 +77,7 @@ export function ImageAttachmentBar({
                   Retry
                 </span>
               )}
-            </div>
+            </button>
           )}
 
           {/* Remove button */}
@@ -82,6 +87,7 @@ export function ImageAttachmentBar({
             className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground group-hover:flex"
           >
             <svg
+              aria-hidden="true"
               className="h-2.5 w-2.5"
               viewBox="0 0 24 24"
               fill="none"

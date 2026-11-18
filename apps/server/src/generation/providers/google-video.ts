@@ -106,7 +106,14 @@ function buildVideoModelInfo(
   description: string,
   apiModelName: string,
 ): VideoModelInfo {
-  const caps = MODEL_CAPABILITIES[apiModelName]!;
+  const caps = MODEL_CAPABILITIES[apiModelName];
+  if (!caps) {
+    throw new GenerationError(
+      PROVIDER_NAME,
+      "model_not_found",
+      `No capabilities defined for model: ${apiModelName}`,
+    );
+  }
   return {
     id,
     displayName,
@@ -269,8 +276,9 @@ export class GoogleVideoProvider implements VideoProvider {
 
     // Build image input for image-to-video.
     let image: { imageBytes: string; mimeType: string } | undefined;
-    if (params.inputImages?.length) {
-      const first = await fetchAsBase64(PROVIDER_NAME, params.inputImages[0]!);
+    const firstImageUrl = params.inputImages?.[0];
+    if (firstImageUrl) {
+      const first = await fetchAsBase64(PROVIDER_NAME, firstImageUrl);
       image = { imageBytes: first.data, mimeType: first.mimeType };
     }
 
@@ -350,7 +358,8 @@ export class GoogleVideoProvider implements VideoProvider {
 
     // Check for safety / RAI filtering.
     const response = operation.response;
-    if (!response?.generatedVideos?.length) {
+    const generatedVideo = response?.generatedVideos?.at(0);
+    if (!generatedVideo) {
       const raiReasons = response?.raiMediaFilteredReasons;
       if (raiReasons?.length) {
         throw new GenerationError(
@@ -373,7 +382,6 @@ export class GoogleVideoProvider implements VideoProvider {
       );
     }
 
-    const generatedVideo = response.generatedVideos[0]!;
     const video = generatedVideo.video;
     if (!video?.uri) {
       throw new GenerationError(
@@ -406,7 +414,10 @@ export class GoogleVideoProvider implements VideoProvider {
 
 /** Clamps a value to the nearest allowed value in the list. */
 function clampToNearest(requested: number, allowed: number[]): number {
-  let closest = allowed[0]!;
+  // 允许值来自硬编码能力表（非空）；空表时无从夹取，原样返回请求值
+  const initial = allowed.at(0);
+  if (initial === undefined) return requested;
+  let closest = initial;
   let minDiff = Math.abs(requested - closest);
   for (const v of allowed) {
     const diff = Math.abs(requested - v);

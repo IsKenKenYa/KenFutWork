@@ -1,11 +1,13 @@
 import { join } from "node:path";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 
 import { registerCodeGitRoutes } from "../../http/code-git.js";
+import { registerCodeIndexRoutes } from "../../http/code-index.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createCanvasRepository } from "../canvas/repository.js";
+import { createCodeIndexStore } from "../code-index/index-store.js";
 import { createCodeGitService } from "./code-git-service.js";
 import { createGitClient } from "./git-client.js";
-import { createProcessGitExec } from "./git-exec.js";
+import { createScopedGitExec } from "./scoped-git-exec.js";
 
 /**
  * Code 模式 git 插件：分支视图服务 + HTTP 路由（路由注册放 mounted）。
@@ -17,26 +19,68 @@ import { createProcessGitExec } from "./git-exec.js";
 export function createCodeGitPlugin(): PluginDefinition {
   return {
     name: "code-git",
-    inject: ["auth", "persistence", "viewer"],
+    inject: [
+      "localAccess",
+      "settings",
+      "localInstance",
+      "executionScopes",
+      "processSandbox",
+    ],
     apply(ctx) {
       const gitBinDir = ctx.env.gitBinDir;
       ctx.register("codeGit", () =>
         createCodeGitService({
-          canvasRepository: createCanvasRepository(ctx.get("persistence")),
-          git: createGitClient({
-            exec: createProcessGitExec({
-              binary: gitBinDir ? join(gitBinDir, "git.exe") : "git",
-            }),
-          }),
+          scopes: ctx.get("executionScopes"),
+          processSandbox: ctx.get("processSandbox"),
+          gitForScope: async (scope, actor) => {
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, scope.describe().instanceId);
+            return createGitClient({
+              exec: createScopedGitExec({
+                scope,
+                sandbox: ctx.get("processSandbox"),
+                binary: gitBinDir
+                  ? join(
+                      gitBinDir,
+                      process.platform === "win32" ? "git.exe" : "git",
+                    )
+                  : "git",
+                timeoutMs: settings.executeTimeoutMs,
+                limits: {
+                  maxOutputBytes: settings.processMaxOutputBytes,
+                  previewMaxChars: settings.processPreviewMaxChars,
+                  yieldMs: settings.processYieldMs,
+                  killGraceMs: settings.processKillGraceMs,
+                },
+              }),
+            });
+          },
           source: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
+          /* 终端默认 shell 来自工作区设置（/api/settings 的 terminalShell） */
+          settingsService: ctx.get("settings"),
         }),
       );
     },
     mounted(ctx) {
       void registerCodeGitRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         codeGitService: ctx.get("codeGit"),
+      });
+      // 可重建的本机索引也随实例数据根迁移。
+      void registerCodeIndexRoutes(ctx.app, {
+        localAccess: ctx.get("localAccess"),
+        codeGitService: ctx.get("codeGit"),
+        settingsService: ctx.get("settings"),
+        indexStore: createCodeIndexStore({
+          indexDir: join(
+            resolveDesktopDataDir({
+              env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+            }),
+            "index",
+          ),
+        }),
       });
     },
   };

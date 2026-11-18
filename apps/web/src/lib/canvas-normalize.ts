@@ -8,8 +8,11 @@
 
 type CanvasElement = Record<string, unknown>;
 
+/** 未收录字体的回退串（1 = Virgil）。 */
+const DEFAULT_FONT_FAMILY = "20px Virgil, Segoe Print, Comic Sans MS, cursive";
+
 const EXCALIDRAW_FONT_FAMILY_MAP: Record<number, string> = {
-  1: "20px Virgil, Segoe Print, Comic Sans MS, cursive",
+  1: DEFAULT_FONT_FAMILY,
   2: "20px Helvetica, Arial, sans-serif",
   3: "20px Cascadia, monospace",
 };
@@ -25,7 +28,7 @@ function measureTextDOM(
     return { width: text.length * fontSize * 0.6, height: fontSize * 1.25 };
   }
   const baseFontStr =
-    EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? EXCALIDRAW_FONT_FAMILY_MAP[1]!;
+    EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? DEFAULT_FONT_FAMILY;
   const fontStr = baseFontStr.replace("20px", `${fontSize}px`);
   ctx.font = fontStr;
   const lines = text.split("\n");

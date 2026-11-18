@@ -11,8 +11,9 @@ import {
 
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import { resolveSandboxDir } from "../sandbox-dir.js";
+import { withWorkDirAlias } from "./path-alias.js";
 
-const DEFAULT_SKILLS_ROOT = "/opt/loomic/skills";
+const DEFAULT_SKILLS_ROOT = "/opt/kenfutwork/skills";
 
 /**
  * Create a production backend with a per-project persistent workspace.
@@ -38,8 +39,10 @@ export function createProductionBackendFactory(
   canvasId: string,
   options?: {
     sandboxRoot?: string;
+    /** 画布 → 真实目录映射（`KENFUTWORK_CANVAS_WORK_DIRS`）；命中时直接落该目录。 */
+    workDir?: string;
     skillsRoot?: string;
-    hasWorkspaceSkills?: boolean;
+    hasInstanceSkills?: boolean;
     /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
     runtimePathAdditions?: string[];
     /** 随包 JDK 根目录（JAVA_HOME）。 */
@@ -54,7 +57,11 @@ export function createProductionBackendFactory(
   const skillsRoot = resolve(options?.skillsRoot ?? DEFAULT_SKILLS_ROOT);
 
   // 沙箱目录的判定集中在 resolveSandboxDir（git 分支操作等能力共用同一处，避免漂移）
-  const sandboxDir = resolveSandboxDir(canvasId, options?.sandboxRoot);
+  const sandboxDir = resolveSandboxDir(
+    canvasId,
+    options?.sandboxRoot,
+    options?.workDir,
+  );
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 
@@ -101,13 +108,20 @@ export function createProductionBackendFactory(
       "/skills/": skillsBackend,
     };
 
-    if (options?.hasWorkspaceSkills) {
+    if (options?.hasInstanceSkills) {
       routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
         namespace: ["projects", canvasId, "workspace-skills"],
       });
     }
 
-    return new CompositeBackend(sandbox, routes);
+    // 路径别名：virtualMode 沙箱把根外绝对路径**静默吞成空结果**，而模型拿得到真实
+    // 路径（用户贴的路径/历史对话/execute 的 pwd 回显），ls 之即得「目录是空的」
+    // （2026-09-20 实测）。别名层让以沙箱真实目录开头的路径直达虚拟根；realpath 两个
+    // 形态都认（macOS 的 /tmp → /private/tmp、外挂卷宗挂载点都可能差一层）。
+    return withWorkDirAlias(new CompositeBackend(sandbox, routes), [
+      realSandboxDir,
+      sandboxDir,
+    ]);
   };
 
   return { factory, sandboxDir: realSandboxDir, ephemeral: false };

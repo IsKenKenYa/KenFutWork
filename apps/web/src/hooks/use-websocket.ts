@@ -1,35 +1,111 @@
 "use client";
 
 import type {
-  RunCreateRequest,
+  CanvasDocumentUpdatedMessage,
   StreamEvent,
+  TerminalShellId,
   WsCommandAck,
   WsRpcRequest,
-} from "@loomic/shared";
+  WsRunCommand,
+} from "@kenfutwork/shared";
+import { canvasDocumentUpdatedMessageSchema } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { getServerBaseUrl } from "../lib/env";
 
-type EventCallback = (event: StreamEvent) => void;
+type EventCallback = (
+  event: StreamEvent,
+  seq?: number,
+  taskId?: string,
+) => void;
+
+/**
+ * 终端会话通道（右栏「终端」标签的交互式形态）的事件：起好了 / 有输出 / 结束了。
+ * 与 run 事件分开：run 事件的消费方按 runId 过滤，把终端输出塞进去会让它们误判。
+ */
+export type TerminalChannelEvent =
+  | {
+      type: "started";
+      sessionId: string;
+      shell: TerminalShellId;
+      executable: string;
+    }
+  | { type: "output"; sessionId: string; data: string }
+  | {
+      type: "exit";
+      sessionId: string;
+      exitCode: number | null;
+      reason?: string;
+    };
+
+type TerminalCallback = (event: TerminalChannelEvent) => void;
+type DocumentUpdatedCallback = (message: CanvasDocumentUpdatedMessage) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
+function createWsRequestId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export type WebSocketHandle = {
   connected: boolean;
   startRun: (
-    payload: RunCreateRequest,
+    payload: WsRunCommand["payload"],
     onAck?: (ack: WsCommandAck) => void,
   ) => void;
-  cancelRun: (runId: string) => void;
+  cancelRun: (
+    taskId: string,
+    runId: string,
+    onAck?: (ack: WsCommandAck) => void,
+  ) => void;
   onEvent: (cb: EventCallback) => () => void;
+  onDocumentUpdated: (cb: DocumentUpdatedCallback) => () => void;
+  /** 起一个持久 shell 会话（同一个 id 重复起时服务端复用已有会话）。 */
+  startTerminal: (payload: {
+    sessionId: string;
+    /** 省略即不绑工作目录（cwd 落到服务端启动目录）。 */
+    canvasId?: string;
+    shell?: TerminalShellId;
+    /** PTY 的初始尺寸（列 × 行）；终端模拟器量出来后会再 resize 一次。 */
+    cols?: number;
+    rows?: number;
+  }) => void;
+  /** 终端尺寸变化（PSReadLine / 全屏 TUI 靠它排版）。 */
+  resizeTerminal: (sessionId: string, cols: number, rows: number) => void;
+  /** 送一行输入（换行由服务端按 shell 补）。 */
+  sendTerminalInput: (sessionId: string, data: string) => void;
+  /** 结束会话（服务端杀整棵进程树）。 */
+  stopTerminal: (sessionId: string) => void;
+  onTerminal: (cb: TerminalCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
+  resumeTask: (
+    taskId: string,
+    lastSeq: number,
+    onAck?: (ack: WsCommandAck) => void,
+  ) => void;
   resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
+  /**
+   * 立刻换一条新连接（不等退避）。
+   *
+   * 用途：半开连接的自救——服务端那侧已经注销、客户端这侧 socket 还开着时，
+   * `connected` 是假的 true，命令发得出去、事件回不来。此时把 socket 关掉重连，
+   * 既有的重连对账（`task.resume`）会把在飞的 Task Run 接回来。
+   */
+  reconnectNow: () => void;
 };
 
-export function useWebSocket(getToken: () => string | null): WebSocketHandle {
+export function useWebSocket(options?: {
+  documentScope?: string | undefined;
+}): WebSocketHandle {
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef(
     (() => {
+      // 每个常驻编辑器都有自己的socket；同一iframe实例重连继续使用此Ref中的UUID。
+      // 文档ID只是作用域标签，两个同文档编辑器也不能认领同一个connectionId。
+      if (options?.documentScope) return createWsRequestId();
       if (typeof sessionStorage !== "undefined") {
         const stored = sessionStorage.getItem("ws_connection_id");
         if (stored) return stored;
@@ -51,13 +127,57 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   const disposed = useRef(false);
 
   const eventListeners = useRef<Set<EventCallback>>(new Set());
-  const ackListeners = useRef<Map<string, (ack: WsCommandAck) => void>>(
-    new Map(),
+  const documentUpdatedListeners = useRef<Set<DocumentUpdatedCallback>>(
+    new Set(),
+  );
+  const terminalListeners = useRef<Set<TerminalCallback>>(new Set());
+  const ackListeners = useRef(
+    new Map<
+      string,
+      { action: string; callback: (ack: WsCommandAck) => void }
+    >(),
   );
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
 
+  // 只读 rpcHandlers ref，故空依赖数组即稳定引用；connect 依赖它才不违反 exhaustive-deps。
+  const handleRpcRequest = useCallback(
+    async (ws: WebSocket, req: WsRpcRequest) => {
+      const handler = rpcHandlers.current.get(req.method);
+      if (!handler) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "rpc.response",
+              id: req.id,
+              error: `No handler for method: ${req.method}`,
+            }),
+          );
+        }
+        return;
+      }
+
+      try {
+        const result = await handler(req.params);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
+        }
+      } catch (error) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "rpc.response",
+              id: req.id,
+              error:
+                error instanceof Error ? error.message : "RPC handler failed",
+            }),
+          );
+        }
+      }
+    },
+    [],
+  );
+
   const connect = useCallback(() => {
-    const token = getToken();
     if (disposed.current) return;
     // Skip if already connected -- prevents React Strict Mode double-mount
     // from replacing an active connection mid-stream
@@ -70,19 +190,13 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       wsRef.current.close();
       wsRef.current = null;
     }
-    if (!token) {
-      // Token not yet available (auth loading) -- retry shortly
-      reconnectTimer.current = setTimeout(connect, 500);
-      return;
-    }
-
     const serverBase = getServerBaseUrl();
     const wsBase = serverBase
       ? serverBase.replace(/^http/, "ws")
       : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
     const wsUrl =
       wsBase +
-      `/api/ws?token=${encodeURIComponent(token)}&connectionId=${encodeURIComponent(connectionIdRef.current)}`;
+      `/api/ws?connectionId=${encodeURIComponent(connectionIdRef.current)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -102,31 +216,104 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
         return;
       }
 
-      if (msg.type === "event") {
+      if (msg.type === "canvas.document.updated") {
+        const parsed = canvasDocumentUpdatedMessageSchema.safeParse(msg);
+        if (!parsed.success) return;
+        for (const cb of documentUpdatedListeners.current) {
+          try {
+            cb(parsed.data);
+          } catch (listenerErr) {
+            console.error("[ws] document listener threw:", listenerErr);
+          }
+        }
+      } else if (msg.type === "event") {
         const streamEvent = msg.event as StreamEvent;
         // Defensive: skip malformed events without proper structure
         if (!streamEvent || typeof streamEvent !== "object") {
           console.warn("[ws] received malformed stream event:", msg);
           return;
         }
+        const seq = typeof msg.seq === "number" ? msg.seq : undefined;
+        const taskId = typeof msg.taskId === "string" ? msg.taskId : undefined;
         for (const cb of eventListeners.current) {
           try {
-            cb(streamEvent);
+            cb(streamEvent, seq, taskId);
           } catch (listenerErr) {
             // Prevent one listener's error from breaking others
             console.error("[ws] event listener threw:", listenerErr);
           }
         }
-      } else if (msg.type === "command.ack") {
-        const cb = ackListeners.current.get(msg.action as string);
-        if (cb) {
-          ackListeners.current.delete(msg.action as string);
+      } else if (
+        msg.type === "terminal.output" ||
+        msg.type === "terminal.exit"
+      ) {
+        const terminalEvent: TerminalChannelEvent =
+          msg.type === "terminal.output"
+            ? {
+                type: "output",
+                sessionId: String(msg.sessionId ?? ""),
+                data: String(msg.data ?? ""),
+              }
+            : {
+                type: "exit",
+                sessionId: String(msg.sessionId ?? ""),
+                exitCode:
+                  typeof msg.exitCode === "number" ? msg.exitCode : null,
+                ...(typeof msg.reason === "string"
+                  ? { reason: msg.reason }
+                  : {}),
+              };
+        for (const cb of terminalListeners.current) {
           try {
-            cb(msg as unknown as WsCommandAck);
-          } catch (ackErr) {
-            console.error("[ws] ack listener threw:", ackErr);
+            cb(terminalEvent);
+          } catch (listenerErr) {
+            console.error("[ws] terminal listener threw:", listenerErr);
           }
         }
+      } else if (
+        msg.type === "command.ack" &&
+        msg.action === "terminal.start"
+      ) {
+        const payload = (msg.payload ?? {}) as Record<string, unknown>;
+        const started: TerminalChannelEvent = {
+          type: "started",
+          sessionId: String(payload.sessionId ?? ""),
+          shell: (payload.shell ?? "auto") as TerminalShellId,
+          executable: String(payload.executable ?? ""),
+        };
+        for (const cb of terminalListeners.current) {
+          try {
+            cb(started);
+          } catch (listenerErr) {
+            console.error("[ws] terminal listener threw:", listenerErr);
+          }
+        }
+      } else if (msg.type === "command.ack") {
+        const requestId = (msg as { requestId?: unknown }).requestId;
+        if (typeof requestId !== "string") return;
+        const pending = ackListeners.current.get(requestId);
+        if (!pending || pending.action !== msg.action) return;
+        ackListeners.current.delete(requestId);
+        try {
+          pending.callback(msg as unknown as WsCommandAck);
+        } catch (ackErr) {
+          console.error("[ws] ack listener threw:", ackErr);
+        }
+      } else if (msg.type === "error" && typeof msg.action === "string") {
+        if (typeof msg.requestId !== "string") return;
+        const pending = ackListeners.current.get(msg.requestId);
+        if (!pending || pending.action !== msg.action) return;
+        ackListeners.current.delete(msg.requestId);
+        pending.callback({
+          type: "command.ack",
+          action: msg.action,
+          requestId: msg.requestId,
+          payload: {
+            status: "rejected",
+            ...(msg.code ? { code: msg.code } : {}),
+            message: msg.message,
+          },
+        });
       } else if (msg.type === "rpc.request") {
         void handleRpcRequest(ws, msg as unknown as WsRpcRequest);
       }
@@ -144,7 +331,8 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       wsRef.current = null;
 
       if (event.code === 4001) {
-        console.warn("[ws] Auth rejected, will retry with fresh token");
+        window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
+        return;
       }
 
       if (!disposed.current) {
@@ -161,41 +349,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     ws.onerror = () => {
       ws.close();
     };
-  }, [getToken]);
-
-  async function handleRpcRequest(ws: WebSocket, req: WsRpcRequest) {
-    const handler = rpcHandlers.current.get(req.method);
-    if (!handler) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "rpc.response",
-            id: req.id,
-            error: `No handler for method: ${req.method}`,
-          }),
-        );
-      }
-      return;
-    }
-
-    try {
-      const result = await handler(req.params);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
-      }
-    } catch (error) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "rpc.response",
-            id: req.id,
-            error:
-              error instanceof Error ? error.message : "RPC handler failed",
-          }),
-        );
-      }
-    }
-  }
+  }, [handleRpcRequest]);
 
   useEffect(() => {
     disposed.current = false;
@@ -209,7 +363,11 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   }, [connect]);
 
   const sendCommand = useCallback(
-    (action: string, payload: Record<string, unknown>): boolean => {
+    (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ): boolean => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         console.warn(
@@ -219,7 +377,14 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
         return false;
       }
       try {
-        ws.send(JSON.stringify({ type: "command", action, payload }));
+        ws.send(
+          JSON.stringify({
+            type: "command",
+            ...(requestId ? { id: requestId } : {}),
+            action,
+            payload,
+          }),
+        );
         return true;
       } catch (err) {
         // Guard against serialization errors (e.g. circular refs in payload)
@@ -231,46 +396,156 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   );
 
   const startRun = useCallback(
-    (payload: RunCreateRequest, onAck?: (ack: WsCommandAck) => void) => {
+    (payload: WsRunCommand["payload"], onAck?: (ack: WsCommandAck) => void) => {
+      const requestId = createWsRequestId();
       if (onAck) {
-        ackListeners.current.set("agent.run", onAck);
+        ackListeners.current.set(requestId, {
+          action: "agent.run",
+          callback: onAck,
+        });
       }
       const sent = sendCommand(
         "agent.run",
         payload as unknown as Record<string, unknown>,
+        requestId,
       );
       if (!sent) {
         // Remove the dangling ack listener so callers don't hang forever
-        ackListeners.current.delete("agent.run");
+        ackListeners.current.delete(requestId);
       }
     },
     [sendCommand],
   );
 
   const cancelRun = useCallback(
-    (runId: string) => {
-      sendCommand("agent.cancel", { runId });
+    (taskId: string, runId: string, onAck?: (ack: WsCommandAck) => void) => {
+      const requestId = createWsRequestId();
+      if (onAck)
+        ackListeners.current.set(requestId, {
+          action: "agent.cancel",
+          callback: onAck,
+        });
+      const sent = sendCommand("agent.cancel", { taskId, runId }, requestId);
+      if (!sent) ackListeners.current.delete(requestId);
     },
     [sendCommand],
   );
 
+  const reconnectNow = useCallback(() => {
+    reconnectAttempt.current = 0;
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+    const stale = wsRef.current;
+    if (stale) {
+      // 由我们自己接管重连：摘掉 onclose，免得它再调度一次
+      stale.onclose = null;
+      wsRef.current = null;
+      try {
+        stale.close();
+      } catch {
+        // 关一个已经坏掉的 socket 会抛，忽略
+      }
+    }
+    setConnected(false);
+    connect();
+  }, [connect]);
+
   const resumeCanvas = useCallback(
     (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
-      if (onAck) {
-        ackListeners.current.set("canvas.resume", onAck);
-      }
-      const sent = sendCommand("canvas.resume", { canvasId, lastSeq: 0 });
-      if (!sent) {
-        ackListeners.current.delete("canvas.resume");
-      }
+      const requestId = createWsRequestId();
+      if (onAck)
+        ackListeners.current.set(requestId, {
+          action: "canvas.resume",
+          callback: onAck,
+        });
+      const sent = sendCommand(
+        "canvas.resume",
+        { canvasId, lastSeq: 0 },
+        requestId,
+      );
+      if (!sent) ackListeners.current.delete(requestId);
     },
     [sendCommand],
   );
+
+  const resumeTask = useCallback(
+    (taskId: string, lastSeq: number, onAck?: (ack: WsCommandAck) => void) => {
+      const requestId = createWsRequestId();
+      if (onAck)
+        ackListeners.current.set(requestId, {
+          action: "task.resume",
+          callback: onAck,
+        });
+      const sent = sendCommand(
+        "task.resume",
+        {
+          taskId,
+          lastSeq,
+        },
+        requestId,
+      );
+      if (!sent) ackListeners.current.delete(requestId);
+    },
+    [sendCommand],
+  );
+
+  const startTerminal = useCallback(
+    (payload: {
+      sessionId: string;
+      canvasId?: string;
+      shell?: TerminalShellId;
+      cols?: number;
+      rows?: number;
+    }) => {
+      sendCommand(
+        "terminal.start",
+        payload as unknown as Record<string, unknown>,
+      );
+    },
+    [sendCommand],
+  );
+
+  const resizeTerminal = useCallback(
+    (sessionId: string, cols: number, rows: number) => {
+      sendCommand("terminal.resize", { sessionId, cols, rows });
+    },
+    [sendCommand],
+  );
+
+  const sendTerminalInput = useCallback(
+    (sessionId: string, data: string) => {
+      sendCommand("terminal.input", { sessionId, data });
+    },
+    [sendCommand],
+  );
+
+  const stopTerminal = useCallback(
+    (sessionId: string) => {
+      sendCommand("terminal.stop", { sessionId });
+    },
+    [sendCommand],
+  );
+
+  const onTerminal = useCallback((cb: TerminalCallback) => {
+    terminalListeners.current.add(cb);
+    return () => {
+      terminalListeners.current.delete(cb);
+    };
+  }, []);
 
   const onEvent = useCallback((cb: EventCallback) => {
     eventListeners.current.add(cb);
     return () => {
       eventListeners.current.delete(cb);
+    };
+  }, []);
+
+  const onDocumentUpdated = useCallback((cb: DocumentUpdatedCallback) => {
+    documentUpdatedListeners.current.add(cb);
+    return () => {
+      documentUpdatedListeners.current.delete(cb);
     };
   }, []);
 
@@ -281,5 +556,20 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     };
   }, []);
 
-  return { connected, startRun, cancelRun, onEvent, registerRPC, resumeCanvas };
+  return {
+    connected,
+    startRun,
+    cancelRun,
+    onEvent,
+    onDocumentUpdated,
+    registerRPC,
+    resumeTask,
+    resumeCanvas,
+    startTerminal,
+    resizeTerminal,
+    sendTerminalInput,
+    stopTerminal,
+    onTerminal,
+    reconnectNow,
+  };
 }

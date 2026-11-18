@@ -1,16 +1,18 @@
 "use client";
 
-import type { BrandKitSummary } from "@loomic/shared";
-import { Check, ChevronDown } from "lucide-react";
+import type { BrandKitSummary } from "@kenfutwork/shared";
+import { Check, ChevronDown, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBrandKits } from "@/lib/brand-kit-api";
 import { updateProject } from "@/lib/server-api";
 
 interface BrandKitSelectorProps {
-  accessToken: string;
+  accessToken: string | null;
   projectId: string;
   currentBrandKitId: string | null;
   onBrandKitChange: (kitId: string | null) => void;
+  /** 「管理品牌套件…」的回调：由画布页开浮窗；不传则退化为导航到 /brand-kit。 */
+  onManage?: (() => void) | undefined;
 }
 
 export function BrandKitSelector({
@@ -18,6 +20,7 @@ export function BrandKitSelector({
   projectId,
   currentBrandKitId,
   onBrandKitChange,
+  onManage,
 }: BrandKitSelectorProps) {
   const [kits, setKits] = useState<BrandKitSummary[]>([]);
   const [open, setOpen] = useState(false);
@@ -129,6 +132,31 @@ export function BrandKitSelector({
               暂无品牌套件
             </p>
           )}
+
+          {/* 管理入口：改为画布内的浮窗（onManage 由画布页提供）。
+              此前是导航到 /brand-kit——画布跑在 iframe 里，导航会把整页换掉，
+              用户反馈「跳走」；未传回调时保留原导航行为兜底。 */}
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              if (onManage) {
+                onManage();
+                return;
+              }
+              const top = window.top ?? window;
+              try {
+                top.location.assign("/brand-kit");
+              } catch {
+                window.location.assign("/brand-kit");
+              }
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors cursor-pointer"
+          >
+            <Settings2 className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            <span>管理品牌套件…</span>
+          </button>
         </div>
       )}
     </div>

@@ -1,16 +1,29 @@
 import type {
   AssetSignedUrlResponse,
+  CanvasAssetMoveRequest,
+  CanvasAssetRestoreReceipt,
   CanvasDetail,
+  CanvasSaveResponse,
   ChatMessageCreateRequest,
-  ExecutionMode,
+  DirectoryPickerStatus,
+  ImageGenerationCaps,
+  InstanceSettings,
+  InstanceSettingsResponse,
+  InstanceSkillListResponse,
   JobResponse,
   MessageCreateResponse,
   MessageListResponse,
   ModelListResponse,
   PermissionTier,
-  ProfileUpdateResponse,
+  PickDirectoryResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectDirectoryRelinkRequest,
+  ProjectDirectoryRelinkResponse,
+  ProjectDirectoryRelinkSnapshot,
+  ProjectFileLocation,
+  ProjectFileMoveRequest,
+  ProjectFileRelinkRequest,
   ProjectKind,
   ProjectListResponse,
   ProjectUpdateRequest,
@@ -23,20 +36,36 @@ import type {
   SessionCreateResponse,
   SessionListResponse,
   UploadResponse,
-  ViewerResponse,
-  WorkspaceSettingsResponse,
-  WorkspaceSkillListResponse,
-} from "@loomic/shared";
+  VideoGenerationCaps,
+  VoiceDiagnoseResponse,
+  VoiceModelListResponse,
+  VoiceModelResponse,
+  VoiceRefineRequest,
+  VoiceRefineResponse,
+  VoiceSettingsResponse,
+  VoiceSettingsUpdateRequest,
+  VoiceTranscribeResponse,
+  WorkSaveResponse,
+} from "@kenfutwork/shared";
+import {
+  generationSubmissionSchema,
+  jobResponseSchema,
+  parseInstanceSpecifier,
+  projectDirectoryRelinkResponseSchema,
+  projectDirectoryRelinkSnapshotSchema,
+  workSaveResponseSchema,
+} from "@kenfutwork/shared";
+import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 
 // --- Error types ---
 
-export class ApiAuthError extends Error {
+export class ApiAccessError extends Error {
   constructor(message = "unauthorized") {
     super(message);
-    this.name = "ApiAuthError";
+    this.name = "ApiAccessError";
   }
 }
 
@@ -53,7 +82,7 @@ export class ApiApplicationError extends Error {
 
 export async function createRun(
   payload: RunCreateRequest,
-  options?: { accessToken?: string },
+  options?: { accessToken?: string | null },
 ) {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -62,7 +91,7 @@ export async function createRun(
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
 
-  const response = await fetch(`${getServerBaseUrl()}/api/agent/runs`, {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/agent/runs`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
@@ -75,22 +104,26 @@ export async function createRun(
   return (await response.json()) as RunCreateResponse;
 }
 
-// --- Authenticated API ---
+// --- 本机接入 API ---
 
-function authHeaders(accessToken: string): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken}` };
+function authHeaders(
+  accessToken: string | null | undefined,
+): Record<string, string> {
+  return bearerHeaders(accessToken);
 }
 
-function authJsonHeaders(accessToken: string): Record<string, string> {
+function authJsonHeaders(
+  accessToken: string | null | undefined,
+): Record<string, string> {
   return {
-    Authorization: `Bearer ${accessToken}`,
+    ...bearerHeaders(accessToken),
     "content-type": "application/json",
   };
 }
 
 async function handleErrorResponse(response: Response): Promise<never> {
   if (response.status === 401) {
-    throw new ApiAuthError();
+    throw new ApiAccessError();
   }
   const body = await response.json().catch(() => null);
   const code = body?.error?.code ?? "application_error";
@@ -98,22 +131,12 @@ async function handleErrorResponse(response: Response): Promise<never> {
   throw new ApiApplicationError(code, message);
 }
 
-export async function fetchViewer(
-  accessToken: string,
-): Promise<ViewerResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/viewer`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as ViewerResponse;
-}
-
 export async function fetchProjects(
-  accessToken: string,
+  accessToken: string | null | undefined,
   kind: ProjectKind = "design",
 ): Promise<ProjectListResponse> {
   const query = new URLSearchParams({ kind });
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/projects?${query.toString()}`,
     { headers: authHeaders(accessToken) },
   );
@@ -122,10 +145,10 @@ export async function fetchProjects(
 }
 
 export async function createProject(
-  accessToken: string,
+  accessToken: string | null | undefined,
   data: ProjectCreateRequest,
 ): Promise<ProjectCreateResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/projects`, {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/projects`, {
     method: "POST",
     headers: authJsonHeaders(accessToken),
     body: JSON.stringify(data),
@@ -135,10 +158,10 @@ export async function createProject(
 }
 
 export async function deleteProject(
-  accessToken: string,
+  accessToken: string | null | undefined,
   projectId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     {
       method: "DELETE",
@@ -149,12 +172,12 @@ export async function deleteProject(
 }
 
 export async function fetchProject(
-  accessToken: string,
+  accessToken: string | null | undefined,
   projectId: string,
 ): Promise<{
   project: { id: string; name: string; brand_kit_id: string | null };
 }> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     { headers: authHeaders(accessToken) },
   );
@@ -165,11 +188,11 @@ export async function fetchProject(
 }
 
 export async function updateProject(
-  accessToken: string,
+  accessToken: string | null | undefined,
   projectId: string,
   data: ProjectUpdateRequest,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/projects/${projectId}`,
     {
       method: "PATCH",
@@ -180,13 +203,42 @@ export async function updateProject(
   if (!response.ok) return handleErrorResponse(response);
 }
 
+export async function fetchProjectDirectoryRelinkSnapshot(
+  accessToken: string | null | undefined,
+  projectId: string,
+): Promise<ProjectDirectoryRelinkSnapshot> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/projects/${projectId}/relink-directory`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return projectDirectoryRelinkSnapshotSchema.parse(await response.json());
+}
+
+export async function relinkProjectDirectory(
+  accessToken: string | null | undefined,
+  projectId: string,
+  input: ProjectDirectoryRelinkRequest,
+): Promise<ProjectDirectoryRelinkResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/projects/${projectId}/relink-directory`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return projectDirectoryRelinkResponseSchema.parse(await response.json());
+}
+
 // --- Canvas API ---
 
 export async function fetchCanvas(
-  accessToken: string,
+  accessToken: string | null | undefined,
   canvasId: string,
 ): Promise<{ canvas: CanvasDetail }> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     { headers: authHeaders(accessToken) },
   );
@@ -195,33 +247,158 @@ export async function fetchCanvas(
 }
 
 export async function saveCanvas(
-  accessToken: string,
+  accessToken: string | null | undefined,
   canvasId: string,
   content: {
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
-): Promise<void> {
-  const response = await fetch(
+  expectedRevision: string | null,
+  options?: { keepalive?: boolean },
+): Promise<CanvasSaveResponse> {
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
       headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, expectedRevision }),
+      ...(options?.keepalive ? { keepalive: true } : {}),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CanvasSaveResponse;
+}
+
+/**
+ * 画布改名：服务端按 expectedName + expectedRevision 做乐观锁，
+ * 两者任一过期都会被打回，调用方要把原因透出来（静默失败会被判成「改名没用」）。
+ */
+export async function renameCanvas(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  name: string,
+  expectedName: string,
+  expectedRevision: string,
+): Promise<{ canvas: CanvasDetail }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ name, expectedName, expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { canvas: CanvasDetail };
+}
+
+export async function moveProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+  request: ProjectFileMoveRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}/move`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function moveCanvasAsset(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  assetId: string,
+  request: CanvasAssetMoveRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/assets/${assetId}/move`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function inspectProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function relinkProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+  request: ProjectFileRelinkRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}/relink`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function exportCanvasAssets(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  expectedRevision: string,
+): Promise<Blob> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/export`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return response.blob();
+}
+
+export async function restoreCanvasAssets(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  expectedRevision: string,
+): Promise<CanvasAssetRestoreReceipt> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/restore-assets`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CanvasAssetRestoreReceipt;
 }
 
 export async function uploadThumbnail(
-  accessToken: string,
+  accessToken: string | null | undefined,
   projectId: string,
   blob: Blob,
 ): Promise<void> {
   const formData = new FormData();
   formData.append("file", blob, "thumbnail.webp");
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/projects/${projectId}/thumbnail`,
     {
       method: "PUT",
@@ -232,121 +409,157 @@ export async function uploadThumbnail(
   if (!response.ok) return handleErrorResponse(response);
 }
 
-// --- Settings API ---
+// --- 语音 API ---
 
-export async function updateProfile(
-  accessToken: string,
-  data: { displayName: string },
-): Promise<ProfileUpdateResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/viewer/profile`, {
-    method: "PATCH",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as ProfileUpdateResponse;
-}
-
-export async function fetchWorkspaceSettings(
-  accessToken: string,
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
-}
-
-export async function updateWorkspaceSettings(
-  accessToken: string,
-  data: { defaultModel: string },
-): Promise<WorkspaceSettingsResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspace/settings`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSettingsResponse;
-}
-
-// --- Execution Modes API（P7 执行模式切换，DEC-3）---
-
-export async function fetchExecutionModes(accessToken: string): Promise<{
-  modes: Array<{ id: ExecutionMode; label: string; description: string }>;
-}> {
-  const response = await fetch(`${getServerBaseUrl()}/api/execution-modes`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as {
-    modes: Array<{ id: ExecutionMode; label: string; description: string }>;
-  };
-}
-
-export async function fetchExecutionMode(
-  accessToken: string,
-  threadId: string,
-): Promise<{ mode: ExecutionMode }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/execution-modes/${threadId}`,
-    { headers: authHeaders(accessToken) },
+/**
+ * 转写一段 16k 单声道 WAV（语音助手「听」）。
+ *
+ * 失败原因原样来自服务端（`ApiApplicationError.message`）：未选/未下载模型是 503 +
+ * 可读中文，音频非法是 400 —— 界面直接显示这句话，不要再另写一套泛化文案。
+ * 空文本是**正常结果**（用户没说），不是错误。
+ */
+export async function transcribeVoice(
+  accessToken: string | null | undefined,
+  wav: Uint8Array,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([new Uint8Array(wav)], { type: "audio/wav" }),
+    "audio.wav",
   );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { mode: ExecutionMode };
-}
-
-export async function updateExecutionMode(
-  accessToken: string,
-  threadId: string,
-  input: { mode: ExecutionMode },
-): Promise<{ mode: ExecutionMode }> {
-  const response = await fetch(
-    `${getServerBaseUrl()}/api/execution-modes/${threadId}`,
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/transcribe`,
     {
-      method: "PUT",
-      headers: authJsonHeaders(accessToken),
-      body: JSON.stringify(input),
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: formData,
     },
   );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { mode: ExecutionMode };
+  const payload = (await response.json()) as VoiceTranscribeResponse;
+  return payload.text;
+}
+
+/**
+ * 「想」段：把口述补成完整需求（方案 B）。失败原因原样来自服务端
+ * （未选模型 → 503 + 可读中文），界面直接显示，不另写泛化文案。
+ */
+export async function refineVoice(
+  accessToken: string | null | undefined,
+  input: VoiceRefineRequest,
+): Promise<string> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/refine`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as VoiceRefineResponse;
+  return payload.prompt;
+}
+
+// --- Settings API ---
+
+export async function fetchInstanceSettings(
+  accessToken: string | null | undefined,
+): Promise<InstanceSettingsResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/instance/settings`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as InstanceSettingsResponse;
+}
+
+/** 部分更新：只送要改的字段（服务端逐列 upsert，未送的不动）。 */
+export async function updateInstanceSettings(
+  accessToken: string | null | undefined,
+  data: Partial<InstanceSettings>,
+): Promise<InstanceSettingsResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/instance/settings`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(data),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as InstanceSettingsResponse;
 }
 
 // --- Permissions API（DEC-4 权限档位/审批）---
 
-export async function fetchPermissionTier(
-  accessToken: string,
-): Promise<{ tier: PermissionTier }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
-    headers: authHeaders(accessToken),
-  });
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { tier: PermissionTier };
+/** 权限设置（R5-3）：常规档 / 自动化档 / 自定义规则 / 浏览器控制开关。 */
+export interface PermissionSettingsView {
+  tier: PermissionTier;
+  automationTier: PermissionTier;
+  rules: { allow: string[]; deny: string[] };
+  browserControlEnabled: boolean;
+  /** 浏览器动作后自动附截图（R5-4）。 */
+  browserAutoScreenshot: boolean;
+  /** CDP 托管浏览器无头运行。 */
+  browserHeadless: boolean;
+  /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+  browserDevtoolsReadEnabled: boolean;
+  /** 允许 AI 在受控页面执行任意 JS（browser_eval；默认关）。 */
+  browserEvalEnabled: boolean;
+  approvedForever: string[];
 }
 
-export async function updatePermissionTier(
-  accessToken: string,
-  tier: PermissionTier,
-): Promise<{ tier: PermissionTier }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify({ tier }),
-  });
+export async function fetchPermissionSettings(
+  accessToken: string | null | undefined,
+): Promise<PermissionSettingsView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/permissions/tier`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as { tier: PermissionTier };
+  return (await response.json()) as PermissionSettingsView;
+}
+
+/** 部分更新：只送要改的字段（未送的一律不动）。 */
+export async function updatePermissionSettings(
+  accessToken: string | null | undefined,
+  patch: Partial<{
+    tier: PermissionTier;
+    automationTier: PermissionTier;
+    rules: { allow: string[]; deny: string[] };
+    browserControlEnabled: boolean;
+    browserAutoScreenshot: boolean;
+    browserHeadless: boolean;
+    /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
+    browserDevtoolsReadEnabled: boolean;
+    /** 允许 AI 在受控页面执行任意 JS（browser_eval；默认关）。 */
+    browserEvalEnabled: boolean;
+  }>,
+): Promise<PermissionSettingsView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/permissions/tier`,
+    {
+      method: "PUT",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as PermissionSettingsView;
 }
 
 export async function approveToolPermission(
-  accessToken: string,
+  accessToken: string | null | undefined,
   input: {
     toolName: string;
     scope: "once" | "thread" | "forever";
     threadId?: string;
   },
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/permissions/approve`,
     {
       method: "POST",
@@ -361,34 +574,40 @@ export async function approveToolPermission(
 // --- Provider Instances API（BYOK 供应商设置，P5）---
 
 export async function fetchProviderInstances(
-  accessToken: string,
+  accessToken: string | null | undefined,
 ): Promise<ProviderInstanceListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/provider-instances`, {
-    headers: authHeaders(accessToken),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/provider-instances`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProviderInstanceListResponse;
 }
 
 export async function createProviderInstance(
-  accessToken: string,
+  accessToken: string | null | undefined,
   input: ProviderInstanceCreateRequest,
 ): Promise<ProviderInstanceResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/provider-instances`, {
-    method: "POST",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(input),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/provider-instances`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as ProviderInstanceResponse;
 }
 
 export async function updateProviderInstance(
-  accessToken: string,
+  accessToken: string | null | undefined,
   instanceId: string,
   input: ProviderInstanceUpdateRequest,
 ): Promise<ProviderInstanceResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/provider-instances/${instanceId}`,
     {
       method: "PATCH",
@@ -401,10 +620,10 @@ export async function updateProviderInstance(
 }
 
 export async function deleteProviderInstance(
-  accessToken: string,
+  accessToken: string | null | undefined,
   instanceId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/provider-instances/${instanceId}`,
     { method: "DELETE", headers: authHeaders(accessToken) },
   );
@@ -413,9 +632,9 @@ export async function deleteProviderInstance(
 }
 
 export async function fetchModels(
-  accessToken?: string,
+  accessToken?: string | null,
 ): Promise<ModelListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/models`, {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/models`, {
     // 带凭证时服务端并入 BYOK 实例目录（工作区隔离）；匿名仅返回内置目录
     ...(accessToken ? { headers: authHeaders(accessToken) } : {}),
   });
@@ -428,11 +647,11 @@ export async function fetchModels(
 // --- Chat Session API ---
 
 export function fetchSessions(
-  accessToken: string,
+  accessToken: string | null | undefined,
   canvasId: string,
 ): Promise<SessionListResponse> {
   return dedupeRequest(`sessions:${canvasId}`, async () => {
-    const response = await fetch(
+    const response = await serverFetch(
       `${getServerBaseUrl()}/api/canvases/${canvasId}/sessions`,
       { headers: authHeaders(accessToken) },
     );
@@ -442,11 +661,11 @@ export function fetchSessions(
 }
 
 export async function createSession(
-  accessToken: string,
+  accessToken: string | null | undefined,
   canvasId: string,
   title?: string,
 ): Promise<SessionCreateResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}/sessions`,
     {
       method: "POST",
@@ -459,11 +678,11 @@ export async function createSession(
 }
 
 export async function updateSessionTitle(
-  accessToken: string,
+  accessToken: string | null | undefined,
   sessionId: string,
   title: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}`,
     {
       method: "PATCH",
@@ -475,10 +694,10 @@ export async function updateSessionTitle(
 }
 
 export async function deleteSession(
-  accessToken: string,
+  accessToken: string | null | undefined,
   sessionId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}`,
     {
       method: "DELETE",
@@ -489,10 +708,10 @@ export async function deleteSession(
 }
 
 export async function fetchMessages(
-  accessToken: string,
+  accessToken: string | null | undefined,
   sessionId: string,
 ): Promise<MessageListResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}/messages`,
     { headers: authHeaders(accessToken) },
   );
@@ -501,11 +720,11 @@ export async function fetchMessages(
 }
 
 export async function saveMessage(
-  accessToken: string,
+  accessToken: string | null | undefined,
   sessionId: string,
   data: ChatMessageCreateRequest,
 ): Promise<MessageCreateResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/sessions/${sessionId}/messages`,
     {
       method: "POST",
@@ -520,7 +739,7 @@ export async function saveMessage(
 // --- Upload API ---
 
 export async function uploadFile(
-  accessToken: string,
+  accessToken: string | null | undefined,
   file: File,
   projectId?: string,
 ): Promise<UploadResponse> {
@@ -530,7 +749,7 @@ export async function uploadFile(
     formData.append("projectId", projectId);
   }
 
-  const response = await fetch(`${getServerBaseUrl()}/api/uploads`, {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/uploads`, {
     method: "POST",
     headers: authHeaders(accessToken),
     body: formData,
@@ -540,10 +759,10 @@ export async function uploadFile(
 }
 
 export async function getAssetUrl(
-  accessToken: string,
+  accessToken: string | null | undefined,
   assetId: string,
 ): Promise<AssetSignedUrlResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/uploads/${assetId}/url`,
     { headers: authHeaders(accessToken) },
   );
@@ -552,41 +771,40 @@ export async function getAssetUrl(
 }
 
 export async function deleteAsset(
-  accessToken: string,
+  accessToken: string | null | undefined,
   assetId: string,
 ): Promise<void> {
-  const response = await fetch(`${getServerBaseUrl()}/api/uploads/${assetId}`, {
-    method: "DELETE",
-    headers: authHeaders(accessToken),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/uploads/${assetId}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
 }
 
 // --- Canvas-Native Generation API ---
 
-export type GenerateImageResponse = {
-  url: string;
-  prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-};
+export type GenerateImageResponse =
+  import("@kenfutwork/shared").GenerationSubmission;
 
 export type ImageModelInfo = {
+  providerInstanceId?: string;
+  modelId?: string;
+  imageGeneration?: ImageGenerationCaps;
   id: string;
   displayName: string;
   description: string;
   provider: string;
   iconUrl?: string;
-  creditCost?: number;
-  accessible?: boolean;
   minTier?: string;
 };
 
 export async function fetchImageModels(): Promise<{
   models: ImageModelInfo[];
 }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/image-models`);
+  const response = await serverFetch(`${getServerBaseUrl()}/api/image-models`);
   if (!response.ok) {
     throw new Error(`Failed to fetch image models: ${response.status}`);
   }
@@ -594,19 +812,20 @@ export async function fetchImageModels(): Promise<{
 }
 
 export type VideoModelInfo = {
+  providerInstanceId?: string;
+  modelId?: string;
+  videoGeneration?: VideoGenerationCaps;
   id: string;
   displayName: string;
   description: string;
   provider: string;
   iconUrl?: string;
-  creditCost?: number;
-  accessible?: boolean;
   minTier?: string;
   capabilities?: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
+    textToVideo?: boolean;
+    imageToVideo?: boolean;
+    videoToVideo?: boolean;
+    audio?: boolean;
   };
   limits?: {
     maxDuration: number;
@@ -628,111 +847,779 @@ export type VideoModelInfo = {
   };
 };
 
+export type ProviderPresetModel = {
+  id: string;
+  name: string;
+  capability: "chat" | "image" | "video";
+};
+
+export type ProviderPreset = {
+  id: string;
+  name: string;
+  api?: string;
+  doc?: string;
+  env: string[];
+  models: ProviderPresetModel[];
+};
+
+/** models.dev 供应商预设（供应商设置「从预设选择」；需本机接入授权）。 */
+export async function fetchProviderPresets(
+  accessToken: string | null | undefined,
+): Promise<{ presets: ProviderPreset[] }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/provider-instances/presets`,
+    { headers: authJsonHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch provider presets: ${response.status}`);
+  }
+  return (await response.json()) as { presets: ProviderPreset[] };
+}
+
 export async function fetchVideoModels(): Promise<{
   models: VideoModelInfo[];
 }> {
-  const response = await fetch(`${getServerBaseUrl()}/api/video-models`);
+  const response = await serverFetch(`${getServerBaseUrl()}/api/video-models`);
   if (!response.ok) {
     throw new Error(`Failed to fetch video models: ${response.status}`);
   }
   return (await response.json()) as { models: VideoModelInfo[] };
 }
 
+function generationModel(
+  model: string | undefined,
+  providerInstanceId?: string,
+) {
+  if (!model) return {};
+  const parsed = parseInstanceSpecifier(model);
+  if (parsed)
+    return { providerInstanceId: parsed.instanceId, model: parsed.model };
+  return { model, ...(providerInstanceId ? { providerInstanceId } : {}) };
+}
+
+/** 服务端可能已接纳；调用方继续按持久请求标识查回执。 */
+async function readGenerationSubmission(response: Response) {
+  if (response.status >= 500) throw new Error("提交结果待确认");
+  if (!response.ok) return handleErrorResponse(response);
+  return generationSubmissionSchema.parse(await response.json());
+}
+
 export async function generateImageDirect(
-  accessToken: string,
+  accessToken: string | null | undefined,
   prompt: string,
   options?: {
+    count?: number;
+    requestId?: string;
+    canvasId?: string;
+    projectId?: string;
+    generatorId?: string;
+    placement?: { x: number; y: number; width: number; height: number };
     model?: string;
+    providerInstanceId?: string;
     aspectRatio?: string;
     quality?: string;
+    width?: number;
+    height?: number;
+    inputImages?: string[];
+    outputFormat?: "png" | "jpg" | "webp";
     /** 会话标识（§4.8）：实例自定义头里的 `{{sessionId}}` 按它渲染。 */
     sessionId?: string;
   },
 ): Promise<GenerateImageResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/agent/generate-image`,
     {
       method: "POST",
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
-        ...(options?.model ? { model: options.model } : {}),
+        ...(options?.count !== undefined ? { count: options.count } : {}),
+        ...(options?.requestId ? { requestId: options.requestId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.generatorId ? { generatorId: options.generatorId } : {}),
+        ...(options?.placement ? { placement: options.placement } : {}),
+        ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
+        ...(options?.width !== undefined ? { width: options.width } : {}),
+        ...(options?.height !== undefined ? { height: options.height } : {}),
+        ...(options?.inputImages?.length
+          ? { inputImages: options.inputImages }
+          : {}),
+        ...(options?.outputFormat
+          ? { outputFormat: options.outputFormat }
+          : {}),
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
     },
   );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateImageResponse;
+  return readGenerationSubmission(response);
 }
 
-export type GenerateVideoResponse = {
-  url: string;
-  assetId: string;
-  prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  durationSeconds: number;
-};
+/**
+ * 视频生成受理（202）：任务由 worker 异步执行（异步任务面 submit + 队列轮询），
+ * 进度经 fetchJob 轮询到终态。S6 之前是 HTTP 内挂起等 5 分钟，已退役。
+ */
+export type GenerateVideoSubmission =
+  import("@kenfutwork/shared").GenerationSubmission;
 
 export async function generateVideoDirect(
-  accessToken: string,
+  accessToken: string | null | undefined,
   prompt: string,
   options?: {
+    requestId?: string;
+    canvasId?: string;
+    projectId?: string;
+    generatorId?: string;
+    placement?: { x: number; y: number; width: number; height: number };
     model?: string;
+    providerInstanceId?: string;
     duration?: number;
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
+    inputVideo?: string;
+    enableAudio?: boolean;
     /** 会话标识（§4.8）：随任务落库，worker 侧按它渲染自定义头占位符。 */
     sessionId?: string;
   },
-): Promise<GenerateVideoResponse> {
-  const response = await fetch(
+): Promise<GenerateVideoSubmission> {
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/agent/generate-video`,
     {
       method: "POST",
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
-        ...(options?.model ? { model: options.model } : {}),
+        ...(options?.requestId ? { requestId: options.requestId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.generatorId ? { generatorId: options.generatorId } : {}),
+        ...(options?.placement ? { placement: options.placement } : {}),
+        ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.duration != null ? { duration: options.duration } : {}),
         ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
           : {}),
+        ...(options?.inputVideo ? { inputVideo: options.inputVideo } : {}),
+        ...(options?.enableAudio !== undefined
+          ? { enableAudio: options.enableAudio }
+          : {}),
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
     },
   );
+  return readGenerationSubmission(response);
+}
+
+export async function fetchGenerationRequest(
+  accessToken: string | null | undefined,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<import("@kenfutwork/shared").JobListResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/jobs?request_id=${encodeURIComponent(requestId)}`,
+    {
+      headers: authHeaders(accessToken),
+      ...(signal ? { signal } : {}),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoResponse;
+  return await response.json();
 }
 
 // --- Jobs API ---
 
 export async function fetchJob(
-  accessToken: string,
+  accessToken: string | null | undefined,
   jobId: string,
 ): Promise<JobResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/jobs/${jobId}`, {
-    headers: authHeaders(accessToken),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/jobs/${jobId}`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as JobResponse;
 }
 
-// --- Workspace Skills API（画布聊天技能目录）---
+export async function cancelBackgroundJob(
+  accessToken: string | null | undefined,
+  jobId: string,
+): Promise<import("@kenfutwork/shared").BackgroundJob> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return jobResponseSchema.parse(await response.json()).job;
+}
 
-export async function fetchWorkspaceSkills(
-  accessToken: string,
-): Promise<WorkspaceSkillListResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/workspaces/skills`, {
+// --- Instance Skills API（画布聊天技能目录）---
+
+export async function fetchInstanceSkills(
+  accessToken: string | null | undefined,
+): Promise<InstanceSkillListResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/instance/skills`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as InstanceSkillListResponse;
+}
+
+// --- 代码库索引（R4-3「索引库」）---
+
+export interface CodeIndexStats {
+  files: number;
+  bytes: number;
+  builtAt: string;
+  skipped: number;
+  truncated: boolean;
+  indexBytes: number;
+}
+
+export interface CodeIndexStatus {
+  /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
+  enabled: boolean;
+  /** ① 「索引新文件夹」：自动为尚无索引的工作目录建索引。 */
+  autoNewFolder: boolean;
+  stats: CodeIndexStats | null;
+}
+
+export async function fetchCodeIndex(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<CodeIndexStatus> {
+  const query = new URLSearchParams({ taskId });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/code/index?${query}`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CodeIndexStatus;
+}
+
+export async function rebuildCodeIndex(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<{ stats: CodeIndexStats | null }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/code/index/rebuild`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ taskId }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { stats: CodeIndexStats | null };
+}
+
+export async function clearCodeIndex(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<void> {
+  const query = new URLSearchParams({ taskId });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/code/index?${query}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+}
+
+export interface CodeIndexSearchHit {
+  path: string;
+  bytes: number;
+  language: string;
+  summary: string;
+  matched: "name" | "path" | "content";
+}
+
+export async function searchCodeIndex(
+  accessToken: string | null | undefined,
+  taskId: string,
+  query: string,
+): Promise<{ hits: CodeIndexSearchHit[]; builtAt: string }> {
+  const params = new URLSearchParams({ taskId, q: query });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/code/index/search?${params}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as {
+    hits: CodeIndexSearchHit[];
+    builtAt: string;
+  };
+}
+
+// --- CDP 浏览器通道（R5-4「连接到 Chrome」/「自动截图」）---
+
+export type CdpStatusView =
+  | { status: "disconnected" }
+  | { status: "connecting" }
+  | {
+      status: "connected";
+      browser: string;
+      port: number;
+      tabs: number;
+      currentUrl: string;
+      owned: boolean;
+      headless: boolean;
+    }
+  | { status: "error"; message: string };
+
+export async function fetchCdpStatus(
+  accessToken: string | null | undefined,
+): Promise<CdpStatusView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/status`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { cdp: CdpStatusView };
+  return payload.cdp;
+}
+
+/**
+ * 「打开调试工具」：把**页面内调试控制台**（Eruda，现成第三方）注入面板显示的这一页，
+ * 并摆成悬浮窗（可拖动 / 可关闭）。
+ */
+export async function injectDebugConsole(
+  accessToken: string | null | undefined,
+  url: string,
+): Promise<void> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/console`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ url }),
+    },
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_console_failed",
+    payload?.error?.message ??
+      `注入调试控制台失败（服务端返回 ${response.status}）。`,
+  );
+}
+
+/** 调试控制台脚本源码（桌面形态取同一份，eval 进面板里的子 WebView2）。 */
+export async function fetchDebugConsoleScript(
+  accessToken: string | null | undefined,
+): Promise<string> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/debug-console.js`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiApplicationError(
+      "debug_console_unavailable",
+      payload?.error?.message ??
+        `拿不到调试控制台脚本（服务端返回 ${response.status}）。`,
+    );
+  }
+  return await response.text();
+}
+
+/**
+ * 「完整开发者工具」：在受控浏览器里开真 DevTools 并取消停靠成独立窗口。
+ *
+ * 服务端「像人一样」唤起它（激活受控窗口 + F12 → DevTools 前端的 setIsDocked(false)）——
+ * 真 DevTools 只有浏览器自己开得出来，CDP 开出来的 devtools:// 窗口连不上页面。
+ */
+export async function openCdpDevtools(
+  accessToken: string | null | undefined,
+  bounds?: { left?: number; top?: number; width?: number; height?: number },
+): Promise<{ windowId: number }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/devtools`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(bounds ?? {}),
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    windowId?: number;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || typeof payload?.windowId !== "number") {
+    throw new ApiApplicationError(
+      "cdp_devtools_failed",
+      payload?.error?.message ??
+        `打开开发者工具失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { windowId: payload.windowId };
+}
+
+export async function connectCdp(
+  accessToken: string | null | undefined,
+  /**
+   * 无头（不弹窗口）。右栏面板显式传 `true`：面板里看的就是这个浏览器的画面，
+   * 再弹一个窗口出来纯属多余（用户口径：「不要跳转外部」）。不传则按设置。
+   */
+  options: { headless?: boolean } = {},
+): Promise<CdpStatusView> {
+  let response: Response;
+  try {
+    response = await serverFetch(
+      `${getServerBaseUrl()}/api/browser/cdp/connect`,
+      {
+        method: "POST",
+        headers: authJsonHeaders(accessToken),
+        body: JSON.stringify(
+          typeof options.headless === "boolean"
+            ? { headless: options.headless }
+            : {},
+        ),
+      },
+    );
+  } catch {
+    // fetch 抛错 = 服务端根本没应答（重启中/挂了），与「浏览器连不上」是两回事，要分开说
+    throw new ApiApplicationError(
+      "cdp_connect_failed",
+      "服务端没有应答（可能正在重启）——稍后重试。",
+    );
+  }
+  const payload = (await response.json().catch(() => null)) as {
+    cdp?: CdpStatusView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.cdp) {
+    /**
+     * **别把真实原因吞掉**（真机踩到）：以前无论后端说什么都只显示「连接浏览器失败。」，
+     * 用户拿到一句没法行动的话。现在带上服务端原话；连原话都没有时至少给出状态码。
+     */
+    throw new ApiApplicationError(
+      "cdp_connect_failed",
+      payload?.error?.message ??
+        `连接浏览器失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return payload.cdp;
+}
+
+/** 面板画面流的视口尺寸（CSS px；客户端按它把鼠标坐标换算成视口坐标）。 */
+export interface CdpViewportView {
+  width: number;
+  height: number;
+  scale: number;
+}
+
+/**
+ * 面板画面流的**开流手续**：确认受控浏览器在 + 导航到目标地址 + 换一张票据。
+ *
+ * 分两步是因为真正开流的请求由浏览器替我们发（`<img src=…>`），发不了登录头——
+ * 票据短时且一次性（见服务端 view-stream）。
+ */
+export async function openCdpView(
+  accessToken: string | null | undefined,
+  input: {
+    url?: string;
+    /** 自由尺寸：真视口尺寸（不给 = 跟窗口一样大）。 */
+    width?: number;
+    height?: number;
+    /** 「刷新」：同一页也重新导航一次。 */
+    reload?: boolean;
+  },
+): Promise<{ ticket: string; viewport: CdpViewportView }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/view`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    ticket?: string;
+    viewport?: CdpViewportView;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.ticket || !payload.viewport) {
+    throw new ApiApplicationError(
+      "cdp_view_failed",
+      payload?.error?.message ??
+        `打开面板画面失败（服务端返回 ${response.status}）。`,
+    );
+  }
+  return { ticket: payload.ticket, viewport: payload.viewport };
+}
+
+/** 面板内交互回填的线形状（坐标是**视口 CSS px**，服务端不缩放）。 */
+export type CdpInputWireEvent =
+  | {
+      type: "mouse";
+      action: "pressed" | "released" | "moved";
+      x: number;
+      y: number;
+      /** `none` = 只是移动（没有按着任何键）。 */
+      button?: "left" | "right" | "middle" | "none";
+      buttons?: number;
+      modifiers?: number;
+    }
+  | {
+      type: "wheel";
+      x: number;
+      y: number;
+      deltaX?: number;
+      deltaY?: number;
+    }
+  | { type: "key"; key: string; code?: string; modifiers?: number }
+  | { type: "text"; text: string };
+
+/** 面板内的交互回填（鼠标 / 滚轮 / 键盘 / 文本）。 */
+export async function sendCdpInput(
+  accessToken: string | null | undefined,
+  event: CdpInputWireEvent,
+): Promise<void> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/input`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(event),
+    },
+  );
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new ApiApplicationError(
+    "cdp_input_failed",
+    payload?.error?.message ??
+      `面板操作没能转给浏览器（服务端返回 ${response.status}）。`,
+  );
+}
+
+export async function disconnectCdp(
+  accessToken: string | null | undefined,
+): Promise<CdpStatusView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/browser/cdp/disconnect`,
+    // 同上：JSON 头就必须带 body
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { cdp: CdpStatusView };
+  return payload.cdp;
+}
+
+// --- 原生目录对话框（桌面形态：服务端与用户同机时由服务端弹系统对话框） ---
+
+export async function fetchDirectoryPickerStatus(
+  accessToken: string | null | undefined,
+): Promise<DirectoryPickerStatus> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/system/directory-picker`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DirectoryPickerStatus;
+}
+
+export async function pickDirectory(
+  accessToken: string | null | undefined,
+): Promise<PickDirectoryResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/system/pick-directory`,
+    // JSON 头必须带 body：空 body 会被 Fastify 判 400（FST_ERR_CTP_EMPTY_JSON_BODY），
+    // 错误体里没有 error.message，前端只会看到一句没头没尾的 "Request failed"。
+    { method: "POST", headers: authJsonHeaders(accessToken), body: "{}" },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as PickDirectoryResponse;
+}
+
+/**
+ * Work 文档落到项目主目录：绝对路径由服务端按 projectId 解析，客户端只给项目内
+ * 相对路径；失败一律抛出服务端原因，不静默退回下载目录。
+ */
+export async function saveWorkDocument(
+  accessToken: string | null | undefined,
+  input: {
+    projectId: string;
+    assetId: string;
+    relativePath: string;
+    mimeType: string;
+    bytes: ArrayBuffer;
+  },
+): Promise<WorkSaveResponse> {
+  const formData = new FormData();
+  formData.append("projectId", input.projectId);
+  formData.append("assetId", input.assetId);
+  formData.append("relativePath", input.relativePath);
+  formData.append("mimeType", input.mimeType);
+  formData.append(
+    "file",
+    new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }),
+    input.relativePath.split("/").pop() ?? "document",
+  );
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/work/host/save`,
+    { method: "POST", headers: authHeaders(accessToken), body: formData },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return workSaveResponseSchema.parse(await response.json());
+}
+
+// --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---
+// 类型直接取共享契约（手写副本曾漏字段：custom 上线时漂了一次）
+
+export type AgentSubagentListResponse = {
+  subagents: Array<{
+    name: string;
+    label: string;
+    description: string;
+    tools: string[];
+  }>;
+  builtin: Array<{ name: string; label: string; description: string }>;
+};
+
+export async function fetchSubagents(
+  accessToken: string | null | undefined,
+): Promise<AgentSubagentListResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/agent/subagents`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as AgentSubagentListResponse;
+}
+
+/** 语音设置（模式 / 三段选择 / 语音回复开关）。 */
+export async function fetchVoiceSettings(
+  accessToken: string | null | undefined,
+): Promise<VoiceSettingsResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/settings`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 部分更新：只送要改的字段（未送的一律不动）。 */
+export async function updateVoiceSettings(
+  accessToken: string | null | undefined,
+  patch: VoiceSettingsUpdateRequest,
+): Promise<VoiceSettingsResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/settings`,
+    {
+      method: "PUT",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 三段候选目录（内置模型含下载状态；BYOK 实例候选零下载）。 */
+export async function fetchVoiceModels(
+  accessToken: string | null | undefined,
+): Promise<VoiceModelListResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/models`, {
     headers: authHeaders(accessToken),
   });
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as WorkspaceSkillListResponse;
+  return (await response.json()) as VoiceModelListResponse;
+}
+
+/** 开始下载（立刻返回 202；进度靠轮询 fetchVoiceModels）。 */
+export async function downloadVoiceModel(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  // 路径必须带 `/download` 后缀：真机点出来过——漏了它就打到 /api/voice/models/:id
+  // （那里没有 POST 路由）→ 404，界面只显示「Request failed」，按钮看着能点、其实一次也没成。
+  return voiceModelAction(accessToken, modelId, "POST", "/download");
+}
+
+/** 取消下载中的模型。 */
+export async function cancelVoiceModelDownload(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE", "/download");
+}
+
+/** 删除已下载的模型文件。 */
+export async function removeVoiceModel(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE");
+}
+
+async function voiceModelAction(
+  accessToken: string | null | undefined,
+  modelId: string,
+  method: "POST" | "DELETE",
+  suffix = "",
+): Promise<VoiceModelResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/models/${encodeURIComponent(modelId)}${suffix}`,
+    { method, headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceModelResponse;
+}
+
+/** 上次检测报告（没测过为 null）。 */
+export async function fetchVoiceDiagnose(
+  accessToken: string | null | undefined,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/diagnose`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
+}
+
+/** 跑一次检测（可取消：把 signal 传进来即可中止）。 */
+export async function runVoiceDiagnose(
+  accessToken: string | null | undefined,
+  signal?: AbortSignal,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/diagnose`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      ...(signal ? { signal } : {}),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
 }

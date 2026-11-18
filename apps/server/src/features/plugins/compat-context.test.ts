@@ -21,9 +21,32 @@ function makeEnv(): ServerEnv {
 
 function makeHost() {
   const kernel = composePlugins(makeEnv(), []);
+  const storageCalls: Array<{ op: string; instanceId: string; key: string }> =
+    [];
   return {
     tools: kernel.get("tools"),
     subscribe: () => () => {},
+    promptFragments: () => () => {},
+    routes: () => () => {},
+    ui: () => () => {},
+    storage: {
+      async get(instanceId: string, key: string) {
+        storageCalls.push({ op: "get", instanceId, key });
+        return null;
+      },
+      async set(instanceId: string, key: string) {
+        storageCalls.push({ op: "set", instanceId, key });
+      },
+      async remove(instanceId: string, key: string) {
+        storageCalls.push({ op: "remove", instanceId, key });
+        return true;
+      },
+      async keys(instanceId: string) {
+        storageCalls.push({ op: "keys", instanceId, key: "" });
+        return [];
+      },
+    },
+    storageCalls,
     label: "demo",
   };
 }
@@ -73,6 +96,66 @@ describe("compat-context：正常装载", () => {
 
     loaded.dispose();
     expect(host.tools.get("demo_echo")).toBeUndefined();
+  });
+
+  it("工具可声明执行效果：read/write 原样进注册表，未声明按 execute（未知效果人审）", async () => {
+    const host = makeHost();
+    const loaded = await loadCompatPlugin(
+      demoModule({
+        apply(ctx: {
+          effect: (fn: () => unknown) => void;
+          tools: { register: (d: unknown) => unknown };
+        }) {
+          ctx.effect(() => {
+            ctx.tools.register({
+              name: "device_read",
+              access: "read",
+              execute: async () => "read-ok",
+            });
+            ctx.tools.register({
+              name: "device_write",
+              access: "write",
+              execute: async () => "write-ok",
+            });
+            ctx.tools.register({
+              name: "undeclared",
+              execute: async () => "unknown-ok",
+            });
+          });
+        },
+      }),
+      host,
+    );
+
+    expect(host.tools.require("device_read").access).toBe("read");
+    expect(host.tools.require("device_write").access).toBe("write");
+    // 未声明 = 没有可信只读证明：按 execute 处理（与 MCP 工具同口径）
+    expect(host.tools.require("undeclared").access).toBe("execute");
+    loaded.dispose();
+  });
+
+  it("access 声明非法值时装载失败（fail loud，不静默按 execute 放过）", async () => {
+    const host = makeHost();
+    await expect(
+      loadCompatPlugin(
+        demoModule({
+          apply(ctx: {
+            effect: (fn: () => unknown) => void;
+            tools: { register: (d: unknown) => unknown };
+          }) {
+            ctx.effect(() => {
+              ctx.tools.register({
+                name: "demo_bad_access",
+                access: "run",
+                execute: async () => "nope",
+              });
+            });
+          },
+        }),
+        host,
+      ),
+    ).rejects.toBeInstanceOf(CompatLoadError);
+    expect(host.tools.get("demo_bad_access")).toBeUndefined();
   });
 
   it("structuredContent 优先于文本块", async () => {
@@ -357,5 +440,82 @@ describe("compat-context：拒绝路径", () => {
     expect(host.tools.require("demo_keep")).toBeDefined();
     expect(await host.tools.require("demo_keep").execute({}, {})).toBe("ok");
     first.dispose();
+  });
+});
+
+/**
+ * 安全锁：插件拿到的 ctx **只有**四面能力（tools / promptFragments / routes / ui）
+ * 加框架方法（effect/on/inject/logger）——没有内核服务访问口，因此碰不到 admin 配置、
+ * 供应商凭证、设置项这些"管理员的东西"（用户红线：云端尤其不能改）。
+ */
+describe("插件上下文的权限边界", () => {
+  it("不暴露 ctx.get / set / provide / consume 等服务访问口", async () => {
+    let seen: Record<string, unknown> = {};
+    const namespace = {
+      name: "boundary-probe",
+      inject: [],
+      apply(ctx: Record<string, unknown>) {
+        seen = ctx;
+      },
+    };
+    await loadCompatPlugin(namespace, {
+      ...makeHost(),
+      label: "boundary-probe",
+    } as never);
+
+    for (const forbidden of ["get", "set", "provide", "consume", "services"]) {
+      expect(seen[forbidden]).toBeUndefined();
+    }
+    // 允许面（五条能力 + 框架方法）确实在
+    expect(Object.keys(seen).sort()).toEqual([
+      "effect",
+      "inject",
+      "logger",
+      "on",
+      "promptFragments",
+      "routes",
+      "storage",
+      "tools",
+      "ui",
+    ]);
+  });
+});
+
+describe("插件上下文的存储通道（能力 storage）", () => {
+  it("ctx.storage 把工作区与键原样透传到内核 sink（不做默认值兜底）", async () => {
+    let seen: Record<string, unknown> = {};
+    const namespace = {
+      name: "storage-probe",
+      inject: ["storage"],
+      async apply(ctx: {
+        storage: {
+          get: (instanceId: string, key: string) => Promise<string | null>;
+          set: (
+            instanceId: string,
+            key: string,
+            value: string,
+          ) => Promise<void>;
+          remove: (instanceId: string, key: string) => Promise<boolean>;
+          keys: (instanceId: string) => Promise<string[]>;
+        };
+      }) {
+        await ctx.storage.set("ws-1", "session", "v1");
+        await ctx.storage.get("ws-1", "session");
+        await ctx.storage.remove("ws-2", "gone");
+        await ctx.storage.keys("ws-3");
+        seen = ctx as unknown as Record<string, unknown>;
+      },
+    };
+    const host = makeHost();
+    await loadCompatPlugin(namespace, host as never);
+
+    expect(host.storageCalls).toEqual([
+      { op: "set", instanceId: "ws-1", key: "session" },
+      { op: "get", instanceId: "ws-1", key: "session" },
+      { op: "remove", instanceId: "ws-2", key: "gone" },
+      { op: "keys", instanceId: "ws-3", key: "" },
+    ]);
+    // 存储是数据通道，不参与贡献物注销（不返回 disposer）
+    expect(typeof (seen.storage as { get: unknown }).get).toBe("function");
   });
 });

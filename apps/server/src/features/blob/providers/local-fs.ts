@@ -1,7 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  copyFile,
+  mkdir,
+  open,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, normalize, resolve, sep } from "node:path";
-
+import { createNamespacedBlobStore } from "../namespace.js";
 import {
   type BlobBucket,
   type BlobOperation,
@@ -28,7 +36,7 @@ export function createLocalFsBlobStore(options: {
 }): BlobStore {
   const root = resolve(options.rootDir);
 
-  return {
+  return createNamespacedBlobStore({
     bucket(name) {
       return createBucket({
         bucket: name,
@@ -37,7 +45,7 @@ export function createLocalFsBlobStore(options: {
         signingSecret: options.signingSecret,
       });
     },
-  };
+  });
 }
 
 /** 把对象路径解析为绝对路径；越界即抛（段级拒绝 `..`/`.` + 前缀校验）。 */
@@ -87,6 +95,46 @@ export function verifyBlobUrlSignature(input: {
   const expected = Buffer.from(signBlobUrl(input), "utf8");
   const given = Buffer.from(input.signature, "utf8");
   return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** Bounded consumers verify object size before allocation and reject a file changed during the read. */
+export async function readBoundedBlob(
+  path: string,
+  maximum: number,
+): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(maximum) || maximum < 0)
+    throw new Error("对象读取预算无效。");
+  const file = await open(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    const before = await file.stat();
+    if (!before.isFile() || before.size > maximum)
+      throw new Error("对象不是常规文件或超过读取预算。");
+    const bytes = Buffer.alloc(before.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const result = await file.read(
+        bytes,
+        offset,
+        bytes.length - offset,
+        offset,
+      );
+      if (result.bytesRead === 0) throw new Error("对象在读取期间被截断。");
+      offset += result.bytesRead;
+    }
+    const after = await file.stat();
+    if (
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs
+    )
+      throw new Error("对象在读取期间改变。");
+    return bytes;
+  } finally {
+    await file.close();
+  }
 }
 
 function createBucket(options: {
@@ -182,10 +230,12 @@ function createBucket(options: {
       );
     },
 
-    async download(path) {
+    async download(path, readOptions) {
       const target = absoluteOf("download", path);
       try {
-        return new Uint8Array(await readFile(target));
+        return readOptions
+          ? await readBoundedBlob(target, readOptions.maxBytes)
+          : new Uint8Array(await readFile(target));
       } catch (error) {
         failBlob("download", bucket, path, error);
       }

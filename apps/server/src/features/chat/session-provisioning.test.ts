@@ -49,6 +49,9 @@ function createRecordingRunner(handler: (text: string) => FakeResult) {
       }
       return result;
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -61,7 +64,9 @@ const CANVAS_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
 
 function insertSql(calls: Array<{ text: string }>) {
-  const call = calls.find((c) => c.text.includes("insert into public.chat_sessions"));
+  const call = calls.find((c) =>
+    c.text.includes("insert into public.chat_sessions"),
+  );
   return (call?.text ?? "").replace(/\s+/g, " ").trim();
 }
 
@@ -79,7 +84,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
         sessionId: SESSION_ID,
         threadId: "t1",
         title: "标题",
-        userId: USER_ID,
+        createdByClientId: USER_ID,
       })
       .catch(() => null);
 
@@ -103,14 +108,14 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
         canvasId: CANVAS_ID,
         sessionId: SESSION_ID,
         threadId: "t1",
-        userId: USER_ID,
+        createdByClientId: USER_ID,
       })
       .catch(() => null);
 
     const sql = insertSql(calls);
     expect(sql).not.toContain("title");
     expect(sql).toContain("c.id = $4::uuid");
-    // $5 只应出现在工作区谓词上（客户端的 `:workspace` 标记永远绑定为最后一个参数），
+    // $5 只应出现在工作区谓词上（客户端的 `:instance` 标记永远绑定为最后一个参数），
     // 绝不能是画布比较——写死 $5 就是本次修复的那个错位
     expect(sql).not.toContain("c.id = $5");
   });
@@ -123,7 +128,15 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
       if (text.includes("select s.id, s.thread_id")) {
         return {
           rowCount: 1,
-          rows: [{ id: SESSION_ID, thread_id: "thread_existing" }],
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: "thread_existing",
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "flow",
+            },
+          ],
         };
       }
       return { rowCount: 1, rows: [] };
@@ -135,7 +148,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
       canvasId: CANVAS_ID,
       sessionId: SESSION_ID,
       threadId: "thread_new",
-      userId: USER_ID,
+      createdByClientId: USER_ID,
     });
     expect(row?.thread_id).toBe("thread_existing");
 
@@ -146,7 +159,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
       canvasId: CANVAS_ID,
       sessionId: SESSION_ID,
       threadId: "thread_new",
-      userId: USER_ID,
+      createdByClientId: USER_ID,
     });
     expect(none).toBeNull();
   });
@@ -157,10 +170,32 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
         return { rowCount: 0, rows: [] };
       }
       if (text.includes("select s.id, s.thread_id")) {
-        return { rowCount: 1, rows: [{ id: SESSION_ID, thread_id: null }] };
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: null,
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "flow",
+            },
+          ],
+        };
       }
       if (text.includes("set thread_id = $1::text")) {
-        return { rowCount: 1, rows: [{ id: SESSION_ID, thread_id: "thread_new" }] };
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: SESSION_ID,
+              thread_id: "thread_new",
+              canvas_id: CANVAS_ID,
+              project_id: "visual-project",
+              mode: "flow",
+            },
+          ],
+        };
       }
       return { rowCount: 1, rows: [] };
     });
@@ -171,12 +206,12 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
       canvasId: CANVAS_ID,
       sessionId: SESSION_ID,
       threadId: "thread_new",
-      userId: USER_ID,
+      createdByClientId: USER_ID,
     });
 
     expect(row?.thread_id).toBe("thread_new");
-    expect(
-      calls.some((c) => c.text.includes("set thread_id = $1::text")),
-    ).toBe(true);
+    expect(calls.some((c) => c.text.includes("set thread_id = $1::text"))).toBe(
+      true,
+    );
   });
 });

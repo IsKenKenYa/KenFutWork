@@ -1,0 +1,224 @@
+import { describe, expect, it } from "vitest";
+import { instanceSettingsSchema } from "./contracts.js";
+
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  clampExecuteTimeoutMs,
+  clampLlmRequestMaxRetries,
+  clampSubagentMaxConcurrency,
+  clampSubagentMaxDepth,
+  resolveGovernanceEnvOverrides,
+  resolveGovernanceNumber,
+} from "./governance.js";
+
+describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
+  it("模型无输出计时支持显式0关闭、库优先与严格env解析，非法值不关闭保护", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .agentStreamIdleTimeoutMs,
+    ).toBe(180_000);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS: "0",
+      }),
+    ).toEqual({ agentStreamIdleTimeoutMs: 0 });
+    for (const value of ["-1", "abc", "250ms", "1.5", ""]) {
+      expect(
+        resolveGovernanceEnvOverrides({
+          KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS: value,
+        }),
+      ).toEqual({});
+    }
+    expect(
+      resolveGovernanceNumber("agentStreamIdleTimeoutMs", 0, {
+        agentStreamIdleTimeoutMs: 500,
+      }),
+    ).toBe(0);
+    expect(
+      resolveGovernanceNumber("agentStreamIdleTimeoutMs", undefined, {
+        agentStreamIdleTimeoutMs: 500,
+      }),
+    ).toBe(500);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamIdleTimeoutMs: -1,
+      }).success,
+    ).toBe(false);
+  });
+  it("DEFAULTS 与用户拍板档一致", () => {
+    expect(AGENT_GOVERNANCE_DEFAULTS).toMatchObject({
+      subagentMaxDepth: 1,
+      subagentMaxConcurrency: 4,
+      llmRequestMaxRetries: 10,
+      llmInfiniteRetry: false,
+      executeTimeoutMs: 120000,
+      codeUiReconnectDelayMs: 1000,
+      subagentMaxContinuations: 50,
+      agentStreamFlushIntervalMs: 80,
+      // Computer Use 五项（CU 插件里程碑 1 拍板档）
+      computerUseActionTimeoutMs: 10_000,
+      computerUseObserveMaxBytes: 32_768,
+      computerUseScreenshotMaxBytes: 262_144,
+      computerUseMaxActionsPerRun: 200,
+      computerUseSessionMaxMs: 1_800_000,
+    });
+  });
+
+  it("流式刷新间隔：默认 80ms，schema 拒绝越界，env 兜底合法解析", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .agentStreamFlushIntervalMs,
+    ).toBe(80);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 10,
+      }).success,
+    ).toBe(false);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 501,
+      }).success,
+    ).toBe(false);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "120",
+      }),
+    ).toEqual({ agentStreamFlushIntervalMs: 120 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "abc",
+      }),
+    ).toEqual({});
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {
+        agentStreamFlushIntervalMs: 200,
+      }),
+    ).toBe(200);
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {}),
+    ).toBe(80);
+  });
+
+  it("clamp 把越界值钳回护栏，非法输入落区间下限", () => {
+    expect(clampSubagentMaxDepth(2)).toBe(2);
+    expect(clampSubagentMaxDepth(99)).toBe(4);
+    expect(clampSubagentMaxDepth(-3)).toBe(1);
+    expect(clampSubagentMaxDepth(Number.NaN)).toBe(1);
+    expect(clampSubagentMaxDepth(1.9)).toBe(1);
+
+    expect(clampSubagentMaxConcurrency(0)).toBe(1);
+    expect(clampSubagentMaxConcurrency(16)).toBe(16);
+    expect(clampSubagentMaxConcurrency(17)).toBe(16);
+
+    expect(clampLlmRequestMaxRetries(0)).toBe(0);
+    expect(clampLlmRequestMaxRetries(101)).toBe(100);
+
+    expect(clampExecuteTimeoutMs(1)).toBe(5000);
+    expect(clampExecuteTimeoutMs(1_800_000)).toBe(1_800_000);
+    expect(clampExecuteTimeoutMs(Number.POSITIVE_INFINITY)).toBe(5000);
+  });
+
+  it("env 兜底：合法值解析、非法值忽略（不抛错不编值）", () => {
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_SUBAGENT_MAX_DEPTH: "2",
+        KENFUTWORK_SUBAGENT_MAX_CONCURRENCY: "8",
+        KENFUTWORK_LLM_REQUEST_MAX_RETRIES: "0",
+        KENFUTWORK_LLM_INFINITE_RETRY: "true",
+        KENFUTWORK_EXECUTE_TIMEOUT_MS: "600000",
+        KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS: "10",
+      }),
+    ).toEqual({
+      subagentMaxDepth: 2,
+      subagentMaxConcurrency: 8,
+      llmRequestMaxRetries: 0,
+      llmInfiniteRetry: true,
+      executeTimeoutMs: 600000,
+      subagentMaxContinuations: 10,
+    });
+
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_SUBAGENT_MAX_DEPTH: "abc",
+        KENFUTWORK_LLM_INFINITE_RETRY: "yes",
+        KENFUTWORK_EXECUTE_TIMEOUT_MS: "",
+      }),
+    ).toEqual({ llmInfiniteRetry: true });
+
+    expect(resolveGovernanceEnvOverrides({})).toEqual({});
+  });
+
+  it("旧图片卸载张数：默认值与 env 覆盖（0 有效）", () => {
+    expect(resolveGovernanceNumber("contextKeepRecentImages", null, {})).toBe(
+      2,
+    );
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "0",
+      }),
+    ).toEqual({ contextKeepRecentImages: 0 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "abc",
+      }),
+    ).toEqual({});
+  });
+
+  it("工具输出预览字节：默认 8192、区间护栏、env 覆盖与库值优先", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .toolOutputPreviewBytes,
+    ).toBe(8_192);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        toolOutputPreviewBytes: 1_023,
+      }).success,
+    ).toBe(false);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        toolOutputPreviewBytes: 1_048_577,
+      }).success,
+    ).toBe(false);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: " 4096 ",
+      }),
+    ).toEqual({ toolOutputPreviewBytes: 4_096 });
+    for (const value of ["abc", "1.5", ""]) {
+      expect(
+        resolveGovernanceEnvOverrides({
+          KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: value,
+        }),
+      ).toEqual({});
+    }
+    // 越界整数值照常解析，由读侧护栏钳回区间，不静默丢弃用户设置。
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: "0",
+      }),
+    ).toEqual({ toolOutputPreviewBytes: 0 });
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {
+        toolOutputPreviewBytes: 0,
+      }),
+    ).toBe(1_024);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", 16_384, {
+        toolOutputPreviewBytes: 4_096,
+      }),
+    ).toBe(16_384);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {
+        toolOutputPreviewBytes: 4_096,
+      }),
+    ).toBe(4_096);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {}),
+    ).toBe(8_192);
+  });
+});

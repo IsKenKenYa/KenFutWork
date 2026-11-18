@@ -1,0 +1,8 @@
+{
+  // Workers Builds 在仓库根目录执行发布和预览上传；官网产物由 apps/landing 构建。
+  "name": "kenfutwork-landing",
+  "compatibility_date": "2026-10-15",
+  "assets": {
+    "directory": "./apps/landing/dist"
+  }
+}

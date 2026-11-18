@@ -13,7 +13,7 @@ import { binaryName, runCapture } from "./postgres.js";
  * 于是「干净的捆绑 Postgres」上的迁移链会在那一条上停住——实测报
  * `extension "pgmq" is not available`。
  *
- * 做法与开发容器一致（`docker/pg-dev-shim/`）：把只含 `pgmq.create(queue)` 的最小 SQL
+ * 做法与开发容器一致（`docker/pg/pg-dev-shim/`）：把只含 `pgmq.create(queue)` 的最小 SQL
  * 作为扩展装进**该集群自己的** `share/extension`。这是「历史可重放」的兼容层，
  * 不是队列实现——桌面队列走 `in-process`（M3.2）。
  *
@@ -37,7 +37,7 @@ export type PgmqShimDeps = {
 const SHIM_FILES = ["pgmq.control", "pgmq--1.0.sql"] as const;
 
 /**
- * shim 源目录：`LOOMIC_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg-dev-shim`。
+ * shim 源目录：`KENFUTWORK_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg/pg-dev-shim`。
  * 返回 undefined 表示「没有 shim 可用」——此时若库里也没装真 pgmq，由 `ensurePgmqAvailable`
  * 给出可执行的报错。
  */
@@ -49,9 +49,9 @@ export function resolvePgmqShimDir(input: {
 }): string | undefined {
   const exists = input.exists ?? existsSync;
   const candidates = [
-    input.env.LOOMIC_PGMQ_SHIM_DIR?.trim(),
+    input.env.KENFUTWORK_PGMQ_SHIM_DIR?.trim(),
     join(input.exeDir ?? process.cwd(), "pg", "shim"),
-    join(input.repoRoot ?? process.cwd(), "docker", "pg-dev-shim"),
+    join(input.repoRoot ?? process.cwd(), "docker", "pg", "pg-dev-shim"),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   return candidates.find((candidate) =>
@@ -81,7 +81,7 @@ export async function ensurePgmqAvailable(
   if (!options.shimDir) {
     throw new Error(
       "内嵌 Postgres 缺少 pgmq 扩展，且未找到兼容 shim（应为 pgmq.control + pgmq--1.0.sql）。" +
-        "请设置 LOOMIC_PGMQ_SHIM_DIR，或在桌面包里保留 <exe>/pg/shim 目录。",
+        "请设置 KENFUTWORK_PGMQ_SHIM_DIR，或在桌面包里保留 <exe>/pg/shim 目录。",
     );
   }
 
@@ -122,7 +122,9 @@ const defaultDeps: PgmqShimDeps = {
   exists: existsSync,
   async resolveExtensionDir(binDir) {
     // 捆绑的 Postgres 是精简分发（只有 initdb/pg_ctl/postgres），通常没有 pg_config，
-    // 故「跑 pg_config 取 sharedir」只是优先尝试，主路径是目录惯例 <bin>/../share/extension
+    // 故「跑 pg_config 取 sharedir」只是优先尝试，主路径是目录惯例。**布局按平台不同**：
+    // win 包的 extension 平铺在 share/ 下；darwin 包是 PG 标准的 share/postgresql/extension
+    // （2026-09-23：mac 打包按 win 惯例找 → shim 装错位置 → pg_available_extensions 空）。
     const pgConfig = join(binDir, binaryName("pg_config", process.platform));
     if (existsSync(pgConfig)) {
       const sharedir = await runCapture(pgConfig, ["--sharedir"]);
@@ -130,7 +132,16 @@ const defaultDeps: PgmqShimDeps = {
         return join(sharedir, "extension");
       }
     }
-    const conventional = join(binDir, "..", "share", "extension");
-    return existsSync(conventional) ? conventional : undefined;
+    const candidates =
+      process.platform === "win32"
+        ? [join(binDir, "..", "share", "extension")]
+        : [
+            join(binDir, "..", "share", "postgresql", "extension"),
+            join(binDir, "..", "share", "extension"),
+          ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return undefined;
   },
 };

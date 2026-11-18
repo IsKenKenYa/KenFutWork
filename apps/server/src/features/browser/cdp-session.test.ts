@@ -1,0 +1,923 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+
+import type { CdpClient } from "./cdp-client.js";
+import { createCdpBrowserSession } from "./cdp-session.js";
+
+/**
+ * CDP 会话（`createCdpBrowserSession`）：面板画面流的**编排**部分。
+ *
+ * 依赖全部可注入，所以这里能用替身客户端跑真流程：连接 → 开流 → 帧回调 → ack 顺序、
+ * 同时只留一个画面订阅、`stop()` 收尾（还原视口）、页面自己跳走时状态跟上。
+ * 真实 Chrome 那一段（真出画面、真点得动）走真机实测。
+ */
+function fakeClient() {
+  const listeners = new Map<
+    string,
+    Set<
+      (params: Record<string, unknown>, sessionId?: string | undefined) => void
+    >
+  >();
+  const sent: Array<{
+    method: string;
+    params: Record<string, unknown>;
+    sessionId?: string;
+  }> = [];
+  /** `Runtime.evaluate` 的返回（默认空对象 = 自检探针拿不到 true）。 */
+  let evalResult: Record<string, unknown> = {};
+  /** 受控浏览器里“已经开着的” DevTools 目标（缺省没有 → 会走按 F12 那条路）。 */
+  let devtoolsTarget: { targetId: string; url: string; title: string } | null =
+    null;
+  /** 连上时报告的实例状态（无头用例要它）。 */
+  let headless = false;
+  /** `Network.getResponseBody` 的返回；null = 浏览器说「取不到」（重定向/无体）。 */
+  let responseBodyResult: {
+    body: string;
+    base64Encoded?: boolean;
+  } | null = { body: "" };
+  /** `Page.captureScreenshot` 的返回（默认 2 字节假图，够断言帧长度）。 */
+  const screenshotResult: Record<string, unknown> = {
+    data: Buffer.from([9, 9]).toString("base64"),
+  };
+  /** mouseMoved 闸门：开时 dispatched moved 挂起等待手动放行（模拟 5s 帧回执）。 */
+  let moveGate = false;
+  const moveWaiters: Array<() => void> = [];
+  const client: CdpClient = {
+    async send(method, params = {}, sessionId) {
+      sent.push({ method, params, ...(sessionId ? { sessionId } : {}) });
+      if (
+        moveGate &&
+        method === "Input.dispatchMouseEvent" &&
+        params.type === "mouseMoved"
+      ) {
+        await new Promise<void>((resolve) => moveWaiters.push(resolve));
+      }
+      if (method === "Page.getLayoutMetrics") {
+        return {
+          cssVisualViewport: { clientWidth: 900, clientHeight: 600, scale: 1 },
+        };
+      }
+      if (method === "Page.captureScreenshot") return screenshotResult;
+      if (method === "Runtime.evaluate") return evalResult;
+      if (method === "Network.getResponseBody") {
+        if (!responseBodyResult) {
+          throw new Error("No resource with given identifier found");
+        }
+        return responseBodyResult;
+      }
+      if (method === "Browser.getWindowForTarget") {
+        return {
+          windowId: 4242,
+          bounds: { left: 0, top: 0, width: 640, height: 640 },
+        };
+      }
+      return {};
+    },
+    on(method, handler) {
+      const set = listeners.get(method) ?? new Set();
+      set.add(handler);
+      listeners.set(method, set);
+      return () => set.delete(handler);
+    },
+    async openTab() {
+      return { targetId: "T1", sessionId: "S1" };
+    },
+    async listTargets() {
+      return [
+        { targetId: "T1", url: "about:blank", title: "" },
+        ...(devtoolsTarget ? [devtoolsTarget] : []),
+      ];
+    },
+    async closeTab() {},
+    close() {},
+  };
+  return {
+    client,
+    sent,
+    setEvalResult(value: Record<string, unknown>) {
+      evalResult = value;
+    },
+    setResponseBody(value: { body: string; base64Encoded?: boolean } | null) {
+      responseBodyResult = value;
+    },
+    setDevToolsTarget(target: {
+      targetId: string;
+      url: string;
+      title: string;
+    }) {
+      devtoolsTarget = target;
+    },
+    setState(next: "headless" | "headed") {
+      headless = next === "headless";
+    },
+    /** 开/关 mouseMoved 闸门；放行时一次性放掉所有挂起（并关闸）。 */
+    setMoveGate(on: boolean) {
+      moveGate = on;
+    },
+    resolvePendingMoves() {
+      moveGate = false;
+      const waiters = moveWaiters.splice(0);
+      for (const resolve of waiters) resolve();
+    },
+    headless: () => headless,
+    emit(method: string, params: Record<string, unknown>, sessionId?: string) {
+      for (const handler of listeners.get(method) ?? []) {
+        handler(params, sessionId);
+      }
+    },
+    listenerCount(method: string) {
+      return listeners.get(method)?.size ?? 0;
+    },
+  };
+}
+
+function sessionWith(
+  fake: { client: CdpClient },
+  extra: { sendKeys?: (title: string) => Promise<void> } = {},
+) {
+  return createCdpBrowserSession({
+    dataDir: "D:/tmp/kfw-cdp-session-test",
+    ...(extra.sendKeys
+      ? {
+          sendKeys: extra.sendKeys as never,
+        }
+      : {}),
+    findExecutable: () => "C:/fake/chrome.exe",
+    launch: async () => ({
+      // 会话会给子进程挂 exit 监听（进程自己退了就收回状态）
+      child: { once: () => undefined } as never,
+      executable: "C:/fake/chrome.exe",
+      port: 9333,
+      profileDir: "D:/tmp/kfw-cdp-session-test/profile",
+    }),
+    waitDevtools: async () => ({
+      browser: "Chrome/153",
+      protocolVersion: "1.3",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9333/devtools/browser/x",
+    }),
+    connectClient: () => fake.client,
+    killStaleProfile: async () => false,
+  });
+}
+
+describe("CDP 会话：面板画面流", () => {
+  it("开流先推一张静止帧（CDP 只在页面变化时来帧，静态页面上没有它面板就是白的）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    const frames: number[] = [];
+    await session.watch({ width: 900, height: 600 }, async (jpeg) => {
+      frames.push(jpeg.length);
+    });
+    await vi.waitFor(() => expect(frames).toEqual([2]));
+    // 静止帧走 JPEG 截图（PNG 比它大一个量级），不是别的路
+    const shot = fake.sent.find(
+      (entry) => entry.method === "Page.captureScreenshot",
+    );
+    expect(shot?.params.format).toBe("jpeg");
+    // 随后 CDP 的变化帧照旧转发（静止帧不顶替变化帧）
+    fake.emit(
+      "Page.screencastFrame",
+      { data: Buffer.from([1, 2, 3]).toString("base64"), sessionId: 9 },
+      "S1",
+    );
+    await vi.waitFor(() => expect(frames).toEqual([2, 3]));
+  });
+
+  it("开流后每帧先给回调、再 ack（Chrome 以 ack 做背压）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    const order: string[] = [];
+    await session.watch({ width: 900, height: 600 }, async (jpeg) => {
+      order.push(`frame:${jpeg.length}`);
+    });
+    // 视口按面板尺寸真改（自由尺寸），并开始推帧
+    expect(
+      fake.sent.some(
+        (entry) =>
+          entry.method === "Emulation.setDeviceMetricsOverride" &&
+          entry.params.width === 900,
+      ),
+    ).toBe(true);
+    expect(
+      fake.sent.some((entry) => entry.method === "Page.startScreencast"),
+    ).toBe(true);
+
+    // 先等开流的静止帧落地，再看变化帧（两者顺序由这里显式钉住，避免竞态）
+    await vi.waitFor(() => expect(order).toEqual(["frame:2"]));
+    fake.emit(
+      "Page.screencastFrame",
+      { data: Buffer.from([1, 2, 3]).toString("base64"), sessionId: 7 },
+      "S1",
+    );
+    await vi.waitFor(() => expect(order).toEqual(["frame:2", "frame:3"]));
+    await vi.waitFor(() =>
+      expect(
+        fake.sent.some(
+          (entry) =>
+            entry.method === "Page.screencastFrameAck" &&
+            entry.params.sessionId === 7,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("别人标签的帧不转发（事件按 CDP 会话分发）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    const sizes: number[] = [];
+    await session.watch({}, async (jpeg) => {
+      sizes.push(jpeg.length);
+    });
+    await vi.waitFor(() => expect(sizes).toEqual([2]));
+    fake.emit(
+      "Page.screencastFrame",
+      { data: Buffer.from([1]).toString("base64"), sessionId: 1 },
+      "别的会话",
+    );
+    fake.emit(
+      "Page.screencastFrame",
+      { data: Buffer.from([1]).toString("base64"), sessionId: 2 },
+      "S1",
+    );
+    // 开流的静止帧（2 字节）+ 本会话的那一帧（1 字节）；别的会话的不算
+    await vi.waitFor(() => expect(sizes).toEqual([2, 1]));
+  });
+
+  it("同时只留一个画面订阅：新开流会把上一个收掉，订阅表不堆积", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    await session.watch({}, async () => {});
+    expect(fake.listenerCount("Page.screencastFrame")).toBe(1);
+    await session.watch({}, async () => {});
+    expect(fake.listenerCount("Page.screencastFrame")).toBe(1);
+  });
+
+  it("stop()：停推帧并还原视口（自由尺寸关掉时不留覆盖）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    const stop = await session.watch(
+      { width: 900, height: 600 },
+      async () => {},
+    );
+    await stop();
+    expect(fake.listenerCount("Page.screencastFrame")).toBe(0);
+    expect(
+      fake.sent.some((entry) => entry.method === "Page.stopScreencast"),
+    ).toBe(true);
+    expect(
+      fake.sent.some(
+        (entry) => entry.method === "Emulation.clearDeviceMetricsOverride",
+      ),
+    ).toBe(true);
+  });
+
+  it("页面自己跳走（点链接）时状态里的 currentUrl 跟着变（只认主框架）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    expect(session.status()).toMatchObject({ currentUrl: "about:blank" });
+
+    fake.emit(
+      "Page.frameNavigated",
+      { frame: { id: "F1", url: "https://a.com/" } },
+      "S1",
+    );
+    expect(session.status()).toMatchObject({ currentUrl: "https://a.com/" });
+
+    // iframe 自己跳走不改当前页
+    fake.emit(
+      "Page.frameNavigated",
+      { frame: { id: "F2", parentId: "F1", url: "https://ad.example/" } },
+      "S1",
+    );
+    expect(session.status()).toMatchObject({ currentUrl: "https://a.com/" });
+  });
+
+  it("输入回填按类型分发（鼠标动作名映射、键盘走按键表）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    await session.input({
+      type: "mouse",
+      action: "released",
+      x: 1,
+      y: 2,
+      buttons: 0,
+    });
+    expect(fake.sent.at(-1)?.params).toMatchObject({
+      type: "mouseReleased",
+      x: 1,
+      y: 2,
+      buttons: 0,
+    });
+    await session.input({ type: "wheel", x: 3, y: 4, deltaY: 100 });
+    expect(fake.sent.at(-1)?.params).toMatchObject({
+      type: "mouseWheel",
+      deltaY: 100,
+    });
+    await session.input({ type: "key", key: "Backspace" });
+    expect(fake.sent.at(-1)?.params).toMatchObject({
+      key: "Backspace",
+      windowsVirtualKeyCode: 8,
+    });
+    await session.input({ type: "text", text: "中文" });
+    expect(fake.sent.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "中文" },
+    });
+    await session.disconnect();
+  });
+
+  it("hover moved 合帧：在途最多一条、后来的只更新坐标，按下/抬起立即透传", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setMoveGate(true);
+    // 模拟渲染器不产帧：mouseMoved 回执挂起（真机 ~5s）。三条连发必须立即返回。
+    const t0 = Date.now();
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 1,
+      y: 2,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 3,
+      y: 4,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 5,
+      y: 6,
+      buttons: 0,
+    });
+    expect(Date.now() - t0).toBeLessThan(100);
+    const movesBefore = fake.sent.filter((s) => s.params.type === "mouseMoved");
+    expect(movesBefore).toHaveLength(1);
+    expect(movesBefore[0]?.params).toMatchObject({ x: 1, y: 2, buttons: 0 });
+    // 按下不吃合帧：在途 moved 不挡离散事件。
+    await session.input({
+      type: "mouse",
+      action: "pressed",
+      x: 5,
+      y: 6,
+      buttons: 1,
+    });
+    expect(fake.sent.at(-1)?.params).toMatchObject({
+      type: "mousePressed",
+      x: 5,
+      y: 6,
+    });
+    // 在途落定 → 自动冲刷最后坐标，且只补一条。
+    fake.resolvePendingMoves();
+    await vi.waitFor(() => {
+      const moves = fake.sent.filter((s) => s.params.type === "mouseMoved");
+      expect(moves).toHaveLength(2);
+      expect(moves[1]?.params).toMatchObject({ x: 5, y: 6 });
+    });
+    await session.disconnect();
+  });
+
+  it("控制台消息：打标签时就订阅，console/异常/浏览器日志都进缓冲（按 seq 增量取）", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({ result: { value: "Example" } });
+    const session = sessionWith(fake);
+    await session.connect();
+
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "string", value: "hello" }] },
+      "S1",
+    );
+    fake.emit(
+      "Runtime.exceptionThrown",
+      { exceptionDetails: { exception: { description: "Error: boom" } } },
+      "S1",
+    );
+    fake.emit(
+      "Log.entryAdded",
+      { entry: { level: "error", text: "404", url: "https://a.com/x" } },
+      "S1",
+    );
+    // 别的会话的事件不要
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "string", value: "别人的" }] },
+      "别的会话",
+    );
+
+    const first = await session.messages(0);
+    expect(first.messages.map((m) => [m.seq, m.source, m.text])).toEqual([
+      [1, "console", "hello"],
+      [2, "exception", "Error: boom"],
+      [3, "log", "404 (https://a.com/x)"],
+    ]);
+    expect(first.nextSeq).toBe(3);
+    // 增量：只说「我已经拿到 2」就只给 3
+    expect((await session.messages(2)).messages.map((m) => m.seq)).toEqual([3]);
+  });
+
+  it("控制台里执行表达式：进同一条时间线，能按增量取回", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({ result: { type: "string", value: "Example Domain" } });
+    const session = sessionWith(fake);
+    await session.connect();
+    const message = await session.evaluate("document.title");
+    expect(message).toMatchObject({
+      level: "log",
+      source: "input",
+      text: "Example Domain",
+    });
+    expect(message.seq).toBe(1);
+    // generatePreview 要开（对象才有预览）；awaitPromise 让 Promise 也回结果
+    const params = fake.sent.at(-1)?.params as Record<string, unknown>;
+    expect(params).toMatchObject({
+      expression: "document.title",
+      generatePreview: true,
+      awaitPromise: true,
+    });
+    expect((await session.messages(0)).messages).toHaveLength(1);
+  });
+
+  it("清空控制台：消息没了，但 seq 继续涨（客户端游标不回退）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "number", value: 1 }] },
+      "S1",
+    );
+    await session.clearMessages();
+    expect((await session.messages(0)).messages).toEqual([]);
+    fake.emit(
+      "Runtime.consoleAPICalled",
+      { type: "log", args: [{ type: "number", value: 2 }] },
+      "S1",
+    );
+    expect((await session.messages(0)).messages.map((m) => m.seq)).toEqual([2]);
+  });
+
+  it("断开时退订控制台事件（不留悬空监听）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    expect(fake.listenerCount("Runtime.consoleAPICalled")).toBe(1);
+    await session.disconnect();
+    expect(fake.listenerCount("Runtime.consoleAPICalled")).toBe(0);
+    expect(fake.listenerCount("Runtime.exceptionThrown")).toBe(0);
+    expect(fake.listenerCount("Log.entryAdded")).toBe(0);
+  });
+
+  it("打开开发者工具：无头实例如实拒绝（要有可见窗口）", async () => {
+    const fake = fakeClient();
+    fake.setState("headless");
+    const session = sessionWith(fake);
+    await session.connect({ headless: true });
+    await expect(session.openDevToolsWindow()).rejects.toThrow(/可见/);
+  });
+
+  it("打开开发者工具：按页面标题唤起（F12 之后浏览器把它开出来），再取消停靠并摆位置", async () => {
+    const fake = fakeClient();
+    // 会话要先读页面 DOM 拿标题（替身给一份）
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const keys: string[] = [];
+    const session = sessionWith(fake, {
+      // 替身模拟「被按了 F12 的浏览器」：按键之后 DevTools 目标才出现
+      sendKeys: async (title: string) => {
+        keys.push(title);
+        fake.setDevToolsTarget({
+          targetId: "DT1",
+          url: "devtools://devtools/bundled/devtools_app.html",
+          title: "DevTools",
+        });
+      },
+    });
+    await session.connect();
+    const opened = await session.openDevToolsWindow({
+      left: 10,
+      top: 20,
+      width: 800,
+      height: 600,
+    });
+    // 按键脚本拿到的就是当前页面标题（它按标题找窗口）
+    expect(keys).toEqual(["Example Domain"]);
+    // 取消停靠 + 摆位置都发了命令
+    const methods = fake.sent.map((entry) => entry.method);
+    expect(methods).toContain("Target.attachToTarget");
+    expect(methods).toContain("Browser.setWindowBounds");
+    expect(opened.bounds).toEqual({
+      left: 10,
+      top: 20,
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it("开发者工具已经开着：直接复用（不再按 F12）", async () => {
+    const fake = fakeClient();
+    fake.setDevToolsTarget({
+      targetId: "DT1",
+      url: "devtools://devtools/bundled/devtools_app.html",
+      title: "DevTools",
+    });
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const keys: string[] = [];
+    const session = sessionWith(fake, {
+      sendKeys: async (title: string) => {
+        keys.push(title);
+      },
+    });
+    await session.connect();
+    await session.openDevToolsWindow();
+    expect(keys).toEqual([]);
+    expect(fake.sent.map((entry) => entry.method)).toContain(
+      "Browser.setWindowBounds",
+    );
+  });
+
+  it("打开开发者工具：唤起失败时如实报错（并告诉用户自己去按 F12）", async () => {
+    const fake = fakeClient();
+    fake.setEvalResult({
+      result: {
+        value: JSON.stringify({
+          url: "https://a.com/",
+          title: "Example Domain",
+          text: "",
+          elements: [],
+        }),
+      },
+    });
+    const session = sessionWith(fake, { sendKeys: async () => {} });
+    await session.connect();
+    await expect(session.openDevToolsWindow()).rejects.toThrow(/按 F12/);
+  });
+
+  it("断开时收掉导航订阅（不留悬空监听）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    expect(fake.listenerCount("Page.frameNavigated")).toBe(1);
+    await session.disconnect();
+    expect(fake.listenerCount("Page.frameNavigated")).toBe(0);
+  });
+});
+
+/**
+ * 网络采集（请求体 / 响应体 / 耗时）：CDP 的事件序列折成同一条记录。
+ * 采集有隐私与体积两个面——只有**文本类 MIME 且体积在上限内**才取响应体，
+ * 二进制与超大响应只留状态与耗时；取体失败（重定向/无体）不是错误路径。
+ */
+describe("CDP 会话：网络体与耗时采集", () => {
+  const emitRequest = (
+    fake: ReturnType<typeof fakeClient>,
+    overrides: {
+      requestId?: string;
+      timestamp?: number;
+      mimeType?: string;
+      encodedDataLength?: number;
+      postData?: string;
+    } = {},
+  ) => {
+    const requestId = overrides.requestId ?? "r1";
+    fake.emit(
+      "Network.requestWillBeSent",
+      {
+        requestId,
+        type: "fetch",
+        timestamp: overrides.timestamp ?? 100,
+        request: {
+          url: "https://a.com/api",
+          method: "POST",
+          ...(overrides.postData === undefined
+            ? {}
+            : { postData: overrides.postData }),
+        },
+      },
+      "S1",
+    );
+    fake.emit(
+      "Network.responseReceived",
+      {
+        requestId,
+        response: {
+          status: 200,
+          mimeType: overrides.mimeType ?? "application/json",
+        },
+      },
+      "S1",
+    );
+    fake.emit(
+      "Network.loadingFinished",
+      {
+        requestId,
+        timestamp: (overrides.timestamp ?? 100) + 0.132,
+        encodedDataLength: overrides.encodedDataLength ?? 11,
+      },
+      "S1",
+    );
+  };
+
+  it("请求体 / 响应体 / 耗时都补在同一条上", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody({ body: '{"ok":true}' });
+
+    emitRequest(fake, { postData: '{"a":1}' });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        url: "https://a.com/api",
+        status: 200,
+        mimeType: "application/json",
+        requestBody: '{"a":1}',
+        responseBody: '{"ok":true}',
+        durationMs: 132,
+      });
+    });
+    // 取体时用的就是这条请求的 id
+    const bodyCall = fake.sent.find(
+      (call) => call.method === "Network.getResponseBody",
+    );
+    expect(bodyCall?.params).toEqual({ requestId: "r1" });
+  });
+
+  it("二进制响应不取体（取回来是乱码）；耗时照给", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+
+    emitRequest(fake, { mimeType: "image/png" });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]?.durationMs).toBe(132);
+    });
+    expect(
+      fake.sent.some((call) => call.method === "Network.getResponseBody"),
+    ).toBe(false);
+    expect(
+      (await session.requests(0)).requests[0]?.responseBody,
+    ).toBeUndefined();
+  });
+
+  it("超大响应不取体（不给内存与 agent 结果上压力）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+
+    emitRequest(fake, { encodedDataLength: 512 * 1024 + 1 });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]?.durationMs).toBe(132);
+    });
+    expect(
+      fake.sent.some((call) => call.method === "Network.getResponseBody"),
+    ).toBe(false);
+  });
+
+  it("取体失败（重定向/无体）：只补耗时，不炸也不留半截", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody(null);
+
+    emitRequest(fake);
+
+    await vi.waitFor(async () => {
+      const entry = (await session.requests(0)).requests[0];
+      expect(entry?.durationMs).toBe(132);
+    });
+    const entry = (await session.requests(0)).requests[0];
+    expect(entry?.responseBody).toBeUndefined();
+    expect(entry?.status).toBe(200);
+  });
+
+  it("base64 编码的响应体不采（避免把二进制塞进结果）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody({ body: "iVBORw0KGgo=", base64Encoded: true });
+
+    emitRequest(fake);
+
+    await vi.waitFor(async () => {
+      const entry = (await session.requests(0)).requests[0];
+      expect(entry?.durationMs).toBe(132);
+    });
+    expect(
+      (await session.requests(0)).requests[0]?.responseBody,
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * `evaluateValue`：`browser_eval` 的取值路径（与 `evaluate` 分开）。
+ * `evaluate` 是「控制台里敲一行」——结果折进同一条时间线；`evaluateValue` 是工具取值——
+ * 只回「值 + 类型」或「错误文本」，且**抛错不进控制台缓冲**（页面异常是这次调用的结果，
+ * 不是页面自己的日志，混进去会让 agent 下次拉增量时重复看到它）。
+ */
+describe("CDP 会话：页面内取值（browser_eval）", () => {
+  it("正常值：returnByValue + awaitPromise，回值与原类型；不进控制台缓冲", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({ result: { type: "number", value: 42 } });
+
+    const result = await session.evaluateValue("6 * 7");
+    expect(result).toEqual({ ok: true, value: 42, type: "number" });
+    const params = fake.sent.at(-1)?.params as Record<string, unknown>;
+    expect(params).toMatchObject({
+      expression: "6 * 7",
+      returnByValue: true,
+      awaitPromise: true,
+      userGesture: true,
+    });
+    expect((await session.messages(0)).messages).toHaveLength(0);
+  });
+
+  it("页面里抛错：回错误原文（ok=false），不进控制台缓冲", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({
+      exceptionDetails: {
+        exception: { description: "ReferenceError: nope is not defined" },
+      },
+    });
+
+    const result = await session.evaluateValue("nope()");
+    expect(result).toEqual({
+      ok: false,
+      error: "ReferenceError: nope is not defined",
+    });
+    expect((await session.messages(0)).messages).toHaveLength(0);
+  });
+
+  it("拿不到可序列化值：用 description 兜底（DOM 节点一类）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({
+      result: { type: "object", description: "HTMLDivElement" },
+    });
+
+    const result = await session.evaluateValue("document.body");
+    expect(result).toEqual({
+      ok: true,
+      value: "HTMLDivElement",
+      type: "object",
+    });
+  });
+
+  it("undefined：如实回 null 值 + undefined 类型（不伪装成「没有返回」）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({ result: { type: "undefined" } });
+
+    const result = await session.evaluateValue("void 0");
+    expect(result).toEqual({ ok: true, value: null, type: "undefined" });
+  });
+});
+
+describe("CDP 会话：清理自有浏览器 profile", () => {
+  it.skipIf(process.platform === "win32")(
+    "等待自有进程完成退出写入后再清理 profile",
+    async () => {
+      const dataDir = await mkdtemp(join(tmpdir(), "kfw-cdp-exit-"));
+      const profileDir = join(dataDir, "chrome-profile");
+      const code = `
+        const fs = require('node:fs');
+        process.on('SIGTERM', () => setTimeout(() => {
+          fs.mkdirSync(process.argv[1], { recursive: true });
+          fs.writeFileSync(process.argv[1] + '/shutdown', 'done');
+          process.exit(0);
+        }, 100));
+        console.log('ready');
+        setInterval(() => {}, 1000);
+      `;
+      const child = spawn(process.execPath, ["-e", code, profileDir], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const exited = once(child, "exit");
+      try {
+        await once(child.stdout, "data");
+        const fake = fakeClient();
+        const session = createCdpBrowserSession({
+          dataDir,
+          findExecutable: () => process.execPath,
+          killStaleProfile: async () => false,
+          launch: async ({ executable, port }) => ({
+            child,
+            executable,
+            port,
+            profileDir,
+          }),
+          waitDevtools: async () => ({
+            browser: "Chrome/153",
+            protocolVersion: "1.3",
+            webSocketDebuggerUrl: "ws://127.0.0.1:9333/devtools/browser/x",
+          }),
+          connectClient: () => fake.client,
+        });
+        expect((await session.connect()).status).toBe("connected");
+        expect(await session.clearData("all")).toEqual({ success: true });
+        await exited;
+        await expect(stat(profileDir)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        if (child.exitCode === null && child.signalCode === null)
+          child.kill("SIGKILL");
+        await exited;
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  async function profileFixture() {
+    const dataDir = await mkdtemp(join(tmpdir(), "kfw-cdp-clear-"));
+    const profileDir = join(dataDir, "chrome-profile");
+    await mkdir(join(profileDir, "Default", "Cache"), { recursive: true });
+    await mkdir(join(profileDir, "Default", "Code Cache"), {
+      recursive: true,
+    });
+    await writeFile(join(profileDir, "Default", "Cookies"), "login", "utf8");
+    await writeFile(join(profileDir, "Last Version"), "1", "utf8");
+    const session = createCdpBrowserSession({
+      dataDir,
+      findExecutable: () => "C:/fake/chrome.exe",
+      launch: async () => {
+        throw new Error("清理用例不启动浏览器");
+      },
+      waitDevtools: async () => {
+        throw new Error("清理用例不连接浏览器");
+      },
+      connectClient: () => {
+        throw new Error("清理用例不连接浏览器");
+      },
+      killStaleProfile: async () => false,
+    });
+    return { dataDir, profileDir, session };
+  }
+
+  it("cache 模式只删缓存目录，登录态与版本文件保留", async () => {
+    const { dataDir, profileDir, session } = await profileFixture();
+    const result = await session.clearData("cache");
+    expect(result).toEqual({ success: true });
+    await expect(stat(join(profileDir, "Default", "Cache"))).rejects.toThrow();
+    await expect(
+      stat(join(profileDir, "Default", "Code Cache")),
+    ).rejects.toThrow();
+    await expect(
+      stat(join(profileDir, "Default", "Cookies")),
+    ).resolves.toBeTruthy();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("all 模式删除整个 profile，下次连接重建", async () => {
+    const { dataDir, profileDir, session } = await profileFixture();
+    const result = await session.clearData("all");
+    expect(result).toEqual({ success: true });
+    // 目录已不存在：再往里建文件再删会失败。
+    await expect(rm(join(profileDir, "Default", "Cookies"))).rejects.toThrow();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+});

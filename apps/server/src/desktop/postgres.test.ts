@@ -76,7 +76,7 @@ describe("内嵌 Postgres：参数构造", () => {
     const args = buildInitdbArgs({
       dataDir: DATA_DIR,
       passwordFile: PASSWORD_FILE,
-      user: "loomic",
+      user: "kenfutwork",
     });
     expect(args).toContain("--pwfile");
     expect(args[args.indexOf("--pwfile") + 1]).toBe(PASSWORD_FILE);
@@ -111,20 +111,20 @@ describe("内嵌 Postgres：参数构造", () => {
   it("连接串对用户名/口令做 URL 编码", () => {
     expect(
       buildConnectionString({
-        database: "loomic",
+        database: "kenfutwork",
         password: "a b/c",
         port: 55432,
         user: "lo omic",
       }),
-    ).toBe("postgres://lo%20omic:a%20b%2Fc@127.0.0.1:55432/loomic");
+    ).toBe("postgres://lo%20omic:a%20b%2Fc@127.0.0.1:55432/kenfutwork");
   });
 });
 
 describe("内嵌 Postgres：二进制目录解析", () => {
-  it("LOOMIC_PG_BIN_DIR 显式覆盖优先", () => {
+  it("KENFUTWORK_PG_BIN_DIR 显式覆盖优先", () => {
     expect(
       resolvePgBinDir({
-        env: { LOOMIC_PG_BIN_DIR: join("D:/", "pg", "bin") },
+        env: { KENFUTWORK_PG_BIN_DIR: join("D:/", "pg", "bin") },
         exists: () => true,
         platform: "win32",
       }),
@@ -134,11 +134,11 @@ describe("内嵌 Postgres：二进制目录解析", () => {
   it("显式目录不存在时 fail loud（不静默回退到依赖包）", () => {
     expect(() =>
       resolvePgBinDir({
-        env: { LOOMIC_PG_BIN_DIR: "D:/nope" },
+        env: { KENFUTWORK_PG_BIN_DIR: "D:/nope" },
         exists: () => false,
         platform: "win32",
       }),
-    ).toThrow(/LOOMIC_PG_BIN_DIR 指向的目录不存在/);
+    ).toThrow(/KENFUTWORK_PG_BIN_DIR 指向的目录不存在/);
   });
 
   it("发布包内 <exe>/pg/bin 优先于依赖包", () => {
@@ -153,15 +153,38 @@ describe("内嵌 Postgres：二进制目录解析", () => {
     ).toBe(bundled);
   });
 
-  it("开发态回落到已安装的平台依赖包 native/bin", () => {
-    const binDir = resolvePgBinDir({
-      env: {},
-      exists: (path) => path.includes("native"),
-      exeDir: "D:/nope",
-      platform: "win32",
-    });
-    expect(binDir).toMatch(/windows-x64[/\\]native[/\\]bin$/);
+  it("未显式给 exeDir 时按可执行文件同级找 pg/bin（SEA 发布态）", () => {
+    // Windows 打包态冒烟实测：冒烟脚本的 cwd 不是 release/，只按 cwd 找就报
+    // 「未找到内嵌 Postgres 二进制」，而 pg/ 其实就躺在 exe 旁边。
+    const bundled = join("D:/release", "pg", "bin");
+    expect(
+      resolvePgBinDir({
+        env: {},
+        exists: (path) => path === bundled,
+        execPath: join("D:/release", "KenFutWork-server.exe"),
+        platform: "win32",
+      }),
+    ).toBe(bundled);
   });
+
+  // 本用例 mock 了 win32 路径解析，但 resolvePgBinDir 内部用真实 process.arch 拼
+  // 平台 key（win32-x64），且 windows-x64 可选依赖只在 x64 Windows 上安装——
+  // 非 x64-Windows 机器直接跳过（依赖缺失的 fail loud 另有专测覆盖）。
+  const canRunWin32Resolution =
+    process.platform === "win32" && process.arch === "x64";
+
+  it.skipIf(!canRunWin32Resolution)(
+    "开发态回落到已安装的平台依赖包 native/bin",
+    () => {
+      const binDir = resolvePgBinDir({
+        env: {},
+        exists: (path) => path.includes("native"),
+        exeDir: "D:/nope",
+        platform: "win32",
+      });
+      expect(binDir).toMatch(/windows-x64[/\\]native[/\\]bin$/);
+    },
+  );
 });
 
 describe("内嵌 Postgres：生命周期", () => {
@@ -177,7 +200,7 @@ describe("内嵌 Postgres：生命周期", () => {
     expect(commands[1]?.args).toContain("start");
     expect(files.get(PASSWORD_FILE)).toBe("generated-password");
     expect(handle.connectionString).toBe(
-      "postgres://loomic:generated-password@127.0.0.1:55432/loomic",
+      "postgres://kenfutwork:generated-password@127.0.0.1:55432/kenfutwork",
     );
   });
 
@@ -286,7 +309,16 @@ describe("内嵌 Postgres：生命周期", () => {
 
 describe("内嵌 Postgres：接管上次崩溃留下的集群", () => {
   const PID_FILE = join(DATA_DIR, "postmaster.pid");
-  const PID_CONTENT = ["4321", DATA_DIR, "1700000000", "55999", "/tmp", "", "12345", "0"].join("\n");
+  const PID_CONTENT = [
+    "4321",
+    DATA_DIR,
+    "1700000000",
+    "55999",
+    "/tmp",
+    "",
+    "12345",
+    "0",
+  ].join("\n");
 
   it("postmaster.pid 解析：取 pid 与端口两行，畸形内容返回 null", () => {
     expect(parsePostmasterPid(PID_CONTENT)).toEqual({ pid: 4321, port: 55999 });

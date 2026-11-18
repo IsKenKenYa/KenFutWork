@@ -23,6 +23,11 @@ export async function createSupabaseStore(options: {
     },
     schema: LANGGRAPH_PERSISTENCE_SCHEMA,
   });
-  await store.setup();
-  return store;
+  try {
+    await store.setup();
+    return store;
+  } catch (error) {
+    await store.stop();
+    throw error;
+  }
 }

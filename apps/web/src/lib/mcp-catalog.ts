@@ -1,4 +1,4 @@
-import type { McpCuratedServer } from "@loomic/shared";
+import type { McpCuratedServer } from "@kenfutwork/shared";
 
 /**
  * 内置 MCP 目录 → 可直接提交的配置（纯函数）。
@@ -9,6 +9,7 @@ import type { McpCuratedServer } from "@loomic/shared";
  */
 export interface CuratedPayload {
   name: string;
+  kind: "stdio";
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -42,6 +43,7 @@ export function buildCuratedServerPayload(
   return {
     payload: {
       name: entry.name,
+      kind: "stdio",
       command: entry.command,
       args,
       env: {},

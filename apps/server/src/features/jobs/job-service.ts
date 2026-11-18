@@ -1,15 +1,31 @@
+import { createHash, randomUUID } from "node:crypto";
 import type {
   BackgroundJob,
   BackgroundJobStatus,
   BackgroundJobType,
-} from "@loomic/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import type { QueueClient } from "../queue/types.js";
+} from "@kenfutwork/shared";
+import {
+  GenerationTargetError,
+  type GenerationTargets,
+} from "../generation/file-targets.js";
 import type {
-  BackgroundJobRecord,
-  JobCreditsInfo,
-  JobRepository,
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
+import type { QueueClient } from "../queue/types.js";
+import type { UploadService } from "../uploads/upload-service.js";
+import { JobInputError, persistJobInputs } from "./job-inputs.js";
+import type {
+  JobCancellation,
+  JobExecution,
+  JobExecutionWrite,
+  JobRetry,
+} from "./job-progress.js";
+import {
+  type BackgroundJobRecord,
+  type JobRepository,
+  JobRequestConflictError,
+  type NewJobInput,
 } from "./repository.js";
 
 // Queue name mapping
@@ -24,7 +40,8 @@ export class JobServiceError extends Error {
     | "job_not_found"
     | "job_create_failed"
     | "job_query_failed"
-    | "job_cancel_failed";
+    | "job_cancel_failed"
+    | "job_request_conflict";
 
   constructor(
     code: JobServiceError["code"],
@@ -38,8 +55,15 @@ export class JobServiceError extends Error {
   }
 }
 
-/** 工作区由服务端从鉴权用户解析（`FORM-9`），故不由调用方传入。 */
+/** 实例归属由本地服务验证（`FORM-9`），故不由调用方传入。 */
 export type CreateJobInput = {
+  requestId?: string;
+  requestIndex?: number;
+  runId?: string;
+  /** Only the authenticated HTTP consumer sets this; never a request/tool schema field. */
+  interactiveRequest?: true;
+  expectedScopeGeneration?: number;
+  expectedBranchGeneration?: number;
   projectId?: string;
   canvasId?: string;
   sessionId?: string;
@@ -49,50 +73,124 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
-  createJob(
-    user: AuthenticatedUser,
-    input: CreateJobInput,
-  ): Promise<BackgroundJob>;
-  getJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
-  listJobs(
-    user: AuthenticatedUser,
-    filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
-  ): Promise<BackgroundJob[]>;
-  cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
-  getJobAdmin(jobId: string): Promise<BackgroundJob>;
-
-  // Admin-only methods (worker/executor 路径，无用户身份，按 id 取数)
-  setCreditsInfo(
+  beginSubmission(
     jobId: string,
-    creditsCost: number,
-    transactionId: string,
+    revision: number,
+    token?: string,
+  ): Promise<string>;
+  recordSubmission(
+    jobId: string,
+    attemptId: string,
+    providerJobId: string,
   ): Promise<void>;
+  saveCancellation(
+    jobId: string,
+    progress: JobCancellation,
+    seconds: number,
+    token: string,
+  ): Promise<void>;
+  retryJob(jobId: string, input: JobRetry, token: string): Promise<void>;
+  markUncertain(jobId: string, message: string, token: string): Promise<void>;
+  saveExecution(
+    jobId: string,
+    execution: JobExecution,
+    options?: JobExecutionWrite,
+  ): Promise<void>;
+  recoverPendingJobs(
+    queues: readonly string[],
+    intervalSeconds: number,
+  ): Promise<void>;
+  scheduleJob(
+    jobId: string,
+    seconds: number,
+    leaseToken?: string,
+  ): Promise<void>;
+  claimJob(
+    jobId: string,
+    token: string,
+    seconds: number,
+  ): Promise<BackgroundJob | null>;
+  renewLease(jobId: string, token: string, seconds: number): Promise<boolean>;
+  releaseLease(jobId: string, token: string): Promise<void>;
+  createJob(actor: LocalActor, input: CreateJobInput): Promise<BackgroundJob>;
+  createJobs(
+    actor: LocalActor,
+    input: CreateJobInput & { requestId: string },
+    outputCounts: readonly number[],
+    /** 原请求通过来源与指纹验证后直接重放；仅新请求执行当前能力校验。 */
+    validateNewRequest?: () => void,
+  ): Promise<BackgroundJob[]>;
+  getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
+  listJobs(
+    actor: LocalActor,
+    filters?: {
+      status?: BackgroundJobStatus;
+      jobType?: BackgroundJobType;
+      requestId?: string;
+    },
+  ): Promise<BackgroundJob[]>;
+  cancelJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
+  getJobForWorker(jobId: string): Promise<BackgroundJob>;
+
+  // Worker 状态迁移不依赖接入客户端。
   markRunning(jobId: string): Promise<void>;
-  markSucceeded(jobId: string, result: Record<string, unknown>): Promise<void>;
+  markSucceeded(
+    jobId: string,
+    result: Record<string, unknown>,
+    leaseToken?: string,
+  ): Promise<void>;
   markFailed(
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
   ): Promise<void>;
   markDeadLetter(
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
+    partialResult?: Record<string, unknown>,
+  ): Promise<void>;
+  /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
+  setProviderJobId(
+    jobId: string,
+    providerJobId: string,
+    leaseToken?: string,
+  ): Promise<void>;
+  /** 任务执行上下文补充（浅合并进 payload），如 submit 时的实例修订号。 */
+  appendJobPayload(
+    jobId: string,
+    fields: Record<string, unknown>,
+    leaseToken?: string,
   ): Promise<void>;
   incrementAttempt(
     jobId: string,
+    leaseToken?: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
-  /**
-   * 死信退款所需的扣费信息（worker 路径，按 id 取数）。
-   * 不存在返回 null；查询失败抛 `job_query_failed`。
-   */
-  getCreditsInfo(jobId: string): Promise<JobCreditsInfo | null>;
 };
+
+function requestFingerprint(input: unknown): string {
+  function canonical(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, entry]) => [key, canonical(entry)]),
+      );
+    return value;
+  }
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(input)))
+    .digest("hex");
+}
 
 function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   return {
     id: row.id,
-    workspace_id: row.workspace_id,
+    instance_id: row.instance_id,
+    file_target: row.file_target ?? null,
     project_id: row.project_id ?? null,
     canvas_id: row.canvas_id ?? null,
     session_id: row.session_id ?? null,
@@ -106,7 +204,8 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
     error_message: row.error_message ?? null,
     attempt_count: row.attempt_count,
     max_attempts: row.max_attempts,
-    created_by: row.created_by,
+    provider_job_id: row.provider_job_id ?? null,
+    created_by_client_id: row.created_by_client_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
     started_at: row.started_at ?? null,
@@ -116,103 +215,363 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   };
 }
 
+function assertLeaseWrite(count: number, token?: string) {
+  if (token && count === 0)
+    throw Object.assign(new Error("任务执行租约已失效"), {
+      code: "job_lease_lost",
+    });
+}
+
 export function createJobService(options: {
   /** 队列缝（M3.2）：投递与消费，Provider 随形态替换。 */
   queue: QueueClient;
+  uploads?: UploadService;
+  generationTargets?: GenerationTargets;
   repository: JobRepository;
   /**
-   * 用户路径（建/查/列/取消）需要它解析工作区；worker 进程只走按 id 的
-   * 状态迁移路径，可缺省。缺省时用户方法**立即 fail loud**。
+   * 接入路径（建/查/列/取消）需要它验证实例归属；worker 进程只走按 id 的
+   * 状态迁移路径，可缺省。缺省时接入方法**立即 fail loud**。
    */
-  viewerService?: ViewerService | undefined;
+  localInstance?: LocalInstanceService | undefined;
 }): JobService {
   const { queue, repository } = options;
 
-  function requireViewer(): ViewerService {
-    if (!options.viewerService) {
+  function requireLocalInstance(): LocalInstanceService {
+    if (!options.localInstance) {
       throw new JobServiceError(
         "job_query_failed",
-        "用户级任务操作需要 ViewerService（worker 进程不提供）。",
+        "本机任务操作需要 LocalInstanceService（worker 进程不提供）。",
         500,
       );
     }
-    return options.viewerService;
+    return options.localInstance;
   }
 
-  /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
-  async function requireWorkspaceId(
-    user: AuthenticatedUser,
+  /** 实例 id 一律由服务端验证（`FORM-9`）。 */
+  async function requireInstanceId(
+    actor: LocalActor,
     errorCode: JobServiceError["code"],
   ): Promise<string> {
-    const workspace = await requireViewer()
-      .resolveWorkspace(user)
+    const workspace = await requireLocalInstance()
+      .resolve(actor)
       .catch(() => null);
 
     if (!workspace) {
-      throw new JobServiceError(
-        errorCode,
-        "Unable to resolve workspace for job.",
-        500,
-      );
+      throw new JobServiceError(errorCode, "无法解析任务所属本地实例。", 500);
     }
 
-    return workspace.id;
+    return workspace.instanceId;
+  }
+
+  async function prepareRequest(
+    actor: LocalActor,
+    input: CreateJobInput,
+    grouped: boolean,
+  ) {
+    if (
+      "_generation_execution" in input.payload ||
+      "_generation_cancel" in input.payload
+    )
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成执行记录由服务端维护。",
+        400,
+      );
+    const instanceId = await requireInstanceId(actor, "job_create_failed");
+    if (!options.generationTargets)
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成文件来源服务未装配",
+        500,
+      );
+    const fileTarget = await options.generationTargets
+      .prepareOrigin({ ...input, actor })
+      .catch((error: unknown) => {
+        if (error instanceof GenerationTargetError)
+          throw new JobServiceError(
+            "job_create_failed",
+            error.message,
+            error.statusCode,
+          );
+        throw error;
+      });
+    const { requestId, requestIndex, ...request } = input;
+    const fingerprint = requestId
+      ? requestFingerprint({ ...request, fileTarget })
+      : undefined;
+    const existing = requestId
+      ? (await repository.listForInstance(instanceId, { requestId })).filter(
+          (row) =>
+            grouped ||
+            Number(row.payload?.request_index ?? 0) === (requestIndex ?? 0),
+        )
+      : [];
+    if (
+      existing.some((row) => row.payload?.request_fingerprint !== fingerprint)
+    )
+      throw new JobServiceError(
+        "job_request_conflict",
+        "同一请求标识已用于其他生成参数，请重新提交。",
+        409,
+      );
+    existing.sort(
+      (a, b) =>
+        Number(a.payload?.request_index ?? 0) -
+        Number(b.payload?.request_index ?? 0),
+    );
+    return { instanceId, fileTarget, fingerprint, existing };
+  }
+
+  async function createAcceptedJobs(
+    actor: LocalActor,
+    input: CreateJobInput,
+    outputCounts?: readonly number[],
+    validateNewRequest?: () => void,
+  ) {
+    if (
+      outputCounts &&
+      (!outputCounts.length ||
+        outputCounts.some((count) => !Number.isSafeInteger(count) || count < 1))
+    )
+      throw new JobServiceError("job_create_failed", "图片数量无效。", 400);
+    const prepared = await prepareRequest(
+      actor,
+      input,
+      outputCounts !== undefined,
+    );
+    if (prepared.existing.length) return prepared.existing.map(mapJobRow);
+    validateNewRequest?.();
+    const queueName = QUEUE_MAP[input.jobType];
+    const stored = await persistJobInputs(
+      actor,
+      input.payload,
+      options.uploads,
+      input.projectId,
+    ).catch((error: unknown) => {
+      if (error instanceof JobInputError)
+        throw new JobServiceError("job_create_failed", error.message, 400);
+      throw error;
+    });
+    let outputOffset = 0;
+    const inputs: NewJobInput[] = (outputCounts ?? [1]).map((count, index) => {
+      const requestOutputOffset = outputOffset;
+      outputOffset += count;
+      return {
+        instanceId: prepared.instanceId,
+        fileTarget: prepared.fileTarget,
+        jobType: input.jobType,
+        queueName,
+        createdByClientId: actor.accessClientId,
+        ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.threadId ? { threadId: input.threadId } : {}),
+        payload: {
+          ...stored.payload,
+          request_output_offset: requestOutputOffset,
+          ...(outputCounts
+            ? { count, requested_count: input.payload.count }
+            : {}),
+          _generation_execution: { phase: "ready" },
+          ...(input.requestId
+            ? {
+                request_id: input.requestId,
+                request_index: outputCounts ? index : (input.requestIndex ?? 0),
+                request_fingerprint: prepared.fingerprint,
+              }
+            : {}),
+        },
+      };
+    });
+    const first = inputs[0];
+    if (!first)
+      throw new JobServiceError("job_create_failed", "生成任务组为空。", 400);
+    const rows = await (outputCounts
+      ? repository.insertMany(inputs)
+      : repository.insert(first).then((row) => (row ? [row] : []))
+    ).catch(async (error: unknown) => {
+      if (
+        error instanceof JobRequestConflictError ||
+        error instanceof GenerationTargetError
+      ) {
+        await stored.discard();
+        throw new JobServiceError(
+          error instanceof JobRequestConflictError
+            ? "job_request_conflict"
+            : "job_create_failed",
+          error.message,
+          error instanceof JobRequestConflictError ? 409 : error.statusCode,
+        );
+      }
+      // 事务回执不明时保留可能已经被持久Job引用的素材。
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成任务保存失败，请重试原请求。",
+        500,
+      );
+    });
+    if (!rows.length)
+      throw new JobServiceError("job_create_failed", "生成任务保存失败。", 500);
+    if (rows[0]?.requestReplay) {
+      await stored.discard();
+      return rows.map(mapJobRow);
+    }
+    await Promise.all(
+      rows.map(async (job) => {
+        try {
+          await queue.send(queueName, {
+            job_id: job.id,
+            job_type: input.jobType,
+            instance_id: prepared.instanceId,
+            ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
+            ...(input.sessionId ? { session_id: input.sessionId } : {}),
+          });
+        } catch (error) {
+          console.error("[job-service] initial wakeup failed:", error);
+        }
+      }),
+    );
+    return rows.map(mapJobRow);
   }
 
   return {
-    async createJob(user, input) {
-      const workspaceId = await requireWorkspaceId(user, "job_create_failed");
-      const queueName = QUEUE_MAP[input.jobType];
-
-      const job = await repository
-        .insert({
-          ...(input.canvasId ? { canvasId: input.canvasId } : {}),
-          jobType: input.jobType,
-          payload: input.payload,
-          ...(input.projectId ? { projectId: input.projectId } : {}),
-          queueName,
-          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-          ...(input.threadId ? { threadId: input.threadId } : {}),
-          userId: user.id,
-          workspaceId,
-        })
-        .catch(() => null);
-
-      if (!job) {
-        throw new JobServiceError(
-          "job_create_failed",
-          "Failed to create job record.",
-          500,
-        );
-      }
-
-      // 投递到队列缝 — 失败即回滚（不留孤儿 job 行）
-      try {
-        await queue.send(queueName, {
-          job_id: job.id,
-          job_type: input.jobType,
-          workspace_id: workspaceId,
-          ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
-          ...(input.sessionId ? { session_id: input.sessionId } : {}),
-        });
-      } catch (enqueueErr) {
-        console.error("[job-service] queue.send failed:", enqueueErr);
-        await repository.delete(workspaceId, job.id).catch(() => 0);
-        throw new JobServiceError(
-          "job_create_failed",
-          "Failed to enqueue job.",
-          500,
-        );
-      }
-
-      return mapJobRow(job);
+    async beginSubmission(jobId, revision, token) {
+      const attemptId = randomUUID();
+      assertLeaseWrite(
+        await repository.beginSubmission(jobId, attemptId, revision, token),
+        token ?? attemptId,
+      );
+      return attemptId;
     },
+    async recordSubmission(jobId, attemptId, providerJobId) {
+      const job = await repository.recordSubmission(
+        jobId,
+        attemptId,
+        providerJobId,
+      );
+      if (!job)
+        throw Object.assign(new Error("任务提交回执已失效"), {
+          code: "job_lease_lost",
+        });
+      if (job.status === "canceled") {
+        try {
+          await queue.send(job.queue_name, {
+            job_id: job.id,
+            job_type: job.job_type,
+          });
+        } catch (error) {
+          console.error(
+            "[job-service] cancellation receipt wakeup failed:",
+            error,
+          );
+        }
+      }
+    },
+    async saveCancellation(jobId, progress, seconds, token) {
+      assertLeaseWrite(
+        await repository.saveCancellation(jobId, progress, seconds, token),
+        token,
+      );
+      if (progress.state !== "pending") return;
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: job.id, job_type: job.job_type },
+          seconds,
+        );
+      } catch (error) {
+        console.error("[job-service] cancellation retry wakeup failed:", error);
+      }
+    },
+    async retryJob(jobId, input, token) {
+      assertLeaseWrite(await repository.retry(jobId, input, token), token);
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: jobId, job_type: job.job_type },
+          input.delaySeconds,
+        );
+      } catch (error) {
+        console.error("[job-service] retry wakeup failed:", error);
+      }
+    },
+    async markUncertain(jobId, message, token) {
+      assertLeaseWrite(
+        await repository.markUncertain(jobId, message, token),
+        token,
+      );
+    },
+    async saveExecution(jobId, execution, write = {}) {
+      assertLeaseWrite(
+        await repository.saveExecution(jobId, execution, write),
+        write.leaseToken,
+      );
+    },
+    async recoverPendingJobs(queues, intervalSeconds) {
+      const ready = await repository.takeWakeups(queues, intervalSeconds);
+      await Promise.all(
+        ready.map(async (job) => {
+          try {
+            await queue.send(job.queue_name, {
+              job_id: job.id,
+              job_type: job.job_type,
+            });
+          } catch (error) {
+            console.error("[job-service] recovery wakeup failed:", error);
+          }
+        }),
+      );
+    },
+    async scheduleJob(jobId, seconds, leaseToken) {
+      assertLeaseWrite(
+        await repository.schedule(jobId, seconds, leaseToken),
+        leaseToken,
+      );
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: jobId, job_type: job.job_type },
+          seconds,
+        );
+      } catch (error) {
+        console.error("[job-service] scheduled wakeup failed:", error);
+      }
+    },
+    async claimJob(jobId, token, seconds) {
+      const row = await repository.claim(jobId, token, seconds);
+      return row ? mapJobRow(row) : null;
+    },
+    async renewLease(jobId, token, seconds) {
+      return (await repository.renewLease(jobId, token, seconds)) > 0;
+    },
+    async releaseLease(jobId, token) {
+      await repository.releaseLease(jobId, token);
+    },
+    async createJob(actor, input) {
+      const rows = await createAcceptedJobs(actor, input);
+      const job = rows[0];
+      if (!job)
+        throw new JobServiceError(
+          "job_create_failed",
+          "生成任务保存失败。",
+          500,
+        );
+      return job;
+    },
+    createJobs: (actor, input, outputCounts, validateNewRequest) =>
+      createAcceptedJobs(actor, input, outputCounts, validateNewRequest),
 
-    async getJob(user, jobId) {
-      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
+    async getJob(actor, jobId) {
+      const instanceId = await requireInstanceId(actor, "job_query_failed");
 
       const job = await repository
-        .findByIdInWorkspace(workspaceId, jobId)
+        .findByIdInInstance(instanceId, jobId)
         .catch(() => {
           throw new JobServiceError(
             "job_query_failed",
@@ -227,13 +586,14 @@ export function createJobService(options: {
       return mapJobRow(job);
     },
 
-    async listJobs(user, filters) {
-      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
+    async listJobs(actor, filters) {
+      const instanceId = await requireInstanceId(actor, "job_query_failed");
 
       const jobs = await repository
-        .listByCreator(workspaceId, user.id, {
+        .listForInstance(instanceId, {
           ...(filters?.jobType ? { jobType: filters.jobType } : {}),
           ...(filters?.status ? { status: filters.status } : {}),
+          ...(filters?.requestId ? { requestId: filters.requestId } : {}),
         })
         .catch(() => {
           throw new JobServiceError(
@@ -246,10 +606,10 @@ export function createJobService(options: {
       return jobs.map(mapJobRow);
     },
 
-    async cancelJob(user, jobId) {
-      const workspaceId = await requireWorkspaceId(user, "job_cancel_failed");
+    async cancelJob(actor, jobId) {
+      const instanceId = await requireInstanceId(actor, "job_cancel_failed");
 
-      const job = await repository.cancel(workspaceId, jobId).catch(() => {
+      const job = await repository.cancel(instanceId, jobId).catch(() => {
         throw new JobServiceError(
           "job_cancel_failed",
           "Failed to cancel job.",
@@ -264,10 +624,18 @@ export function createJobService(options: {
           404,
         );
       }
+      try {
+        await queue.send(job.queue_name, {
+          job_id: job.id,
+          job_type: job.job_type,
+        });
+      } catch (error) {
+        console.error("[job-service] cancellation wakeup failed:", error);
+      }
       return mapJobRow(job);
     },
 
-    async getJobAdmin(jobId) {
+    async getJobForWorker(jobId) {
       const job = await repository.findById(jobId).catch(() => {
         throw new JobServiceError(
           "job_query_failed",
@@ -282,45 +650,55 @@ export function createJobService(options: {
       return mapJobRow(job);
     },
 
-    async getCreditsInfo(jobId) {
-      return repository.findCreditsInfo(jobId).catch(() => {
-        throw new JobServiceError(
-          "job_query_failed",
-          "Failed to query job credits.",
-          500,
-        );
-      });
-    },
-
-    // --- worker/executor 路径：按 id 改状态（无用户身份） ---
-
-    async setCreditsInfo(jobId, creditsCost, transactionId) {
-      await repository
-        .setCreditsInfo(jobId, creditsCost, transactionId)
-        .catch(() => 0);
-    },
-
     async markRunning(jobId) {
       await repository.markRunning(jobId).catch(() => 0);
     },
 
-    async markSucceeded(jobId, result) {
-      await repository.markSucceeded(jobId, result).catch(() => 0);
+    async markSucceeded(jobId, result, leaseToken) {
+      assertLeaseWrite(
+        await repository.markSucceeded(jobId, result, leaseToken),
+        leaseToken,
+      );
+    },
+    async markFailed(jobId, errorCode, errorMessage, leaseToken) {
+      assertLeaseWrite(
+        await repository.markFailed(jobId, errorCode, errorMessage, leaseToken),
+        leaseToken,
+      );
+    },
+    async markDeadLetter(
+      jobId,
+      errorCode,
+      errorMessage,
+      leaseToken,
+      partialResult,
+    ) {
+      assertLeaseWrite(
+        await repository.markDeadLetter(
+          jobId,
+          errorCode,
+          errorMessage,
+          leaseToken,
+          partialResult,
+        ),
+        leaseToken,
+      );
+    },
+    async setProviderJobId(jobId, providerJobId, leaseToken) {
+      assertLeaseWrite(
+        await repository.setProviderJobId(jobId, providerJobId, leaseToken),
+        leaseToken,
+      );
+    },
+    async appendJobPayload(jobId, fields, leaseToken) {
+      assertLeaseWrite(
+        await repository.appendJobPayload(jobId, fields, leaseToken),
+        leaseToken,
+      );
     },
 
-    async markFailed(jobId, errorCode, errorMessage) {
-      await repository
-        .markFailed(jobId, errorCode, errorMessage)
-        .catch(() => 0);
-    },
-
-    async markDeadLetter(jobId, errorCode, errorMessage) {
-      await repository
-        .markDeadLetter(jobId, errorCode, errorMessage)
-        .catch(() => 0);
-    },
-
-    async incrementAttempt(jobId) {
+    async incrementAttempt(jobId, leaseToken) {
+      if (leaseToken) return repository.incrementAttempt(jobId, leaseToken);
       return repository.incrementAttempt(jobId).catch((error: unknown) => {
         console.error(
           "[job-service] increment_job_attempt failed:",

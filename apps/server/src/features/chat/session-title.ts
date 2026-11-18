@@ -33,8 +33,14 @@ export function stripLeadingDirectiveBlocks(prompt: string): string {
   return lines.slice(index).join("\n").trim();
 }
 
-/** 从 run prompt 派生会话标题：剥指令块 → 取前 24 字 → 空则缺省。 */
+/** 剥指令块后保留前24个Unicode码点，避免拆开emoji而生成无效的JSONB。 */
 export function deriveSessionTitle(prompt: string): string {
-  const body = stripLeadingDirectiveBlocks(prompt).slice(0, 24).trim();
-  return body || DEFAULT_SESSION_TITLE;
+  let title = "";
+  let characters = 0;
+  for (const character of stripLeadingDirectiveBlocks(prompt)) {
+    if (characters >= 24) break; // 原标题展示预算，非Agent运行时限额。
+    title += character;
+    characters += 1;
+  }
+  return title.trim() || DEFAULT_SESSION_TITLE;
 }

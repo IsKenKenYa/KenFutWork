@@ -1,0 +1,24 @@
+{
+  "name": "kenfutwork-hyper3d-rodin",
+  "version": "0.1.1",
+  "description": "将文字或参考图片生成 3D 模型，把生成的模型拆分为独立部件，并下载到项目中使用。",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README_CN.md",
+    "README.md",
+    "LICENSE",
+    "skills",
+    "mcp.json"
+  ],
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Hyper3D Rodin",
+    "category": "游戏与 3D"
+  },
+  "main": "index.js"
+}

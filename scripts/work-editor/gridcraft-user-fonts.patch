@@ -1,0 +1,183 @@
+diff --git a/apps/gridcraft-web/Cargo.toml b/apps/gridcraft-web/Cargo.toml
+index 41059d3..da53fba 100644
+--- a/apps/gridcraft-web/Cargo.toml
++++ b/apps/gridcraft-web/Cargo.toml
+@@ -26,4 +26,4 @@ rfd = { workspace = true }
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4"
+ js-sys = "0.3"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Clipboard", "ClipboardItem", "Navigator", "MessageEvent", "UrlSearchParams", "AddEventListenerOptions", "Storage"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Clipboard", "ClipboardItem", "Navigator", "MessageEvent", "UrlSearchParams", "AddEventListenerOptions", "Storage", "Response", "Request", "RequestInit"] }
+diff --git a/apps/gridcraft-web/src/main.rs b/apps/gridcraft-web/src/main.rs
+index 68bee92..d039220 100644
+--- a/apps/gridcraft-web/src/main.rs
++++ b/apps/gridcraft-web/src/main.rs
+@@ -21,6 +21,7 @@ mod host;
+ #[cfg(any(target_arch = "wasm32", test))]
+ mod prefs;
+ #[cfg(target_arch = "wasm32")]
++mod user_fonts;
+ mod web;
+ 
+ #[cfg(target_arch = "wasm32")]
+diff --git a/apps/gridcraft-web/src/web.rs b/apps/gridcraft-web/src/web.rs
+index 43923bd..bd82a97 100644
+--- a/apps/gridcraft-web/src/web.rs
++++ b/apps/gridcraft-web/src/web.rs
+@@ -96,6 +96,18 @@ pub fn start() {
+                         }
+                         bridge.post_ready();
+                     }
++                    // 宿主上传的用户字体（Work 引擎页）：同源清单 → 字体目录。
++                    let font_ctx = cc.egui_ctx.clone();
++                    wasm_bindgen_futures::spawn_local(async move {
++                        let count = crate::user_fonts::install(|bytes| {
++                            gridcraft_ui_egui::fonts::add_font_bytes(&format!("host-{}", bytes.len()), bytes)
++                        })
++                        .await;
++                        if count > 0 {
++                            log::info!("user fonts installed: {count}");
++                            font_ctx.request_repaint();
++                        }
++                    });
+                     Ok(Box::new(WebShell { app, inbox, bridge: app_bridge, prefs }))
+                 }),
+             )
+diff --git a/crates/ui-egui/src/fonts.rs b/crates/ui-egui/src/fonts.rs
+index 699806e..1c47ce7 100644
+--- a/crates/ui-egui/src/fonts.rs
++++ b/crates/ui-egui/src/fonts.rs
+@@ -20,7 +20,6 @@ use std::sync::OnceLock;
+ const MAX_FONT_FILE: u64 = 64 << 20;
+ 
+ /// A face keeps at most this many family names, so a hostile `name` table can't grow the catalog.
+-#[cfg(not(target_arch = "wasm32"))]
+ const MAX_FAMILY_NAMES: usize = 16;
+ 
+ /// One face of one installed font file.
+@@ -76,7 +75,6 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
+ }
+ 
+ /// Weight implied by a style name (`"Bold"` → 700, `"Light"` → 300).
+-#[cfg(not(target_arch = "wasm32"))]
+ fn style_weight(style: &str) -> f32 {
+     let s: String = style.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
+     const TABLE: &[(&str, f32)] = &[
+@@ -105,7 +103,6 @@ impl Face {
+ }
+ 
+ /// Whether a style name reads as italic or oblique.
+-#[cfg(not(target_arch = "wasm32"))]
+ fn style_italic(style: &str) -> bool {
+     let s: String = style.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
+     s.contains("italic") || s.contains("oblique")
+@@ -113,7 +110,6 @@ fn style_italic(style: &str) -> bool {
+ 
+ /// Every face in `data` as `(index, family, names, style)`, where `names` holds every family name
+ /// (see [`Face::names`]). Damaged data yields nothing, never a panic.
+-#[cfg(not(target_arch = "wasm32"))]
+ fn file_faces(data: &[u8]) -> Vec<(u32, String, Vec<String>, String)> {
+     use skrifa::raw::FileRef;
+     use skrifa::{MetadataProvider, string::StringId};
+@@ -188,6 +184,46 @@ pub fn scan_dirs(_dirs: &[PathBuf]) -> Vec<Face> {
+ 
+ static CATALOG: OnceLock<Vec<Face>> = OnceLock::new();
+ 
++/// Faces of fonts the page supplied (web only): the host serves user-uploaded families at
++/// `fonts/manifest.txt`, and there is no file system to read them from. The path is a
++/// `user://<sha>` stand-in; the bytes live in `USER_FONT_DATA`.
++static USER_FACES: OnceLock<std::sync::RwLock<Vec<Face>>> = OnceLock::new();
++static USER_FONT_DATA: OnceLock<std::sync::RwLock<std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>>> = OnceLock::new();
++
++fn user_faces() -> &'static std::sync::RwLock<Vec<Face>> {
++    USER_FACES.get_or_init(|| std::sync::RwLock::new(Vec::new()))
++}
++
++fn user_font_data() -> &'static std::sync::RwLock<std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>> {
++    USER_FONT_DATA.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
++}
++
++/// Register a font file the page fetched (`fonts/user/…`). Returns how many faces it added.
++/// Faces already available under the same family and style are skipped, so a bundled face is
++/// never replaced by an upload.
++pub fn add_font_bytes(name: &str, bytes: Vec<u8>) -> usize {
++    let faces = file_faces(&bytes);
++    if faces.is_empty() {
++        return 0;
++    }
++    let key_path = PathBuf::from(format!("user://{name}"));
++    let data = std::sync::Arc::new(bytes);
++    user_font_data().write().unwrap_or_else(std::sync::PoisonError::into_inner).insert(key_path.display().to_string(), data);
++    let mut added = 0;
++    let mut user = user_faces().write().unwrap_or_else(std::sync::PoisonError::into_inner);
++    let known = |cat: &[Face], family: &str, style: &str| {
++        cat.iter().any(|f| f.family.eq_ignore_ascii_case(family) && (f.weight - style_weight(style)).abs() < 1.0 && f.italic == style_italic(style))
++    };
++    for (index, family, names, style) in faces {
++        if known(&user, &family, &style) || CATALOG.get().is_some_and(|cat| known(cat, &family, &style)) {
++            continue;
++        }
++        user.push(Face { family, names, path: key_path.clone(), index, weight: style_weight(&style), italic: style_italic(&style) });
++        added += 1;
++    }
++    added
++}
++
+ /// The catalog of installed faces, scanned on first use. Blocks until the scan finishes.
+ pub fn catalog() -> &'static [Face] {
+     CATALOG.get_or_init(|| scan_dirs(&system_font_dirs()))
+@@ -221,7 +257,11 @@ pub fn scan_done() -> bool {
+ /// The faces of one installed family, by any of its names, regular-weight first (the order roles
+ /// pick from).
+ pub fn faces_of(family: &str) -> Vec<Face> {
+-    catalog_now().map(|cat| faces_named(cat, family)).unwrap_or_default()
++    let mut faces = catalog_now().map(|cat| faces_named(cat, family)).unwrap_or_default();
++    // Page-supplied faces live outside the scanned catalog (web only).
++    let user = user_faces().read().unwrap_or_else(std::sync::PoisonError::into_inner);
++    faces.extend(faces_named(&user, family));
++    faces
+ }
+ 
+ /// The faces in `cat` that go by `wanted`. When two families claim one name the winner is fixed,
+@@ -247,7 +287,12 @@ fn faces_named(cat: &[Face], wanted: &str) -> Vec<Face> {
+ /// [`cell_family`](crate::theme::cell_family) looks up, so `맑은 고딕` binds as `맑은 고딕`, not as
+ /// the catalog's `Malgun Gothic`.
+ pub fn installed_among(names: &[String]) -> Vec<String> {
+-    catalog_now().map(|cat| installed_in(cat, names)).unwrap_or_default()
++    let mut out = catalog_now().map(|cat| installed_in(cat, names)).unwrap_or_default();
++    let user = user_faces().read().unwrap_or_else(std::sync::PoisonError::into_inner);
++    out.extend(installed_in(&user, names));
++    out.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b)));
++    out.dedup();
++    out
+ }
+ 
+ /// [`installed_among`] over a given catalog. Names dedupe exactly, not case-folded: a role key is
+@@ -270,9 +315,9 @@ fn installed_in(cat: &[Face], names: &[String]) -> Vec<String> {
+ /// background scan finishes it returns just the standard names.
+ pub fn families() -> Vec<String> {
+     let mut out: Vec<String> = crate::ribbon::FONTS.iter().map(|s| s.to_string()).collect();
+-    let Some(cat) = catalog_now() else { return out };
+     let mut seen: HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
+-    let mut installed: Vec<String> = cat.iter().map(|f| f.family.clone()).collect();
++    let user = user_faces().read().unwrap_or_else(std::sync::PoisonError::into_inner);
++    let mut installed: Vec<String> = catalog_now().unwrap_or_default().iter().map(|f| f.family.clone()).chain(user.iter().map(|f| f.family.clone())).collect();
+     installed.sort_by_key(|a| a.to_lowercase());
+     installed.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+     for f in installed {
+@@ -335,7 +380,14 @@ pub fn bind_faces(fonts: &mut egui::FontDefinitions, family: &str, faces: &[Face
+                 continue;
+             }
+             if !fonts.font_data.contains_key(&key) {
+-                let Ok(bytes) = std::fs::read(&face.path) else { continue };
++                let bytes = match std::fs::read(&face.path) {
++                    Ok(bytes) => bytes,
++                    // Page-supplied faces have no file: their bytes live in the map.
++                    Err(_) => match user_font_data().read().unwrap_or_else(std::sync::PoisonError::into_inner).get(&face.path.display().to_string()) {
++                        Some(data) => data.as_ref().clone(),
++                        None => continue,
++                    },
++                };
+                 let mut fd = egui::FontData::from_owned(bytes);
+                 fd.index = face.index;
+                 fonts.font_data.insert(key.clone(), std::sync::Arc::new(fd));

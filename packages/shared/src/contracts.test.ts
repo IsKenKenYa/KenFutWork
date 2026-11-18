@@ -2,24 +2,82 @@ import { describe, expect, it } from "vitest";
 import type { ZodType } from "zod";
 import * as sharedExports from "./index.js";
 import {
+  contentBlockSchema,
   errorCodeValues,
   healthResponseSchema,
+  instanceSettingsSchema,
+  instanceSettingsUpdateRequestSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
   streamEventSchema,
 } from "./index.js";
 
-describe("@loomic/shared contracts", () => {
+describe("@kenfutwork/shared contracts", () => {
+  it("普通运行直接接纳用户输入与工作方式", () => {
+    const input = {
+      sessionId: "session-unified",
+      conversationId: "conversation-unified",
+      prompt: "读取项目说明并完成任务",
+      preset: "code",
+    };
+    expect(runCreateRequestSchema.parse(input)).toEqual(input);
+  });
+
+  it.each(["agent", "plan", "solo", "goal", "creative", "loop"])(
+    "运行请求拒绝已删除的执行方式字段 %s",
+    (executionMode) => {
+      expect(
+        runCreateRequestSchema.safeParse({
+          sessionId: "session-unified",
+          conversationId: "conversation-unified",
+          prompt: "读取项目说明并完成任务",
+          executionMode,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("项目可显式启用 Code/Design，画布作为可选文档而非项目身份", () => {
+    const project = {
+      id: "project-shared",
+      name: "共享项目",
+      slug: "shared",
+      kind: "code",
+      enabledModes: ["code", "design"],
+      workDir: "/project",
+      description: null,
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      createdAt: "2026-10-14T00:00:00.000Z",
+      updatedAt: "2026-10-14T00:00:00.000Z",
+      primaryCanvas: { id: "canvas-1", name: "海报", isPrimary: true },
+    };
+    const schema = getExportedSchema("projectSummarySchema");
+    expect(schema.parse(project)).toMatchObject({
+      enabledModes: ["code", "design"],
+      primaryCanvas: { id: "canvas-1" },
+    });
+    expect(
+      schema.safeParse({ ...project, kind: "design", primaryCanvas: undefined })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ ...project, enabledModes: ["design"] }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ ...project, enabledModes: ["code", "code"] }).success,
+    ).toBe(false);
+  });
+
   it("shares the health response schema for server and web", () => {
     const parsed = healthResponseSchema.parse({
       ok: true,
-      service: "loomic-server",
+      service: "kenfutwork-server",
       version: "0.1.0",
     });
 
     expect(parsed.ok).toBe(true);
-    expect(parsed.service).toBe("loomic-server");
+    expect(parsed.service).toBe("kenfutwork-server");
   });
 
   it("accepts canvasId as optional field", () => {
@@ -59,24 +117,6 @@ describe("@loomic/shared contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts optional executionMode (DEC-3) and rejects unknown values", () => {
-    const parsed = runCreateRequestSchema.parse({
-      sessionId: "session-1",
-      conversationId: "conv-1",
-      prompt: "Hello",
-      executionMode: "creative",
-    });
-    expect(parsed.executionMode).toBe("creative");
-    expect(
-      runCreateRequestSchema.safeParse({
-        sessionId: "session-1",
-        conversationId: "conv-1",
-        prompt: "Hello",
-        executionMode: "auto",
-      }).success,
-    ).toBe(false);
-  });
-
   it("accepts optional attachments in run creation", () => {
     const result = runCreateRequestSchema.parse({
       sessionId: "session-1",
@@ -91,7 +131,7 @@ describe("@loomic/shared contracts", () => {
       ],
     });
     expect(result.attachments).toHaveLength(1);
-    expect(result.attachments![0].assetId).toBe("asset-123");
+    expect(result.attachments?.[0]?.assetId).toBe("asset-123");
   });
 
   it("accepts optional image generation preference in run creation", () => {
@@ -126,7 +166,7 @@ describe("@loomic/shared contracts", () => {
         {
           mentionType: "brand-kit-asset",
           id: "brand-logo-1",
-          label: "Loomic 主 Logo",
+          label: "KenFutWork 主 Logo",
           assetType: "logo",
           fileUrl: "https://example.com/logo.png",
         },
@@ -178,32 +218,17 @@ describe("@loomic/shared contracts", () => {
     expect(parsed.status).toBe("canceling");
   });
 
-  it("shares the viewer bootstrap contract for GET /api/viewer", () => {
-    const viewerResponseSchema = getExportedSchema("viewerResponseSchema");
+  it("shares the local instance contract for GET /api/instance", () => {
+    const instanceResponseSchema = getExportedSchema("instanceResponseSchema");
 
-    const parsed = viewerResponseSchema.parse({
-      profile: {
-        id: "user_123",
-        email: "maker@loomic.test",
-        displayName: "Loomic Maker",
-        avatarUrl: "https://example.com/avatar.png",
-      },
-      workspace: {
-        id: "workspace_123",
-        name: "Loomic Maker",
-        type: "personal",
-        ownerUserId: "user_123",
-      },
-      membership: {
-        workspaceId: "workspace_123",
-        userId: "user_123",
-        role: "owner",
-      },
+    const parsed = instanceResponseSchema.parse({
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      dataDir: "/local/kenfutwork/data",
     });
 
-    expect(parsed.profile.id).toBe("user_123");
-    expect(parsed.workspace.ownerUserId).toBe("user_123");
-    expect(parsed.membership.workspaceId).toBe("workspace_123");
+    expect(parsed.instanceId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(parsed.dataDir).toBe("/local/kenfutwork/data");
+    expect(Object.keys(parsed)).toEqual(["instanceId", "dataDir"]);
   });
 
   it("shares project list and create contracts for GET/POST /api/projects", () => {
@@ -226,6 +251,21 @@ describe("@loomic/shared contracts", () => {
     expect(
       projectCreateRequestSchema.parse({ name: "x", kind: "code" }).kind,
     ).toBe("code");
+    // flow 项目（《flow 集成方案》P1）：第三类项目，run 必绑项目同一条硬约束
+    expect(
+      projectCreateRequestSchema.parse({ name: "x", kind: "flow" }).kind,
+    ).toBe("flow");
+    // work 项目（《work 模式集成规划》WD-1）：第四类项目（办公 / 生产力创作）
+    expect(
+      projectCreateRequestSchema.parse({ name: "x", kind: "work" }).kind,
+    ).toBe("work");
+    // 封闭枚举：加类型必须两处同改（契约 + 库 CHECK），后者由 tests/workspace.test.mjs 对账
+    expect(getExportedSchema("projectKindSchema").options).toEqual([
+      "design",
+      "code",
+      "flow",
+      "work",
+    ]);
     expect(
       projectCreateRequestSchema.safeParse({ name: "x", kind: "nope" }).success,
     ).toBe(false);
@@ -237,13 +277,9 @@ describe("@loomic/shared contracts", () => {
           name: createRequest.name,
           slug: "brand-system",
           kind: "design",
+          enabledModes: ["design"],
           description: createRequest.description,
-          workspace: {
-            id: "workspace_123",
-            name: "Loomic Maker",
-            type: "personal",
-            ownerUserId: "user_123",
-          },
+          instanceId: "00000000-0000-4000-8000-000000000001",
           primaryCanvas: {
             id: "canvas_123",
             name: "Main Canvas",
@@ -259,7 +295,9 @@ describe("@loomic/shared contracts", () => {
     });
 
     expect(parsedList.projects[0].id).toBe("project_123");
-    expect(parsedList.projects[0].workspace.ownerUserId).toBe("user_123");
+    expect(parsedList.projects[0].instanceId).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(parsedList.projects[0].primaryCanvas.id).toBe("canvas_123");
     expect(createdProject.project.primaryCanvas.isPrimary).toBe(true);
   });
@@ -342,19 +380,32 @@ describe("@loomic/shared contracts", () => {
             id: "project_123",
             name: "Brand System",
             slug: "brand-system",
+            kind: "design",
             description: "Primary workspace project",
-            workspace: {
-              id: "workspace_123",
-              name: "Loomic Maker",
-              type: "personal",
-              ownerUserId: "user_123",
-            },
+            instanceId: "00000000-0000-4000-8000-000000000001",
             createdAt: "2026-03-23T12:00:00.000Z",
             updatedAt: "2026-03-23T12:00:00.000Z",
           },
         ],
       }),
     ).toThrow();
+  });
+
+  it.each([
+    "scope_unavailable",
+    "scope_mismatch",
+    "scope_changed",
+    "admission_unavailable",
+    "design_task_unprovisioned",
+    "design_task_queue_busy",
+    "design_task_policy_changed",
+    "design_model_invalid",
+  ])("preserves Task admission error %s and its readable reason", (code) => {
+    const schema = getExportedSchema("applicationErrorResponseSchema");
+    const response = {
+      error: { code, message: "任务目录不可用，请重新关联。" },
+    };
+    expect(schema.parse(response)).toEqual(response);
   });
 
   it("rejects invalid application error codes", () => {
@@ -372,6 +423,24 @@ describe("@loomic/shared contracts", () => {
     ).toThrow();
   });
 
+  it.each(["insufficient_history", "not_reduced"])(
+    "preserves manual compaction unchanged reason %s",
+    (reason) => {
+      const event = {
+        type: "run.completed",
+        runId: "run_compact",
+        timestamp: "2026-10-13T00:00:00.000Z",
+        operationResult: {
+          kind: "compact",
+          origin: "manual",
+          status: "unchanged",
+          reason,
+        },
+      };
+      expect(streamEventSchema.parse(event)).toEqual(event);
+    },
+  );
+
   it("includes the required minimum stream event union", () => {
     const eventTypes = [
       "run.started",
@@ -381,6 +450,8 @@ describe("@loomic/shared contracts", () => {
       "run.canceled",
       "run.completed",
       "run.failed",
+      // flow 事件缝（P5）：宿主把 flow 网关回调的运行事件透出到 WS 时的统一包装
+      "flowRun.event",
     ];
 
     for (const type of eventTypes) {
@@ -445,6 +516,17 @@ describe("@loomic/shared contracts", () => {
                 code: "run_failed",
                 message: "The run failed.",
               },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "flowRun.event":
+            streamEventSchema.parse({
+              type,
+              runId: "flow_run_1",
+              seq: 1,
+              eventType: "workflow_started",
+              payload: { workflow_run_id: "wf-1" },
+              at: "2026-03-23T12:00:00.000Z",
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;
@@ -597,3 +679,189 @@ function getExportedSchema(name: string): ZodType {
 
   return candidate as ZodType;
 }
+
+describe("run.usage 事件（上下文容量 / 缓存命中）", () => {
+  it("接受带缓存字段的用量快照", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 614000,
+      outputTokens: 1200,
+      cachedInputTokens: 610000,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event.type).toBe("run.usage");
+  });
+
+  it("cachedInputTokens 可缺省（上游不上报缓存时不许编 0）", () => {
+    const event = streamEventSchema.parse({
+      type: "run.usage",
+      runId: "run_123",
+      inputTokens: 100,
+      outputTokens: 1,
+      timestamp: "2026-03-23T12:00:00.000Z",
+    });
+    expect(event).not.toHaveProperty("cachedInputTokens");
+  });
+
+  it("token 数必须是非负整数", () => {
+    for (const bad of [-1, 1.5]) {
+      expect(() =>
+        streamEventSchema.parse({
+          type: "run.usage",
+          runId: "run_123",
+          inputTokens: bad,
+          outputTokens: 1,
+          timestamp: "2026-03-23T12:00:00.000Z",
+        }),
+      ).toThrow();
+    }
+  });
+});
+
+describe("子代理与后台任务契约（DEC-14…DEC-19）", () => {
+  const baseToolEvent = {
+    runId: "run_123",
+    toolCallId: "call_1",
+    toolName: "task",
+    timestamp: "2026-09-26T12:00:00.000Z",
+  };
+
+  it("tool.started/completed 接受可选 agentName（子代理归因，来源 metadata.lc_agent_name）", () => {
+    const started = streamEventSchema.parse({
+      type: "tool.started",
+      ...baseToolEvent,
+      input: { subagent_type: "explore", description: "调研登录链路" },
+      agentName: "explore",
+    });
+    expect(started.agentName).toBe("explore");
+
+    const completed = streamEventSchema.parse({
+      type: "tool.completed",
+      ...baseToolEvent,
+      agentName: "explore",
+    });
+    expect(completed.agentName).toBe("explore");
+  });
+
+  it("不带 agentName 的旧事件照常解析（字段纯增量，无 fallback 分支）", () => {
+    const started = streamEventSchema.parse({
+      type: "tool.started",
+      ...baseToolEvent,
+    });
+    expect(started).not.toHaveProperty("agentName");
+  });
+
+  it("task.notification 事件：后台任务终态通知载荷完整解析", () => {
+    const event = streamEventSchema.parse({
+      type: "task.notification",
+      runId: "run_123",
+      taskId: "task_abc123",
+      kind: "subagent",
+      label: "explore · 调研登录链路",
+      status: "completed",
+      summary: "定位到 3 处相关文件",
+      nextStep: "可再次派生或直接继续主线",
+      timestamp: "2026-09-26T12:05:00.000Z",
+    });
+    expect(event.type).toBe("task.notification");
+    expect(event.kind).toBe("subagent");
+    expect(event.nextStep).toContain("派生");
+  });
+
+  it("task.notification 拒绝非法 kind 与非终态 status", () => {
+    const base = {
+      runId: "run_123",
+      taskId: "task_abc123",
+      label: "x",
+      summary: "s",
+      timestamp: "2026-09-26T12:05:00.000Z",
+    };
+    expect(() =>
+      streamEventSchema.parse({
+        ...base,
+        type: "task.notification",
+        kind: "shell",
+        status: "completed",
+      }),
+    ).toThrow();
+    expect(() =>
+      streamEventSchema.parse({
+        ...base,
+        type: "task.notification",
+        kind: "subagent",
+        status: "running",
+      }),
+    ).toThrow();
+  });
+
+  it("task_notification 消息块：转录落库与前端渲染共用同一形状", () => {
+    const block = contentBlockSchema.parse({
+      type: "task_notification",
+      taskId: "task_abc123",
+      kind: "command",
+      label: "pnpm test",
+      status: "failed",
+      summary: "2 个用例失败",
+      at: "2026-09-26T12:06:00.000Z",
+    });
+    expect(block.type).toBe("task_notification");
+  });
+
+  it("task_notification 块拒绝未知 status 与缺省 summary", () => {
+    expect(() =>
+      contentBlockSchema.parse({
+        type: "task_notification",
+        taskId: "task_abc123",
+        kind: "subagent",
+        label: "x",
+        status: "pending",
+        summary: "s",
+      }),
+    ).toThrow();
+    expect(() =>
+      contentBlockSchema.parse({
+        type: "task_notification",
+        taskId: "task_abc123",
+        kind: "subagent",
+        label: "x",
+        status: "completed",
+      }),
+    ).toThrow();
+  });
+});
+
+it("公共Run保留有效零代际Task，拒绝负代际、不安全整数与零分支", () => {
+  const input = {
+    sessionId: "task",
+    conversationId: "task",
+    prompt: "继续",
+    scopeGeneration: 0,
+    branchGeneration: 1,
+  };
+  expect(runCreateRequestSchema.parse(input).scopeGeneration).toBe(0);
+  for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+    expect(
+      runCreateRequestSchema.safeParse({ ...input, scopeGeneration: value })
+        .success,
+    ).toBe(false);
+  expect(
+    runCreateRequestSchema.safeParse({ ...input, branchGeneration: 0 }).success,
+  ).toBe(false);
+});
+
+describe("实例主题契约", () => {
+  it("缺省跟随系统，单字段主题 PATCH 不夹带其它默认值", () => {
+    const settings = instanceSettingsSchema.parse({ defaultModel: "" });
+    expect(settings.theme).toBe("system");
+    expect(
+      instanceSettingsUpdateRequestSchema.parse({ theme: "zai-dark" }),
+    ).toEqual({
+      theme: "zai-dark",
+    });
+    expect(
+      instanceSettingsUpdateRequestSchema.safeParse({ theme: "midnight" })
+        .success,
+    ).toBe(false);
+  });
+});

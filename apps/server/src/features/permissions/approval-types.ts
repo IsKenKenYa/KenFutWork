@@ -1,0 +1,155 @@
+import type {
+  CommandPayloadMap,
+  PendingInteraction,
+  PermissionRequestPayload,
+} from "@zcode/shared/zcode-protocol-v4";
+import type { ModelRequestPort } from "../../agent/model-request.js";
+import type { ExecutionRole } from "../execution/scope-service.js";
+import type { ApprovalReviewKind } from "./approval-review-context.js";
+
+/** Task-local V4 modes; never implemented by changing the instance tier. */
+export type CodeApprovalMode =
+  CommandPayloadMap["switchCollaborationMode"]["mode"];
+
+/** 可信工具属主声明的Task控制效果；不属于文件/命令访问授权。 */
+export type CodePlanControl = "enter" | "exit";
+
+export interface ApprovalIdentity {
+  instanceId: string;
+  taskId: string;
+  runId: string;
+  toolCallId: string;
+  agentId: string;
+  role: ExecutionRole;
+  scopeGeneration: number;
+  branchGeneration: number;
+  /** 规划批准绑定的可信episode；普通工具不携带。 */
+  planningEpoch?: number | undefined;
+}
+
+export interface ApprovalHostContext {
+  userRequest: string;
+  remainingTokens: number | null;
+  requirementsVersion: string;
+}
+
+/** Kept current until the broker's final one-time claim. */
+export interface ApprovalReviewGrant {
+  decision: "allow";
+  signal: AbortSignal;
+  validate(): Promise<boolean>;
+  release(): void;
+}
+export type ApprovalReviewer = (
+  input: PermissionInvocation,
+  signal: AbortSignal,
+) => Promise<ApprovalReviewGrant | "manual">;
+
+/** All fields except args originate from the trusted host/tool owner. */
+export interface PermissionInvocation extends ApprovalIdentity {
+  preset: "code" | "design";
+  threadId?: string | undefined;
+  mode: CodeApprovalMode;
+  /** Immutable Run/child-dispatch ceiling, enforced for every scoped role. */
+  approvalCeiling: CodeApprovalMode;
+  toolName: string;
+  /** Parsed by the actual tool schema before either admission gate. */
+  args: Record<string, unknown>;
+  /** 可信工具属主提供的公开投影；指纹与审批claim仍绑定args。 */
+  displayArgs?: Record<string, unknown> | undefined;
+  access: "read" | "write" | "execute" | undefined;
+  planControl?: CodePlanControl | undefined;
+  /** Trusted proof of a readonly filesystem AND denied network. */
+  readonlyExecution?: boolean | undefined;
+  /** Trusted tool-owner declaration; unknown tools always retain human approval. */
+  reviewKind?: ApprovalReviewKind | undefined;
+  /** Private host evidence and tool-free Run usage port; never part of public events. */
+  reviewContext?:
+    | {
+        actor: import("../local-instance/types.js").LocalActor;
+        readContext(): Promise<ApprovalHostContext | null>;
+        scope: import("@kenfutwork/shared").CodeExecutionScope;
+        maxCharacters: number;
+        requestModel: ModelRequestPort;
+      }
+    | undefined;
+  summary?: string | undefined;
+  display?: PermissionRequestPayload["display"] | undefined;
+  signal?: AbortSignal | undefined;
+}
+
+export interface BoundApprovalRequest {
+  identity: Readonly<ApprovalIdentity>;
+  parameterFingerprint: string;
+  interaction: PendingInteraction;
+}
+
+export type ApprovalEvent = BoundApprovalRequest &
+  (
+    | { type: "requested" }
+    | { type: "resolved"; decision: "allow" | "deny" }
+    | { type: "cancelled"; reason: string }
+  );
+
+export interface ApprovalResolution {
+  interactionId: string;
+  answer: CommandPayloadMap["resolveInteraction"]["answer"];
+  /** Current facts resolved by the authenticated host, never from answer. */
+  binding: Pick<
+    ApprovalIdentity,
+    | "instanceId"
+    | "taskId"
+    | "runId"
+    | "scopeGeneration"
+    | "branchGeneration"
+    | "planningEpoch"
+  >;
+}
+
+export type ApprovalResolutionResult =
+  | { status: "resolved"; decision: "allow" | "deny" }
+  | { status: "alreadyResolved"; reasonCode: "proto.alreadyResolved" }
+  | {
+      status: "rejected";
+      reasonCode:
+        | "approval.invalidBinding"
+        | "approval.invalidAnswer"
+        | "approval.notFound";
+    };
+
+export type ApprovalCancellation = Partial<
+  Pick<
+    ApprovalIdentity,
+    "runId" | "agentId" | "toolCallId" | "scopeGeneration" | "branchGeneration"
+  >
+> &
+  Pick<ApprovalIdentity, "instanceId" | "taskId">;
+
+export interface CodeApprovalService {
+  /** Asynchronous reviewer/configuration proof immediately before the final execution gates. */
+  revalidate(
+    invocation: PermissionInvocation,
+  ): Promise<import("./permission-service.js").PermissionDecision>;
+  /** Wait for this actual invocation's human answer. Does not consume grant. */
+  admit(
+    invocation: PermissionInvocation,
+  ): Promise<import("./permission-service.js").PermissionDecision>;
+  /** Pure verification for upstream gates; never consumes an approval. */
+  peek(
+    invocation: PermissionInvocation,
+  ): import("./permission-service.js").PermissionDecision;
+  /** Final execution gate; consumes this invocation once, including auto grants. */
+  claim(
+    invocation: PermissionInvocation,
+  ): import("./permission-service.js").PermissionDecision;
+  resolve(input: ApprovalResolution): Promise<ApprovalResolutionResult>;
+  /** 只读绑定含已结算请求；宿主核归属后才可使用迟到回执。 */
+  find(
+    instanceId: string,
+    taskId: string,
+    interactionId: string,
+  ): BoundApprovalRequest | undefined;
+  listPending(instanceId: string, taskId: string): BoundApprovalRequest[];
+  cancel(identity: ApprovalCancellation, reason: string): Promise<void>;
+  onEvent(listener: (event: ApprovalEvent) => void | Promise<void>): () => void;
+}

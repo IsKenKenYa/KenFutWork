@@ -1,0 +1,153 @@
+import { z } from "zod";
+
+export const codeTaskGroupColorSchema = z.enum([
+  "gray",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+]);
+
+export const codeTaskGroupSchema = z
+  .object({
+    id: z.uuid(),
+    title: z.string().min(1).max(200),
+    color: codeTaskGroupColorSchema,
+    createdAt: z.number().finite(),
+    updatedAt: z.number().finite(),
+  })
+  .strict();
+
+/** 组织修订独立于 Task 的执行分支和授权代际。 */
+export const codeTaskGroupStructureSchema = z
+  .object({
+    revision: z.number().int().nonnegative().safe(),
+    groups: z.array(codeTaskGroupSchema),
+    members: z.array(
+      z
+        .object({
+          groupId: z.uuid(),
+          workspaceKey: z.string().min(1),
+          taskId: z.uuid(),
+          sortOrder: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+    order: z.array(
+      z
+        .object({
+          type: z.enum(["group", "task"]),
+          key: z.string().min(1),
+          sortOrder: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const codeTaskGroupReadArgsSchema = z.tuple([]);
+const groupRevisionSchema = z.number().int().nonnegative().safe();
+const groupSaveFields = {
+  expectedRevision: groupRevisionSchema,
+  title: z.string().trim().min(1).max(200).optional(),
+  color: codeTaskGroupColorSchema.optional(),
+};
+export const codeTaskGroupSaveSchema = z.union([
+  z.object({ creationId: z.uuid(), ...groupSaveFields }).strict(),
+  z.object({ id: z.uuid(), ...groupSaveFields }).strict(),
+]);
+export const codeTaskGroupSaveArgsSchema = z.tuple([codeTaskGroupSaveSchema]);
+export const codeTaskGroupUngroupSchema = z
+  .object({ id: z.uuid(), expectedRevision: groupRevisionSchema })
+  .strict();
+export const codeTaskGroupUngroupArgsSchema = z.tuple([
+  codeTaskGroupUngroupSchema,
+]);
+export const codeTaskGroupTaskRefSchema = z
+  .object({
+    hostId: z.literal("local"),
+    taskId: z.uuid(),
+    workspacePath: z.string().min(1),
+    workspaceIdentity: z.string().min(1),
+  })
+  .strict();
+export const codeTaskGroupAdmissionSchema = z
+  .object({
+    tasks: z.array(codeTaskGroupTaskRefSchema),
+    placement: z
+      .object({
+        task: codeTaskGroupTaskRefSchema,
+        groupId: z.uuid().nullable(),
+        creationId: z.uuid(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      !input.placement ||
+      input.tasks.some(
+        (task) =>
+          task.taskId.toLowerCase() ===
+            input.placement?.task.taskId.toLowerCase() &&
+          task.workspacePath === input.placement.task.workspacePath &&
+          task.workspaceIdentity === input.placement.task.workspaceIdentity,
+      ),
+    "新建Task须在登记列表中。",
+  );
+export const codeTaskGroupAdmissionArgsSchema = z.tuple([
+  codeTaskGroupAdmissionSchema,
+]);
+export const codeTaskGroupNodeSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("group"), groupId: z.uuid() }).strict(),
+  z
+    .object({ type: z.literal("task"), task: codeTaskGroupTaskRefSchema })
+    .strict(),
+]);
+export const codeTaskGroupMoveSchema = z
+  .object({
+    node: codeTaskGroupNodeSchema,
+    sourceGroupId: z.uuid().nullable(),
+    groupId: z.uuid().nullable(),
+    expectedRevision: groupRevisionSchema,
+    anchor: z
+      .object({
+        node: codeTaskGroupNodeSchema,
+        side: z.enum(["before", "after"]),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (input) => input.node.type !== "group" || input.groupId === null,
+    "分组只能在根层移动。",
+  )
+  .refine(
+    (input) => input.anchor?.node.type !== "group" || input.groupId === null,
+    "组内锚点须为Task。",
+  );
+export const codeTaskGroupMoveArgsSchema = z.tuple([codeTaskGroupMoveSchema]);
+export const codeTaskGroupSaveResponseSchema = z
+  .object({ result: codeTaskGroupSchema })
+  .strict();
+export const codeTaskGroupReadResponseSchema = z
+  .object({
+    result: codeTaskGroupStructureSchema,
+  })
+  .strict();
+export type CodeTaskGroupStructure = z.infer<
+  typeof codeTaskGroupStructureSchema
+>;
+export type CodeTaskGroup = z.infer<typeof codeTaskGroupSchema>;
+export type CodeTaskGroupSave = z.infer<typeof codeTaskGroupSaveSchema>;
+export type CodeTaskGroupUngroup = z.infer<typeof codeTaskGroupUngroupSchema>;
+export type CodeTaskGroupTaskRef = z.infer<typeof codeTaskGroupTaskRefSchema>;
+export type CodeTaskGroupAdmission = z.infer<
+  typeof codeTaskGroupAdmissionSchema
+>;
+export type CodeTaskGroupNode = z.infer<typeof codeTaskGroupNodeSchema>;
+export type CodeTaskGroupMove = z.infer<typeof codeTaskGroupMoveSchema>;

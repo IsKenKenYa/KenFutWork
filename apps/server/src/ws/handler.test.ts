@@ -1,9 +1,29 @@
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import websocket from "@fastify/websocket";
+import {
+  flowRunEventSchema,
+  instanceSettingsSchema,
+  wsServerMessageSchema,
+} from "@kenfutwork/shared";
 import Fastify from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { describe, expect, it } from "vitest";
+import { createCodeTerminalService } from "../features/code-terminal/service.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
+import { createExecutionScopes } from "../features/execution/scope-service.js";
+import { createLocalAccessFixture } from "../features/local-access/test-fixture.js";
+import type { LocalAccessRequest } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
+import { createProcessSandbox } from "../features/process-sandbox/service.js";
 
+import { CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
 import { registerWsRoute } from "./handler.js";
+
+// 真实受控PTY目前已在macOS验收。
+const ptyAvailable = process.platform === "darwin";
 
 /**
  * WS 早期消息回归测试。
@@ -15,8 +35,12 @@ import { registerWsRoute } from "./handler.js";
  * 这些用例发送的时机是 **open 回调内同步发出**，即最坏时序；修复前必然超时。
  */
 
-function makeStubs() {
-  const sockets = new Map<string, { readyState: number; send: (d: string) => void }>();
+async function makeStubs() {
+  const access = await createLocalAccessFixture();
+  const sockets = new Map<
+    string,
+    { readyState: number; send: (d: string) => void }
+  >();
   /**
    * 用 Proxy 兜底：连接管理器的方法随 run 流程演进而增减，逐个列举会让测试随实现变化而碎。
    * `register`/`sendTo`/`remove` 必须**真的投递**（否则 ack 到不了客户端，测试假失败）。
@@ -28,21 +52,25 @@ function makeStubs() {
         if (prop === "register") {
           return (
             connectionId: string,
-            _userId: string,
+            _instanceId: string,
             socket: { readyState: number; send: (d: string) => void },
           ) => {
             sockets.set(connectionId, socket);
           };
         }
         if (prop === "remove") {
-          return (connectionId: string) => {
-            sockets.delete(connectionId);
+          return (
+            connectionId: string,
+            expectedSocket?: { readyState: number; send: (d: string) => void },
+          ) => {
+            if (!expectedSocket || sockets.get(connectionId) === expectedSocket)
+              sockets.delete(connectionId);
           };
         }
         if (prop === "sendTo") {
           return (connectionId: string, message: unknown) => {
             const socket = sockets.get(connectionId);
-            if (!socket || socket.readyState !== 1) return false;
+            if (socket?.readyState !== 1) return false;
             socket.send(JSON.stringify(message));
             return true;
           };
@@ -51,41 +79,154 @@ function makeStubs() {
       },
     },
   );
+  const flowGate = { generation: 1, draining: false };
   const agentRuns = {
-    createRun: () => ({ runId: "run-1" }),
+    createRun: vi.fn(() => ({ runId: "run-1" })),
     cancelRun: () => true,
     // eslint-disable-next-line require-yield
     streamRun: async function* () {},
   };
-  const auth = {
-    authenticate: async () => ({ id: "user-1", accessToken: "token" }),
+  const authRequests: LocalAccessRequest[] = [];
+  const localAccess = {
+    onRevoked: access.service.onRevoked.bind(access.service),
+    authenticate: async (request: LocalAccessRequest) => {
+      authRequests.push(request);
+      return access.service.authenticate(request);
+    },
   };
-  return { connectionManager, agentRuns, auth, sockets };
+  const workDirState = {
+    dir: mkdtempSync(join(tmpdir(), "kfw-ws-domain-")),
+    deny: false,
+  };
+  const captureRoot = workDirState.dir;
+  const instanceId = access.instanceId;
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  const localInstance = access.options.instance;
+  const sandbox = createProcessSandbox({
+    captureRoot: join(workDirState.dir, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  const executionScopes = createExecutionScopes({
+    localInstance,
+    repository: {
+      load: async () => {
+        if (workDirState.deny) throw new Error("Task不属于当前实例。");
+        return {
+          preset: "code",
+          scope: {
+            instanceId,
+            projectId: "00000000-0000-4000-8000-000000000002",
+            taskId,
+            generation: 1,
+            rootDirectory: realpathSync(workDirState.dir),
+            additionalDirectories: [],
+            sandboxMode: "workspace-write" as const,
+          },
+          state: "ready",
+          branchGeneration: 1,
+        };
+      },
+    },
+  });
+  const terminals = createCodeTerminalService({
+    scopes: executionScopes,
+    sandbox,
+    localInstance,
+    settings: {
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({
+          defaultModel: "fixture",
+          terminalShell: "sh",
+        }),
+    } as never,
+  });
+  return {
+    connectionManager,
+    agentRuns,
+    executionScopes,
+    codeUi: {
+      admitExternalRun: vi.fn(
+        async (
+          ...[_actor, handle, _inputId, _text, request]: Parameters<
+            CodeUiService["admitExternalRun"]
+          >
+        ) => ({
+          runId: "run-1",
+          sessionId: handle.describe().taskId,
+          conversationId: request?.conversationId ?? handle.describe().taskId,
+          status: "accepted" as const,
+          publish: async () => {},
+        }),
+      ),
+      cancelExternalRun: vi.fn(async (_actor: LocalActor, runId: string) => ({
+        runId,
+        status: "canceled" as const,
+      })),
+    },
+    localAccess,
+    authRequests,
+    access,
+    sockets,
+    terminals,
+    sandbox,
+    localInstance,
+    taskId,
+    captureRoot,
+    workDirState,
+    eventBuffer: new CanvasEventBuffer(),
+    flowGate,
+  };
 }
 
 async function startServer() {
   const app = Fastify();
   await app.register(websocket);
-  const stubs = makeStubs();
+  const stubs = await makeStubs();
   registerWsRoute(app, {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
-    auth: stubs.auth as never,
+    localAccess: stubs.localAccess,
+    codeTerminal: stubs.terminals,
+    localInstance: stubs.localInstance,
+    executionScopes: stubs.executionScopes,
+    codeUi: stubs.codeUi,
+    eventBuffer: stubs.eventBuffer,
+    flowProjectControl: {
+      snapshot: async (_actor, projectId) => ({
+        ...stubs.flowGate,
+        projectId,
+        localSettled: true,
+        activeRunIds: [],
+        remoteStopped: 0,
+        remoteOutstanding: 0,
+        operationId: null,
+        quiesceSettled: false,
+      }),
+    },
+  });
+  app.addHook("onClose", async () => {
+    await stubs.terminals.close("test_cleanup");
+    await stubs.sandbox.close("test_cleanup");
+    await stubs.access.cleanup();
+    rmSync(stubs.workDirState.dir, { recursive: true, force: true });
+    rmSync(stubs.captureRoot, { recursive: true, force: true });
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
   const port =
     typeof address === "object" && address !== null ? address.port : 0;
-  return { app, port, stubs };
+  return { app, port, stubs, headers: stubs.access.request.headers };
 }
 
 /** 连上后立刻发送 raw，返回服务端第一条回传消息。 */
 async function sendImmediatelyOnOpen(
   port: number,
   raw: string,
+  headers: LocalAccessRequest["headers"],
 ): Promise<{ got: string | null }> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?token=t&connectionId=c-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${randomUUID()}`,
+    { headers },
   );
   const got = await new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => resolve(null), 6000);
@@ -106,11 +247,127 @@ async function sendImmediatelyOnOpen(
   return { got };
 }
 
+/** 连上后发送 raw，收集服务端回传的前 count 条消息（或超时返回已收的）。 */
+async function collectMessages(
+  port: number,
+  raw: string,
+  headers: LocalAccessRequest["headers"],
+  count: number,
+): Promise<string[]> {
+  const client = new WebSocket(
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${randomUUID()}`,
+    { headers },
+  );
+  const collected = await new Promise<string[]>((resolve) => {
+    const messages: string[] = [];
+    const timer = setTimeout(() => resolve(messages), 6000);
+    client.on("open", () => client.send(raw));
+    client.on("message", (data) => {
+      messages.push(data.toString());
+      if (messages.length >= count) {
+        clearTimeout(timer);
+        resolve(messages);
+      }
+    });
+    client.on("error", () => {
+      clearTimeout(timer);
+      resolve(messages);
+    });
+  });
+  client.close();
+  return collected;
+}
+
+describe("flow 事件续传（flow.resume，P5）", () => {
+  it("ACK 先行，随后补发断线期间的 flowRun 事件（lastSeq 覆盖后不再重放）", async () => {
+    const { app, port, headers, stubs } = await startServer();
+    try {
+      const instanceId = stubs.access.instanceId;
+      const flowEvent = flowRunEventSchema.parse({
+        type: "flowRun.event",
+        hostProjectId: "00000000-0000-4000-8000-000000000002",
+        hostGeneration: 1,
+        runId: "run-9",
+        seq: 1,
+        eventType: "workflow_started",
+        payload: { ok: true },
+        at: "2026-10-09T00:00:00Z",
+        timestamp: "2026-10-09T00:00:00Z",
+      });
+      stubs.eventBuffer.push(flowEventScopeKey(instanceId), flowEvent);
+
+      const messages = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "resume-1",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        2,
+      );
+      expect(messages[0]).toContain("flow.resume");
+      expect(messages[0]).toContain("resume-1");
+      expect(messages[0]).toContain('"replayed":1');
+      expect(messages[1]).toContain("flowRun.event");
+      expect(messages[1]).toContain("run-9");
+
+      // lastSeq 已覆盖：再续传只回 ACK（replayed 0），不再重放
+      const again = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 1 },
+        }),
+        headers,
+        1,
+      );
+      expect(again[0]).toContain("flow.resume");
+      expect(again[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 2;
+      const stale = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(stale[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 1;
+      stubs.flowGate.draining = true;
+      const draining = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "resume-draining",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(JSON.parse(String(draining[0]))).toMatchObject({
+        type: "command.ack",
+        action: "flow.resume",
+        requestId: "resume-draining",
+        payload: { replayed: 0 },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("WS 早期消息不丢失（回归）", () => {
   it("open 后立即发送的非法 JSON 会被处理并回错误", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers } = await startServer();
     try {
-      const { got } = await sendImmediatelyOnOpen(port, "not-json");
+      const { got } = await sendImmediatelyOnOpen(port, "not-json", headers);
       expect(got).not.toBeNull();
       expect(got).toContain("Invalid JSON");
     } finally {
@@ -119,21 +376,34 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 
   it("open 后立即发送的合法 action + 非法 payload 会回命令格式错误", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers } = await startServer();
+    const requestId = "invalid-cancel-early";
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
-        JSON.stringify({ type: "command", action: "agent.cancel", payload: {} }),
+        JSON.stringify({
+          type: "command",
+          id: requestId,
+          action: "agent.cancel",
+          payload: {},
+        }),
+        headers,
       );
-      expect(got).not.toBeNull();
-      expect(got).toContain("Invalid command format");
+      if (got === null) throw new Error("未收到非法命令的WS错误回执");
+      expect(wsServerMessageSchema.parse(JSON.parse(got))).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "agent.cancel",
+        requestId,
+      });
     } finally {
       await app.close();
     }
   });
 
   it("open 后立即发送的合法 agent.run 会被受理（出现 command.ack 或失败事件）", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers, stubs } = await startServer();
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
@@ -141,19 +411,510 @@ describe("WS 早期消息不丢失（回归）", () => {
           type: "command",
           action: "agent.run",
           payload: {
-            sessionId: "s-1",
-            conversationId: "c-1",
+            sessionId: stubs.taskId,
+            taskId: stubs.taskId,
+            conversationId: stubs.taskId,
             prompt: "hi",
           },
         }),
+        headers,
       );
       expect(got).not.toBeNull();
+      if (got === null) throw new Error("未在超时前收到任何 WS 消息");
       // 受理即回 ack；若后续构建失败则回 run.failed 事件——两者都证明消息没被丢弃
-      expect(
-        got!.includes("command.ack") || got!.includes("run.failed"),
-      ).toBe(true);
+      expect(got.includes("command.ack") || got.includes("run.failed")).toBe(
+        true,
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("agent.run 的 started 日志只报长度，不带 prompt 原文", async () => {
+    const { app, port, headers, stubs } = await startServer();
+    const prompt = "口令-不要进日志";
+    const sessionId = stubs.taskId;
+    try {
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "agent.run",
+          payload: {
+            sessionId,
+            taskId: sessionId,
+            conversationId: sessionId,
+            prompt,
+          },
+        }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到共享Task运行的WS回执");
+      expect(wsServerMessageSchema.parse(JSON.parse(got))).toMatchObject({
+        type: "command.ack",
+        action: "agent.run",
+        payload: { sessionId, status: "accepted" },
+      });
+      expect(stubs.codeUi.admitExternalRun).toHaveBeenCalledTimes(1);
+      expect(stubs.agentRuns.createRun).not.toHaveBeenCalled();
+      // logger 的结构化面（JSONL 落盘）才是「日志会不会带上用户内容」的判据；
+      // 路径与 logger.ts 的落盘口径一致（未设 KENFUTWORK_DATA_DIR 时归 apps/server/logs）。
+      const file = join(
+        import.meta.dirname ?? ".",
+        "..",
+        "..",
+        "logs",
+        `pipeline-${new Date().toISOString().slice(0, 10)}.log`,
+      );
+      const started = readFileSync(file, "utf8")
+        .split("\n")
+        .map((line) => {
+          try {
+            return JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (entry) =>
+            entry?.scope === "agent.run" &&
+            entry?.event === "started" &&
+            entry?.instanceId === stubs.access.instanceId &&
+            entry?.sessionId === sessionId,
+        );
+      expect(started).toHaveLength(1);
+      const entry = started[started.length - 1] as Record<string, unknown>;
+      expect(entry.prompt).toBeUndefined();
+      expect(entry.promptChars).toBe(prompt.length);
     } finally {
       await app.close();
     }
   });
 });
+
+/**
+ * 终端会话这条 WS 通道的端到端（真 shell + 真 socket）：起会话 → 输入 → 收到输出 → 结束。
+ *
+ * 单元层面 `terminal-session` 已经验过常驻 shell 的性质（cd 保留、REPL）；这里验的是
+ * **接线**：命令解析、归属校验、ack 与 output/exit 的投递、以及连接断开时收掉会话。
+ */
+describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
+  /** 连上并返回一个「发命令 + 等消息」的小客户端。 */
+  async function connect(port: number, headers: LocalAccessRequest["headers"]) {
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=c-${Date.now()}`,
+      { headers },
+    );
+    const received: Array<Record<string, unknown>> = [];
+    const waiters: Array<{
+      match: (msg: Record<string, unknown>) => boolean;
+      resolve: (msg: Record<string, unknown>) => void;
+    }> = [];
+    client.on("message", (data) => {
+      const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+      received.push(msg);
+      for (const waiter of [...waiters]) {
+        if (waiter.match(msg)) {
+          waiters.splice(waiters.indexOf(waiter), 1);
+          waiter.resolve(msg);
+        }
+      }
+    });
+    await new Promise<void>((resolve) => client.on("open", () => resolve()));
+    return {
+      client,
+      received,
+      /** 发一条命令并等第一条满足条件的回传（超时即抛，便于定位）。 */
+      async sendAndWait(
+        payload: Record<string, unknown>,
+        match: (msg: Record<string, unknown>) => boolean,
+        // 真实 shell 启动在并行跑全仓时可能明显变慢（turbo 同时拉多个包），给足预算
+        timeoutMs = 25_000,
+      ): Promise<Record<string, unknown>> {
+        const pending = new Promise<Record<string, unknown>>(
+          (resolve, reject) => {
+            const timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `等待回传超时；已收到：${JSON.stringify(received)}`,
+                  ),
+                ),
+              timeoutMs,
+            );
+            waiters.push({
+              match,
+              resolve: (msg) => {
+                clearTimeout(timer);
+                resolve(msg);
+              },
+            });
+          },
+        );
+        client.send(JSON.stringify(payload));
+        return pending;
+      },
+    };
+  }
+
+  const isAck = (msg: Record<string, unknown>) =>
+    msg.type === "command.ack" && msg.action === "terminal.start";
+
+  it("本机浏览器用真实会话cookie连接，Origin原样交给统一接入校验", async () => {
+    const { app, port, stubs } = await startServer();
+    const origin = "http://localhost:3000";
+    const { ticket } = await stubs.access.service.issueTicket(
+      stubs.access.request,
+    );
+    const connected = await stubs.access.service.consumeTicket(
+      { ip: "127.0.0.1", headers: { origin } },
+      { ticket, label: "WS测试浏览器" },
+    );
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=browser-${Date.now()}`,
+      { headers: { origin, cookie: connected.cookie.split(";")[0] } },
+    );
+    try {
+      const opened = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 6000);
+        client.on("open", () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+        client.on("close", () => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      await new Promise((done) => setTimeout(done, 500));
+      expect(opened).toBe(true);
+      expect(client.readyState).toBe(1);
+      expect(
+        stubs.authRequests.map((request) => request.headers.origin),
+      ).toContain(origin);
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
+
+  it("可信Origin仍需真实凭据，回环不能替代本机授权", async () => {
+    const { app, port } = await startServer();
+    const client = new WebSocket(
+      `ws://127.0.0.1:${port}/api/ws?connectionId=missing-credential-${Date.now()}`,
+      { headers: { origin: "http://localhost:3000" } },
+    );
+    try {
+      const code = await new Promise<number>((resolve) => {
+        const timer = setTimeout(() => resolve(-1), 6000);
+        client.on("close", (closeCode) => {
+          clearTimeout(timer);
+          resolve(closeCode);
+        });
+      });
+      expect(code).toBe(4001);
+    } finally {
+      client.close();
+      await app.close();
+    }
+  });
+
+  it("未带Task身份的终端拒绝，不能借用服务端启动目录", async () => {
+    const { app, port, headers } = await startServer();
+    const session = await connect(port, headers);
+    const requestId = "terminal-without-task";
+    try {
+      const rejected = await session.sendAndWait(
+        {
+          type: "command",
+          id: requestId,
+          action: "terminal.start",
+          payload: { sessionId: "t-no-task", cols: 80, rows: 24 },
+        },
+        (message) =>
+          message.type === "error" && message.requestId === requestId,
+      );
+      expect(wsServerMessageSchema.parse(rejected)).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "terminal.start",
+        requestId,
+      });
+    } finally {
+      session.client.close();
+      await app.close();
+    }
+  });
+
+  it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
+    const { app, port, stubs, headers } = await startServer();
+    const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
+    stubs.workDirState.dir = dir;
+    const session = await connect(port, headers);
+    try {
+      const ack = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
+        },
+        isAck,
+      );
+      expect((ack.payload as { sessionId: string }).sessionId).toBe("t1");
+
+      // 输入一条命令：真 shell 的输出经 terminal.output 回来
+      const output = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.input",
+          payload: {
+            sessionId: "t1",
+            data: "printf '\\127\\123\\137\\124\\105\\122\\115\\137\\117\\113\\n'\r",
+          },
+        },
+        (msg) =>
+          msg.type === "terminal.output" &&
+          String(msg.data).includes("WS_TERM_OK"),
+      );
+      expect(output.sessionId).toBe("t1");
+
+      const exit = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.stop",
+          payload: { sessionId: "t1" },
+        },
+        (msg) => msg.type === "terminal.exit",
+      );
+      expect(exit.sessionId).toBe("t1");
+    } finally {
+      session.client.close();
+      await app.close();
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200,
+      });
+    }
+  }, 30_000);
+
+  it("同一个 sessionId 重复 start 复用会话（重连重放不该多起一条 shell）", async () => {
+    const { app, port, stubs, headers } = await startServer();
+    const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
+    stubs.workDirState.dir = dir;
+    const session = await connect(port, headers);
+    try {
+      await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
+        },
+        isAck,
+      );
+      const again = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
+        },
+        isAck,
+      );
+      expect((again.payload as { reused?: boolean }).reused).toBe(true);
+    } finally {
+      session.client.close();
+      await app.close();
+      // 断开后服务端异步收会话：等进程退干净再删目录（否则 EBUSY）
+      await app.close();
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
+    }
+  }, 45_000);
+
+  it("Task不属于这个实例：起会话被拒并给出可读原因", async () => {
+    const { app, port, stubs, headers } = await startServer();
+    stubs.workDirState.deny = true;
+    const session = await connect(port, headers);
+    try {
+      const exit = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
+        },
+        (msg) => msg.type === "terminal.exit",
+      );
+      expect(String(exit.reason)).toContain("Task不属于当前实例");
+    } finally {
+      session.client.close();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("连接断开：会话被收掉（不留孤儿 shell 进程）", async () => {
+    const { app, port, stubs, headers } = await startServer();
+    const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
+    stubs.workDirState.dir = dir;
+    const session = await connect(port, headers);
+    try {
+      await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
+        },
+        isAck,
+      );
+      session.client.close();
+      // 断开后服务端收会话：等一小会儿再删目录，删得掉即说明进程退了
+      await app.close();
+      rmSync(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
+    } finally {
+      await app.close();
+    }
+  }, 30_000);
+});
+
+it("WS correlated admission rejection preserves packet id and action instead of becoming a client timeout", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "invalid-input",
+        action: "agent.run",
+        payload: { prompt: 123 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "invalid-input",
+      action: "agent.run",
+      code: "invalid_command",
+      message: "请求格式无效",
+    });
+  } finally {
+    await app.close();
+  }
+});
+it("退役task.resume返回关联的共享会话连接提示", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "resume-request",
+        action: "task.resume",
+        payload: { taskId: "00000000-0000-4000-8000-000000000003", lastSeq: 0 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "resume-request",
+      action: "task.resume",
+      code: "shared_conversation_required",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+it("画布/Flow续传及共享取消保留原命令requestId", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    for (const [action, payload] of [
+      ["canvas.resume", { canvasId: "canvas", lastSeq: 0 }],
+      ["flow.resume", { lastSeq: 0 }],
+      ["agent.cancel", { runId: "run-1" }],
+    ] as const) {
+      const requestId = `request-${action}`;
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({ type: "command", id: requestId, action, payload }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action,
+        requestId,
+      });
+    }
+  } finally {
+    await app.close();
+  }
+});
+it.skipIf(!ptyAvailable)(
+  "terminal.start ACK is correlated before any terminal stream output",
+  async () => {
+    const { app, port, headers, stubs } = await startServer();
+    try {
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "terminal-request",
+          action: "terminal.start",
+          payload: {
+            taskId: stubs.taskId,
+            sessionId: "correlated-terminal",
+            shell: "sh",
+            cols: 80,
+            rows: 24,
+          },
+        }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action: "terminal.start",
+        requestId: "terminal-request",
+      });
+    } finally {
+      await app.close();
+    }
+  },
+);

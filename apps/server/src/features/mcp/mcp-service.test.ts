@@ -1,7 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolDefinition, ToolRegistry } from "../../kernel/types.js";
+import type {
+  DynamicToolEntry,
+  ToolDefinition,
+  ToolRegistry,
+} from "../../kernel/types.js";
 import { createMcpService } from "./mcp-service.js";
 import type { McpServerStore, StoredMcpServer } from "./server-store.js";
 
@@ -14,9 +24,12 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
+        kind: row.kind,
         command: row.command,
+        url: row.url,
         args: row.args,
         envKeys: Object.keys(row.env),
+        headerKeys: Object.keys(row.headers),
         enabled: row.enabled,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -28,7 +41,14 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
     async create(input) {
       const created: StoredMcpServer = {
         id: `id-${input.name}`,
-        ...input,
+        name: input.name,
+        kind: input.kind ?? "stdio",
+        command: input.command ?? "",
+        args: input.args,
+        url: input.url,
+        env: input.env,
+        headers: input.headers,
+        enabled: input.enabled,
         createdAt: "2026-09-14T00:00:00.000Z",
         updatedAt: "2026-09-14T00:00:00.000Z",
       };
@@ -58,15 +78,20 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
 
 function fakeRegistry() {
   const registered = new Map<string, ToolDefinition>();
+  const dynamicEntries = new Map<string, DynamicToolEntry>();
   const registry = {
     register(definition: ToolDefinition) {
       registered.set(definition.name, definition);
       return () => registered.delete(definition.name);
     },
+    registerDynamic(entry: DynamicToolEntry) {
+      dynamicEntries.set(entry.id, entry);
+      return () => dynamicEntries.delete(entry.id);
+    },
     get: (name: string) => registered.get(name),
     list: () => [...registered.values()],
   } as unknown as ToolRegistry;
-  return { registry, registered };
+  return { registry, registered, dynamicEntries };
 }
 
 function stored(
@@ -74,9 +99,12 @@ function stored(
 ): StoredMcpServer {
   return {
     id: over.id ?? `id-${over.name}`,
+    kind: over.kind ?? "stdio",
     command: over.command ?? "definitely-not-a-real-binary-xyz",
+    url: over.url ?? null,
     args: over.args ?? [],
     env: over.env ?? {},
+    headers: over.headers ?? {},
     enabled: over.enabled ?? false,
     createdAt: "2026-09-14T00:00:00.000Z",
     updatedAt: "2026-09-14T00:00:00.000Z",
@@ -85,6 +113,33 @@ function stored(
 }
 
 const EMPTY_ENV = { version: "test" } as ServerEnv;
+
+/** 截获真实 HTTP 请求的桩（http 类型的请求头必须在本机线上验证，不看构造代码）。 */
+let stub: Server | undefined;
+afterEach(async () => {
+  await new Promise<void>((resolve) => {
+    if (!stub) return resolve();
+    stub.close(() => resolve());
+    stub = undefined;
+  });
+});
+async function startHttpStub(): Promise<{
+  url: string;
+  requests: Array<Record<string, string | string[] | undefined>>;
+}> {
+  const requests: Array<Record<string, string | string[] | undefined>> = [];
+  const server = createServer((request, response) => {
+    requests.push({ ...request.headers });
+    response.writeHead(401, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "unauthorized" }));
+  });
+  stub = server;
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const { port } = server.address() as AddressInfo;
+  return { url: `http://127.0.0.1:${port}/mcp`, requests };
+}
 
 /**
  * MCP 运行态管理：配置来源合并（库内优先）+ 连接失败是运行态而非配置错误 +
@@ -172,10 +227,12 @@ describe("MCP 运行态管理", () => {
       name: "new-server",
       command: "definitely-not-a-real-binary-xyz",
       args: ["--flag"],
+      url: null,
       env: { TOKEN: "secret-value" },
       enabled: false,
     });
     expect(created.envKeys).toEqual(["TOKEN"]);
+    expect(created.headerKeys).toEqual([]);
     expect(JSON.stringify(created)).not.toContain("secret-value");
 
     expect((await service.listStatuses()).map((s) => s.name)).toEqual([
@@ -183,6 +240,125 @@ describe("MCP 运行态管理", () => {
     ]);
     expect(await service.remove(created.id)).toBe(1);
     expect(await service.listStatuses()).toEqual([]);
+  });
+
+  it("http 类型：归一化入列（command 空串、url 承载端点），状态带 kind/url", async () => {
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    const created = await service.create({
+      name: "remote",
+      kind: "http",
+      url: "https://127.0.0.1:9/unreachable/mcp",
+      args: [],
+      env: {},
+      enabled: false, // 不触发真实连接，只验归一化与落库形态
+    });
+    expect(created).toMatchObject({
+      kind: "http",
+      command: "",
+      url: "https://127.0.0.1:9/unreachable/mcp",
+    });
+
+    // stdio 缺省 kind：url 归一化为 null
+    const stdio = await service.create({
+      name: "local",
+      command: "definitely-not-a-real-binary-xyz",
+      args: [],
+      env: {},
+      enabled: false,
+    });
+    expect(stdio).toMatchObject({ kind: "stdio", url: null });
+
+    const [remoteStatus, localStatus] = await service.listStatuses();
+    expect(remoteStatus).toMatchObject({ kind: "http", status: "disabled" });
+    expect(localStatus).toMatchObject({ kind: "stdio", status: "disabled" });
+  });
+
+  it("http 类型启用后连不上是运行态 error（不抛错、不注册工具）", async () => {
+    const store = fakeStore([]);
+    const { registry, registered } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    await service.create({
+      name: "remote-dead",
+      kind: "http",
+      // 保留地址端口立即 ECONNREFUSED，不等待超时
+      url: "https://127.0.0.1:9/mcp",
+      args: [],
+      env: {},
+      enabled: true,
+    });
+    const [status] = await service.listStatuses();
+    expect(status).toMatchObject({
+      kind: "http",
+      status: "error",
+      toolCount: 0,
+    });
+    expect(status?.error).toBeTruthy();
+    expect(registered.size).toBe(0);
+  });
+
+  it("http 类型的自定义请求头真的发到线上（HA 的 Authorization 靠这条）", async () => {
+    const httpStub = await startHttpStub();
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    await service.create({
+      name: "ha-mcp",
+      kind: "http",
+      url: httpStub.url,
+      args: [],
+      env: {},
+      headers: { Authorization: "Bearer ha-token", "X-Api-Key": "k-1" },
+      enabled: true,
+    });
+
+    // 桩回 401：连接失败是运行态，但两次尝试（Streamable HTTP + SSE 回退）都必须带自定义头
+    expect(httpStub.requests.length).toBeGreaterThan(0);
+    for (const headers of httpStub.requests) {
+      expect(headers.authorization).toBe("Bearer ha-token");
+      expect(headers["x-api-key"]).toBe("k-1");
+    }
+
+    // 值不外发：状态与响应只回键名
+    const [status] = await service.listStatuses();
+    expect(status?.status).toBe("error");
+    expect([...(status?.headerKeys ?? [])].sort()).toEqual([
+      "Authorization",
+      "X-Api-Key",
+    ]);
+    expect(JSON.stringify(status)).not.toContain("ha-token");
+
+    const updated = await service.update("id-ha-mcp", {
+      headers: { Authorization: "Bearer rotated" },
+    });
+    expect(updated?.headerKeys).toEqual(["Authorization"]);
+    expect(JSON.stringify(updated)).not.toContain("rotated");
+    // 改头后重连：新令牌同样发到线上
+    await service.reconnect("id-ha-mcp");
+    expect(httpStub.requests.at(-1)?.authorization).toBe("Bearer rotated");
+  });
+
+  it("stdio 类型不吃请求头：归一化为空对象（库里不留用不上的密钥）", async () => {
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    const created = await service.create({
+      name: "local-with-headers",
+      command: "definitely-not-a-real-binary-xyz",
+      args: [],
+      env: {},
+      headers: { Authorization: "Bearer should-not-persist" },
+      enabled: false,
+    });
+
+    expect(created.headerKeys).toEqual([]);
+    expect(JSON.stringify(created)).not.toContain("should-not-persist");
+    expect((await store.list())[0]?.headers).toEqual({});
   });
 
   it("setEnabled 生效并回流公开形态；重连不存在的 id 返回 null", async () => {
@@ -235,5 +411,212 @@ describe("启动连接的健壮性（曾被 unhandled rejection 带走进程）"
     expect(statuses.map((s) => s.name).sort()).toEqual(["broken", "off"]);
     expect(statuses.find((s) => s.name === "broken")?.status).toBe("error");
     expect(statuses.find((s) => s.name === "off")?.status).toBe("disabled");
+  });
+});
+
+describe("MCP 掉线自动重启", () => {
+  const fixture = new URL("./fixtures/mcp-restart-server.mjs", import.meta.url)
+    .pathname;
+  const temporary: string[] = [];
+
+  afterEach(async () => {
+    for (const directory of temporary.splice(0))
+      await rm(directory, { recursive: true, force: true });
+  });
+
+  async function waitFor(
+    check: () => Promise<boolean>,
+    timeoutMs = 8_000,
+  ): Promise<void> {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (await check()) return;
+      await delay(25);
+    }
+    throw new Error("等待 MCP 自动重启超时。");
+  }
+
+  async function spawnLog(directory: string): Promise<string[]> {
+    const content = await readFile(join(directory, "starts.log"), "utf8");
+    return content.split("\n").filter(Boolean);
+  }
+
+  it("首次掉线自动重启一次并重新注册工具", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "restartable",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_STATE_FILE: join(directory, "survived"),
+          MCP_TEST_EXIT_MS: "200",
+        },
+      }),
+    ]);
+    const { registry, dynamicEntries } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "connected";
+      });
+      expect(dynamicEntries.size).toBe(1);
+      const [status] = await service.listStatuses();
+      expect(status?.error).toBeNull();
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("重启后仍掉线只报可读原因，不再反复拉起", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "crashing",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_EXIT_MS: "150",
+        },
+      }),
+    ]);
+    const { registry, dynamicEntries } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      expect((await spawnLog(directory)).length).toBe(2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.error?.includes("自动重启未恢复") ?? false;
+      });
+      const [status] = await service.listStatuses();
+      expect(status?.error).toContain("自动重启未恢复");
+      expect(status?.error).toContain("请在设置里重连");
+      expect(dynamicEntries.size).toBe(0);
+      // 稳定性：不再出现第三次拉起
+      await delay(400);
+      expect((await spawnLog(directory)).length).toBe(2);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("手动重连会重新获得一次自动重启机会", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "recovering",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_EXIT_MS: "150",
+        },
+      }),
+    ]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      expect((await spawnLog(directory)).length).toBe(2);
+      await service.reconnect("id-recovering");
+      await waitFor(async () => (await spawnLog(directory)).length >= 4);
+      // 手动重连本身 + 它掉线后的一次自动重启 = 第 4 次拉起
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      await delay(400);
+      expect((await spawnLog(directory)).length).toBe(4);
+    } finally {
+      await service.shutdown();
+    }
+  });
+});
+
+describe("插件贡献的 MCP server（只读来源）", () => {
+  const pluginServers = [
+    {
+      pluginId: "kenfutwork-tripo-3d",
+      name: "tripo",
+      kind: "http" as const,
+      command: "",
+      args: [],
+      url: "http://127.0.0.1:9/mcp",
+      env: { TRIPO_API_KEY: "secret" },
+      headers: { Authorization: "Bearer secret" },
+      enabled: true,
+    },
+  ];
+
+  it("并入状态列表，只下发键名不发值", async () => {
+    const { registry } = fakeRegistry();
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([]),
+      pluginServers: async () => pluginServers,
+    });
+    const statuses = await service.listStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({
+      name: "tripo",
+      source: "plugin",
+      kind: "http",
+      enabled: true,
+      id: null,
+      envKeys: ["TRIPO_API_KEY"],
+      headerKeys: ["Authorization"],
+    });
+    expect(JSON.stringify(statuses)).not.toContain("secret");
+  });
+
+  it("库内同名条目优先，插件项不覆盖用户配置", async () => {
+    const { registry } = fakeRegistry();
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([stored({ name: "tripo", enabled: false })]),
+      pluginServers: async () => pluginServers,
+    });
+    const statuses = await service.listStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.source).toBe("managed");
+  });
+
+  it("插件条目可按名称重连（没有库内 id）", async () => {
+    const { registry } = fakeRegistry();
+    const base = pluginServers[0];
+    if (!base) throw new Error("fixture 缺少插件 MCP 条目");
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([]),
+      pluginServers: async () => [{ ...base, name: "broken-plugin" }],
+    });
+    const status = await service.reconnect("broken-plugin");
+    expect(status?.source).toBe("plugin");
+    expect(status?.status).toBe("error");
   });
 });

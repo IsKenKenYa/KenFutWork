@@ -1,0 +1,773 @@
+import { access, readdir, realpath, stat } from "node:fs/promises";
+import { basename, isAbsolute, join } from "node:path";
+import {
+  type CodeUiWorkspace,
+  codeUiWorkspaceSchema,
+} from "@kenfutwork/shared";
+import {
+  appSettingsSchema,
+  canonicalLocalWorkspaceIdentity,
+  type FileEntry,
+  parseLocalWorkspaceIdentity,
+} from "@zcode/shared";
+import { z } from "zod";
+import type { LocalActor } from "../local-instance/types.js";
+import {
+  type ProjectService,
+  ProjectServiceError,
+} from "../projects/project-service.js";
+import { validateWorkDir } from "../projects/work-dir.js";
+import type { CodeUiRepository } from "./repository.js";
+import { CodeUiRepositoryError } from "./repository.js";
+
+const directoryParams = z.object({
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
+  includeHidden: z.boolean().optional(),
+  humanPurpose: z.literal("directory-picker"),
+});
+// 原 UI 最近项目历史固定展示前10项，不是 Agent 运行时限额。
+const CODE_UI_RECENT_PROJECT_LIMIT = 10;
+
+function throwDirectoryLookupError(error: unknown): never {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  )
+    throw new CodeUiRepositoryError("not_found", "目录不存在，请重新选择。");
+  throw error;
+}
+
+async function readPickerDirectory(input: string) {
+  try {
+    const path = await realpath(input);
+    return { path, children: await readdir(path, { withFileTypes: true }) };
+  } catch (error) {
+    throwDirectoryLookupError(error);
+  }
+}
+
+function normalizeRecentProjects(paths: readonly string[]): string[] {
+  return [...new Set(paths)].slice(0, CODE_UI_RECENT_PROJECT_LIMIT);
+}
+
+function canonicalWorkspace(project: CodeUiWorkspace): CodeUiWorkspace {
+  const root = validateWorkDir(project.path);
+  if (!root.ok)
+    throw new CodeUiRepositoryError(
+      "not_found",
+      `Code 项目目录不可用：${root.reason}`,
+    );
+  return codeUiWorkspaceSchema.parse({ ...project, path: root.path });
+}
+
+type ConversationWorkspace = CodeUiWorkspace & {
+  created: boolean;
+  workspacePurpose: "conversation";
+  /** 上一次默认对话目录已不存在，本次清掉旧引用并新建；供客户端给出可读提示。 */
+  replacedMissingDirectory?: boolean;
+};
+const preferenceKeys = new Set([
+  "recentProjects",
+  "locale",
+  "localePreference",
+  "shortcutBindings",
+  "messageStreamShowReasoning",
+  "messageStreamShowReasoningMigrationInitialized",
+  "messageStreamShowTodos",
+  "toolGroupingExploreEnabled",
+  "toolGroupingTerminalEnabled",
+  "toolGroupingChangesEnabled",
+  "zcodeInteractionBehavior",
+  "lastWorkspaceSession",
+  "lastActiveTabIndex",
+  "lastActiveTaskByWorkspace",
+  "startPlanRecommendationDismissed",
+  "onboardingOccupation",
+  "terminalFontFamily",
+  "terminalInheritSystemProfile",
+  "computerUseComposerEntryHidden",
+  "memoryEnabled",
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
+  "taskAutoArchiveEnabled",
+  "taskAutoArchiveOlderThanDays",
+]);
+/**
+ * 清空即删除：界面清空代理地址/证书时传空串（RPC 会丢弃 undefined），
+ * 这几个键不参与 `appSettingsSchema.parse`（非空字符串），由偏好写入显式移除。
+ */
+const removablePreferenceKeys = new Set([
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
+]);
+type WorkspacePreferenceEntry = z.infer<
+  typeof appSettingsSchema
+>["lastWorkspaceSession"][number];
+type PreferenceOwner = {
+  projectId: string;
+  rootDirectory: string;
+  taskId?: string;
+};
+
+function normalizePreferenceTab(
+  entry: WorkspacePreferenceEntry,
+  owners: Map<string, PreferenceOwner>,
+) {
+  if (entry.kind !== "local") return null;
+  const identity = entry.workspaceIdentity
+    ? parseLocalWorkspaceIdentity(entry.workspaceIdentity, entry.workspacePath)
+    : null;
+  if (entry.workspaceIdentity && !identity) return null;
+  const key = identity
+    ? canonicalLocalWorkspaceIdentity(
+        identity.projectId,
+        identity.rootDirectory,
+      )
+    : entry.workspacePath;
+  const owner = owners.get(key);
+  if (!owner || owner.rootDirectory !== entry.workspacePath) return null;
+  return {
+    ...entry,
+    workspaceIdentity: canonicalLocalWorkspaceIdentity(
+      owner.projectId,
+      owner.rootDirectory,
+    ),
+  };
+}
+
+function normalizePreferenceFocus(
+  focus: Record<string, string>,
+  owners: Map<string, PreferenceOwner>,
+) {
+  const normalized: Record<string, string> = {};
+  for (const [key, taskId] of Object.entries(focus)) {
+    const owner = owners.get(key);
+    if (!owner || owner.taskId !== taskId) continue;
+    normalized[
+      canonicalLocalWorkspaceIdentity(owner.projectId, owner.rootDirectory)
+    ] = taskId;
+  }
+  return normalized;
+}
+
+type TaskPreference = {
+  key: string;
+  taskId: string;
+  owner:
+    | Pick<PreferenceOwner, "projectId" | "rootDirectory">
+    | null
+    | undefined;
+};
+
+function applyPreferenceFocus(
+  owners: Map<string, PreferenceOwner>,
+  tasks: readonly TaskPreference[],
+  projectIds: ReadonlySet<string>,
+) {
+  const focusedPaths = new Map<string, Map<string, PreferenceOwner>>();
+  const invalidPaths = new Set<string>();
+  const legacyFocus = new Map<string, PreferenceOwner>();
+  for (const { key, taskId, owner } of tasks) {
+    const identity = parseLocalWorkspaceIdentity(key);
+    const rootDirectory = identity?.rootDirectory ?? key;
+    if (
+      !owner ||
+      owner.rootDirectory !== rootDirectory ||
+      (identity && owner.projectId !== identity.projectId) ||
+      !projectIds.has(owner.projectId)
+    ) {
+      // 显式Task焦点失效不能悄悄转给碰巧拥有同路径的另一Project。
+      owners.delete(key);
+      owners.delete(rootDirectory);
+      invalidPaths.add(rootDirectory);
+      if (identity)
+        owners.delete(
+          canonicalLocalWorkspaceIdentity(
+            identity.projectId,
+            identity.rootDirectory,
+          ),
+        );
+    } else {
+      const focused = { ...owner, taskId };
+      const qualified = canonicalLocalWorkspaceIdentity(
+        owner.projectId,
+        owner.rootDirectory,
+      );
+      owners.set(key, focused);
+      owners.set(qualified, focused);
+      const scopes =
+        focusedPaths.get(rootDirectory) ?? new Map<string, PreferenceOwner>();
+      scopes.set(qualified, focused);
+      focusedPaths.set(rootDirectory, scopes);
+      if (!identity) legacyFocus.set(rootDirectory, focused);
+    }
+  }
+  for (const [path, scopes] of focusedPaths) {
+    const explicit = legacyFocus.get(path);
+    if (explicit) {
+      owners.set(path, explicit);
+    } else if (invalidPaths.has(path) || scopes.size !== 1) {
+      owners.delete(path);
+    } else {
+      for (const owner of scopes.values()) owners.set(path, owner);
+    }
+  }
+}
+
+export interface HumanWorkspaceRpc {
+  call(
+    actor: LocalActor,
+    service: string,
+    method: string,
+    args: unknown[],
+  ): Promise<{ result: unknown } | null>;
+}
+
+/** 人工目录选择只返回元数据。没有 Task 权限签发，也没有模型工具注册。 */
+export function createHumanWorkspaceRpc(options: {
+  projects: ProjectService;
+  preferences: Pick<
+    CodeUiRepository,
+    "readHumanPreferences" | "updateHumanPreferences"
+  >;
+  instanceId: (actor: LocalActor) => Promise<string>;
+  listWorkspaces: (actor: LocalActor) => Promise<CodeUiWorkspace[]>;
+  resolveTaskPreference?: (
+    actor: LocalActor,
+    taskId: string,
+  ) => Promise<{ projectId: string; rootDirectory: string } | null>;
+  maxEntries: (actor: LocalActor) => Promise<number>;
+  /** 偏好保存后的消费通知（例如任务自动归档按新天数立刻扫描）。 */
+  onPreferencesUpdated?: (
+    instanceId: string,
+    changedKeys: readonly string[],
+  ) => void | Promise<void>;
+}): HumanWorkspaceRpc {
+  const opening = new Map<string, Promise<CodeUiWorkspace>>();
+  const conversationOpening = new Map<string, Promise<ConversationWorkspace>>();
+  const enabledFor = (project: CodeUiWorkspace, preset: "code" | "design") =>
+    project.enabledModes?.includes(preset) ??
+    (project.kind ?? "code") === preset;
+  const ensureConversationWorkspace = async (
+    actor: LocalActor,
+    preset: "code" | "design",
+  ) => {
+    const instanceId = await options.instanceId(actor);
+    const openingKey = `${instanceId}:${preset}`;
+    const preferenceKey =
+      preset === "code"
+        ? "defaultConversationProjectId"
+        : "defaultDesignConversationProjectId";
+    const current = conversationOpening.get(openingKey);
+    if (current) return current;
+    const ensuring = (async (): Promise<ConversationWorkspace> => {
+      const preferences =
+        await options.preferences.readHumanPreferences(instanceId);
+      const savedId = preferences[preferenceKey];
+      const existing = (await options.listWorkspaces(actor)).find(
+        (project) =>
+          project.projectId === savedId && enabledFor(project, preset),
+      );
+      let replacedMissingDirectory = false;
+      if (existing) {
+        try {
+          return {
+            ...canonicalWorkspace(existing),
+            created: false,
+            workspacePurpose: "conversation",
+          };
+        } catch (error) {
+          // 目录已随任务清理（如用户删掉 sandbox）：清掉陈旧偏好再建默认项目，
+          // 重复进入复用新项目，不重试旧引用也不重复报错。
+          if (
+            !(error instanceof CodeUiRepositoryError) ||
+            error.code !== "not_found"
+          )
+            throw error;
+          await options.preferences.updateHumanPreferences(
+            instanceId,
+            {},
+            { removeKeys: [preferenceKey] },
+          );
+          replacedMissingDirectory = true;
+        }
+      }
+      const created = await options.projects.createProject(actor, {
+        kind: preset,
+        name: "默认对话",
+      });
+      if (created.kind !== preset)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "默认对话项目创建类型不匹配。",
+        );
+      if (!created.workDir)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "项目工作目录未准备完成，请重试。",
+        );
+      const project = canonicalWorkspace({
+        projectId: created.id,
+        kind: preset,
+        enabledModes: created.enabledModes.filter(
+          (mode) => mode === "code" || mode === "design",
+        ),
+        name: created.name,
+        path: created.workDir,
+        additionalDirectories: created.additionalDirectories,
+      });
+      const saved = await options.preferences.updateHumanPreferences(
+        instanceId,
+        { [preferenceKey]: project.projectId },
+        { referencedProjectIds: [project.projectId] },
+      );
+      if (!saved)
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "默认对话项目已归档，工作区引用未保存。",
+        );
+      return {
+        ...project,
+        created: true,
+        workspacePurpose: "conversation",
+        ...(replacedMissingDirectory ? { replacedMissingDirectory: true } : {}),
+      };
+    })();
+    conversationOpening.set(openingKey, ensuring);
+    try {
+      return await ensuring;
+    } finally {
+      if (conversationOpening.get(openingKey) === ensuring)
+        conversationOpening.delete(openingKey);
+    }
+  };
+  const preferenceOwners = async (
+    actor: LocalActor,
+    workspaces: CodeUiWorkspace[],
+    focus: Record<string, string> | undefined,
+  ) => {
+    const owners = new Map<string, PreferenceOwner>();
+    const ambiguous = new Set<string>();
+    const projectIds = new Set(workspaces.map((project) => project.projectId));
+    for (const project of workspaces) {
+      const owner = {
+        projectId: project.projectId,
+        rootDirectory: project.path,
+      };
+      owners.set(
+        canonicalLocalWorkspaceIdentity(project.projectId, project.path),
+        owner,
+      );
+      if (owners.has(project.path)) {
+        owners.delete(project.path);
+        ambiguous.add(project.path);
+      } else if (!ambiguous.has(project.path)) {
+        owners.set(project.path, owner);
+      }
+    }
+    const tasks = await Promise.all(
+      Object.entries(focus ?? {}).map(async ([key, taskId]) => ({
+        key,
+        taskId,
+        owner: z.uuid().safeParse(taskId).success
+          ? await options.resolveTaskPreference?.(actor, taskId)
+          : null,
+      })),
+    );
+    applyPreferenceFocus(owners, tasks, projectIds);
+    return owners;
+  };
+  const openProject = async (
+    actor: LocalActor,
+    inputPath: string,
+    projectId: string | undefined,
+    preset: "code" | "design",
+    directoryChoice?: "independent",
+  ): Promise<CodeUiWorkspace> => {
+    if (!isAbsolute(inputPath))
+      throw new CodeUiRepositoryError("not_found", "请选择绝对目录路径。");
+    const path = await realpath(inputPath).catch(throwDirectoryLookupError);
+    if (!(await stat(path)).isDirectory())
+      throw new CodeUiRepositoryError("not_found", "选中的路径不是目录。");
+    const instanceId = await options.instanceId(actor);
+    const key = projectId
+      ? JSON.stringify([instanceId, preset, projectId, path])
+      : null;
+    const existing = key ? opening.get(key) : undefined;
+    if (existing) return existing;
+    const openingProject = (async () => {
+      const projects = await options.listWorkspaces(actor);
+      if (projectId) {
+        const project = projects.find(
+          (entry) =>
+            entry.projectId === projectId &&
+            entry.path === path &&
+            enabledFor(entry, preset),
+        );
+        if (!project)
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "选择的 Code 项目与默认目录不匹配。",
+          );
+        return project;
+      }
+      const matches = projects.filter((entry) => entry.path === path);
+      if (matches.length && directoryChoice !== "independent")
+        throw new ProjectServiceError(
+          "project_directory_conflict",
+          "该目录已有项目，请选择复用或独立创建。",
+          409,
+        );
+      const created = await options.projects.createProject(actor, {
+        kind: preset,
+        name: basename(path) || path,
+        work_dir: path,
+        ...(directoryChoice ? { directory_choice: directoryChoice } : {}),
+      });
+      if (created.kind !== preset)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "Code 项目创建返回了错误类型。",
+        );
+      if (!created.workDir)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "项目工作目录未准备完成，请重试。",
+        );
+      return {
+        projectId: created.id,
+        kind: preset,
+        enabledModes: created.enabledModes.filter(
+          (mode) => mode === "code" || mode === "design",
+        ),
+        name: created.name,
+        path: created.workDir,
+        additionalDirectories: created.additionalDirectories,
+      };
+    })();
+    if (key) opening.set(key, openingProject);
+    try {
+      return await openingProject;
+    } finally {
+      if (key && opening.get(key) === openingProject) opening.delete(key);
+    }
+  };
+  const settingsFor = async (
+    actor: LocalActor,
+  ): Promise<z.infer<typeof appSettingsSchema>> => {
+    const [workspaces, stored] = await Promise.all([
+      options.listWorkspaces(actor),
+      options.preferences.readHumanPreferences(await options.instanceId(actor)),
+    ]);
+    const settings = appSettingsSchema.parse(stored);
+    const owners = await preferenceOwners(
+      actor,
+      workspaces,
+      settings.lastActiveTaskByWorkspace,
+    );
+    settings.recentProjects = normalizeRecentProjects(
+      (stored.recentProjects === undefined
+        ? workspaces.map((project) => project.path)
+        : settings.recentProjects
+      ).filter(
+        (path) =>
+          workspaces.some((project) => project.path === path) ||
+          owners.get(path)?.rootDirectory === path,
+      ),
+    );
+    const activeIndex = settings.lastActiveTabIndex;
+    const tabs = settings.lastWorkspaceSession.flatMap((entry, index) => {
+      const normalized = normalizePreferenceTab(entry, owners);
+      return normalized ? [{ entry: normalized, index }] : [];
+    });
+    settings.lastWorkspaceSession = tabs.map((tab) => tab.entry);
+    settings.lastActiveTabIndex = Math.max(
+      tabs.findIndex((tab) => tab.index === activeIndex),
+      0,
+    );
+    if (settings.lastActiveTaskByWorkspace)
+      settings.lastActiveTaskByWorkspace = normalizePreferenceFocus(
+        settings.lastActiveTaskByWorkspace,
+        owners,
+      );
+    return settings;
+  };
+  return {
+    async call(actor, service, method, args) {
+      if (service === "file" && method === "ensureConversationWorkspace") {
+        const { preset } = z
+          .object({ preset: z.enum(["code", "design"]).default("code") })
+          .parse(args[0] ?? {});
+        return { result: await ensureConversationWorkspace(actor, preset) };
+      }
+      if (service === "workspace" && method === "open") {
+        const params = z
+          .object({
+            path: z.string().min(1),
+            projectId: z.uuid().optional(),
+            preset: z.enum(["code", "design"]).default("code"),
+            directoryChoice: z.literal("independent").optional(),
+          })
+          .parse(args[0]);
+        if (params.projectId && params.directoryChoice)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "复用项目与独立创建不能同时选择。",
+          );
+        return {
+          result: await openProject(
+            actor,
+            params.path,
+            params.projectId,
+            params.preset,
+            params.directoryChoice,
+          ),
+        };
+      }
+      if (
+        service === "file" &&
+        method === "readdir" &&
+        args[0] &&
+        typeof args[0] === "object" &&
+        "humanPurpose" in args[0]
+      ) {
+        const params = directoryParams.parse(args[0]);
+        if (!isAbsolute(params.path))
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "目录选择器只接受绝对路径。",
+          );
+        const { path, children } = await readPickerDirectory(params.path);
+        const maxEntries = await options.maxEntries(actor);
+        const entries: FileEntry[] = [];
+        for (const entry of children) {
+          if (!params.includeHidden && entry.name.startsWith(".")) continue;
+          const child = join(path, entry.name);
+          const linked = entry.isSymbolicLink();
+          const isDirectory =
+            entry.isDirectory() ||
+            (linked && (await stat(child).catch(() => null))?.isDirectory());
+          if (!isDirectory) continue;
+          entries.push({
+            name: entry.name,
+            path: child,
+            type: "directory",
+            ...(linked ? { isSymbolicLink: true } : {}),
+          });
+          if (entries.length > maxEntries)
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "目录条目超过工作区配置上限，请输入更具体的目录。",
+            );
+        }
+        return { result: entries.sort((a, b) => a.name.localeCompare(b.name)) };
+      }
+      if (
+        service === "file" &&
+        (method === "createDefaultWorkspace" ||
+          method === "createScratchWorkspace")
+      ) {
+        const { preset } = z
+          .object({ preset: z.enum(["code", "design"]).default("code") })
+          .parse(args[0] ?? {});
+        const name =
+          method === "createScratchWorkspace"
+            ? z.object({ name: z.string().trim().min(1) }).parse(args[0]).name
+            : "新建 Code 项目";
+        const project = await options.projects.createProject(actor, {
+          kind: preset,
+          name,
+        });
+        if (project.kind !== preset)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "Code 项目创建类型不匹配。",
+          );
+        if (!project.workDir)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "项目工作目录未准备完成，请重试。",
+          );
+        return {
+          result: canonicalWorkspace({
+            projectId: project.id,
+            kind: preset,
+            enabledModes: project.enabledModes.filter(
+              (mode) => mode === "code" || mode === "design",
+            ),
+            name: project.name,
+            path: project.workDir,
+            additionalDirectories: project.additionalDirectories,
+          }),
+        };
+      }
+      if (service === "setting" && method === "get")
+        return { result: await settingsFor(actor) };
+      if (service === "setting" && method === "update") {
+        const patch = z.record(z.string(), z.unknown()).parse(args[0]);
+        const unsupported = Object.keys(patch).find(
+          (key) => !preferenceKeys.has(key),
+        );
+        if (unsupported)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            `当前宿主尚不支持设置：${unsupported}`,
+          );
+        const removeKeys = Object.keys(patch).filter(
+          (key) => removablePreferenceKeys.has(key) && patch[key] === "",
+        );
+        const effectivePatch = Object.fromEntries(
+          Object.entries(patch).filter(([key]) => !removeKeys.includes(key)),
+        );
+        const parsed = appSettingsSchema.parse({
+          ...appSettingsSchema.parse(
+            await options.preferences.readHumanPreferences(
+              await options.instanceId(actor),
+            ),
+          ),
+          ...effectivePatch,
+        });
+        const normalized = Object.fromEntries(
+          Object.keys(effectivePatch).map((key) => [
+            key,
+            parsed[key as keyof typeof parsed],
+          ]),
+        );
+        if (typeof parsed.httpProxy === "string" && parsed.httpProxy) {
+          // 保存期就校验：非法地址留到下次启动才炸会让用户打不开设置页。
+          let url: URL;
+          try {
+            url = new URL(parsed.httpProxy);
+          } catch {
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址不是合法 URL。",
+            );
+          }
+          if (url.protocol !== "http:" && url.protocol !== "https:")
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址只支持 http/https。",
+            );
+        }
+        if (
+          typeof parsed.httpProxyCaCertPath === "string" &&
+          parsed.httpProxyCaCertPath
+        ) {
+          if (!isAbsolute(parsed.httpProxyCaCertPath))
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "自定义 CA 证书路径必须是绝对路径。",
+            );
+          await access(parsed.httpProxyCaCertPath).catch(() => {
+            throw new CodeUiRepositoryError(
+              "not_found",
+              "自定义 CA 证书文件不可读，请检查路径。",
+            );
+          });
+        }
+        if ("messageStreamShowReasoning" in patch)
+          normalized.messageStreamShowReasoningMigrationInitialized =
+            parsed.messageStreamShowReasoningMigrationInitialized;
+        if ("locale" in patch && !("localePreference" in patch))
+          normalized.localePreference = parsed.locale;
+        const workspaces = await options.listWorkspaces(actor);
+        const owners = await preferenceOwners(
+          actor,
+          workspaces,
+          parsed.lastActiveTaskByWorkspace,
+        );
+        const referencedKeys: string[] = [];
+        const recentProjectIds: string[] = [];
+        if ("recentProjects" in normalized) {
+          for (const path of parsed.recentProjects) {
+            // 最近目录只记录路径，不从同目录项目中推断执行身份。
+            const projects = workspaces.filter(
+              (project) => project.path === path,
+            );
+            const owner = owners.get(path);
+            if (!projects.length && owner?.rootDirectory !== path)
+              throw new CodeUiRepositoryError(
+                "not_found",
+                "设置中的工作目录不属于当前工作区或已归档。",
+              );
+            recentProjectIds.push(
+              ...projects.map((project) => project.projectId),
+            );
+            if (owner?.rootDirectory === path)
+              recentProjectIds.push(owner.projectId);
+          }
+        }
+        if ("lastWorkspaceSession" in normalized) {
+          normalized.lastWorkspaceSession = parsed.lastWorkspaceSession.map(
+            (entry) => {
+              if (entry.kind !== "local")
+                throw new CodeUiRepositoryError(
+                  "not_found",
+                  "当前 Code 宿主尚未接通远程工作区。",
+                );
+              const tab = normalizePreferenceTab(entry, owners);
+              if (!tab)
+                throw new CodeUiRepositoryError(
+                  "not_found",
+                  "设置中的工作目录不属于当前工作区或已归档。",
+                );
+              referencedKeys.push(tab.workspaceIdentity);
+              return tab;
+            },
+          );
+        }
+        if ("lastActiveTaskByWorkspace" in normalized) {
+          const focus = parsed.lastActiveTaskByWorkspace ?? {};
+          for (const [key, taskId] of Object.entries(focus)) {
+            if (owners.get(key)?.taskId !== taskId)
+              throw new CodeUiRepositoryError(
+                "not_found",
+                "设置中的工作目录不属于当前工作区或已归档。",
+              );
+            referencedKeys.push(key);
+          }
+          normalized.lastActiveTaskByWorkspace = normalizePreferenceFocus(
+            focus,
+            owners,
+          );
+        }
+        if ("recentProjects" in normalized)
+          normalized.recentProjects = normalizeRecentProjects(
+            parsed.recentProjects,
+          );
+        const saved = await options.preferences.updateHumanPreferences(
+          await options.instanceId(actor),
+          normalized,
+          {
+            referencedProjectIds: [
+              ...recentProjectIds,
+              ...referencedKeys.flatMap((key) => {
+                const owner = owners.get(key);
+                return owner ? [owner.projectId] : [];
+              }),
+            ],
+            removeKeys,
+          },
+        );
+        if (!saved)
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "设置中的 Code 项目已归档，偏好未保存。",
+          );
+        await options.onPreferencesUpdated?.(await options.instanceId(actor), [
+          ...Object.keys(effectivePatch),
+          ...removeKeys,
+        ]);
+        return { result: undefined };
+      }
+      return null;
+    },
+  };
+}

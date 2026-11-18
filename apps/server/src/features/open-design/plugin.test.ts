@@ -1,0 +1,159 @@
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import Fastify from "fastify";
+import { describe, expect, it } from "vitest";
+
+import type { ServerEnv } from "../../config/env.js";
+import { composePlugins } from "../../kernel/compose.js";
+import {
+  createOpenDesignHostPlugin,
+  resolveOpenDesignComposeFile,
+} from "./plugin.js";
+
+/** 最小 env（open-design 插件不吃治理字段；对位 kernel.test 的夹具口径）。 */
+function makeEnv(dataDir: string): ServerEnv {
+  return {
+    agentBackendMode: "state",
+    agentModel: "test-model",
+    port: 0,
+    version: "test",
+    webOrigin: "http://localhost:3000",
+    // 自动配置会往数据目录落一把密钥：测试必须给独立目录，不碰本机真实目录。
+    desktopDataDir: dataDir,
+  } as unknown as ServerEnv;
+}
+
+/** 路由注册所需的最小服务替身（compose 的 overrides 入口，测试专用）。 */
+const serviceOverrides = {
+  localAccess: { authenticate: async () => true },
+  localInstance: { serviceActor: async () => ({}) },
+  modelProviders: {
+    listInstances: async () => [],
+    resolveCredentialsById: async () => [],
+  },
+  // PR-1 起插件声明依赖 designReview（同步到引擎的评审段数据源）；
+  // 单插件装配测试经 overrides 给桩，等价于真实 profile 里 designReviewPlugin 提供的 key。
+  designReview: {
+    listByProject: async () => ({ comments: [], annotations: [] }),
+  },
+};
+
+describe("源码态 compose 路径", () => {
+  it("指向仓库 docker/open-design", () => {
+    expect(existsSync(resolveOpenDesignComposeFile())).toBe(true);
+  });
+});
+
+const tempDataDir = (): string => mkdtempSync(join(tmpdir(), "kfw-od-data-"));
+
+const tempComposeFile = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "kfw-od-plugin-"));
+  const file = join(dir, "docker-compose.open-design.yml");
+  writeFileSync(file, "name: test\n");
+  return file;
+};
+
+const asFetch = (impl: unknown) => impl as unknown as typeof fetch;
+
+interface ComposeCall {
+  args: readonly string[];
+  env?: Record<string, string>;
+}
+
+function recordingRun(calls: ComposeCall[]) {
+  return async (
+    args: readonly string[],
+    options: { env?: Record<string, string>; timeoutMs?: number },
+  ) => {
+    calls.push({ args, ...(options.env ? { env: options.env } : {}) });
+    return { code: 0, stderr: "" };
+  };
+}
+
+async function assemble(input: {
+  frontendUrl?: string;
+  secret?: string;
+  calls: ComposeCall[];
+  dataDir?: string;
+}) {
+  const composeFile = tempComposeFile();
+  const dataDir = input.dataDir ?? tempDataDir();
+  const kernel = composePlugins(
+    makeEnv(dataDir),
+    [
+      createOpenDesignHostPlugin({
+        ...(input.frontendUrl ? { frontendUrl: input.frontendUrl } : {}),
+        ...(input.secret ? { secret: input.secret } : {}),
+        composeFile,
+        composeRun: recordingRun(input.calls),
+        fetchImpl: asFetch(async () => new Response("ok", { status: 200 })),
+      }),
+    ],
+    { app: Fastify(), overrides: serviceOverrides as never },
+  );
+  // 起栈是装配上的非阻塞副作用：让 promise 落定再断言命令序列
+  await new Promise((resolve) => setImmediate(resolve));
+  return { kernel, composeFile, dataDir };
+}
+
+describe("OpenDesign 宿主插件的伴随容器装配", () => {
+  it("伴随 origin：装配即 up -d 并注入成对 token，dispose 即 down", async () => {
+    const calls: ComposeCall[] = [];
+    const { kernel, composeFile } = await assemble({
+      frontendUrl: "http://127.0.0.1:7456",
+      secret: "paired-secret",
+      calls,
+    });
+    expect(calls[0]?.args).toEqual(["-f", composeFile, "up", "-d"]);
+    expect(calls[0]?.env).toEqual({ OD_API_TOKEN: "paired-secret" });
+
+    await kernel.dispose();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.args).toEqual(["-f", composeFile, "down"]);
+  });
+
+  it("托管但未配密钥：自动生成一把注入，并在同一数据目录复用", async () => {
+    const dataDir = tempDataDir();
+    const first: ComposeCall[] = [];
+    const { kernel: firstKernel } = await assemble({
+      frontendUrl: "http://127.0.0.1:7456",
+      calls: first,
+      dataDir,
+    });
+    const generated = first[0]?.env?.OD_API_TOKEN ?? "";
+    expect(generated.length).toBeGreaterThan(20);
+    await firstKernel.dispose();
+
+    const second: ComposeCall[] = [];
+    const { kernel: secondKernel } = await assemble({
+      frontendUrl: "http://127.0.0.1:7456",
+      calls: second,
+      dataDir,
+    });
+    // 复用同一把：换进程重启后 daemon 的出站凭证才不会失配
+    expect(second[0]?.env).toEqual({ OD_API_TOKEN: generated });
+    await secondKernel.dispose();
+  });
+
+  it("外部地址：装配与 dispose 全程一个 docker 命令都不发", async () => {
+    const calls: ComposeCall[] = [];
+    const { kernel } = await assemble({
+      frontendUrl: "http://od.example.com",
+      secret: "paired-secret",
+      calls,
+    });
+    await kernel.dispose();
+    expect(calls).toEqual([]);
+  });
+
+  it("什么都没配：自动按伴随 origin 承载并起栈（不再要用户配置）", async () => {
+    const calls: ComposeCall[] = [];
+    const { kernel, composeFile } = await assemble({ calls });
+    expect(calls[0]?.args).toEqual(["-f", composeFile, "up", "-d"]);
+    expect((calls[0]?.env?.OD_API_TOKEN ?? "").length).toBeGreaterThan(20);
+    await kernel.dispose();
+    expect(calls[1]?.args).toEqual(["-f", composeFile, "down"]);
+  });
+});

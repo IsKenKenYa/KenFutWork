@@ -12,10 +12,10 @@ if (
   !manifest.private ||
   manifest.type !== "module" ||
   typeof manifest.name !== "string" ||
-  !manifest.name.startsWith("@loomic/")
+  !manifest.name.startsWith("@kenfutwork/")
 ) {
   throw new Error(
-    "Task 1 app manifests must stay private, ESM, and scoped under @loomic/.",
+    "Task 1 app manifests must stay private, ESM, and scoped under @kenfutwork/.",
   );
 }
 
@@ -50,7 +50,7 @@ if (mode === "build") {
   const outputDir = path.join(cwd, "dist");
   await mkdir(outputDir, { recursive: true });
   await writeFile(
-    path.join(outputDir, ".loomic-build"),
+    path.join(outputDir, ".kenfutwork-build"),
     "Task 1 foundation build marker\n",
     "utf8",
   );

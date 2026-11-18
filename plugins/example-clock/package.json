@@ -1,11 +1,27 @@
 {
-  "name": "loomic-example-clock",
+  "name": "kenfutwork-example-clock",
   "version": "1.0.0",
-  "description": "Loomic 参考插件：一个双端兼容的 bundle（dsh + loomic），提供一个读取当前时间的工具。",
+  "description": "KenFutWork 参考插件：一个双端兼容的 bundle（dsh + kenfutwork），提供一个读取当前时间的工具。",
   "type": "module",
   "main": "index.js",
-  "files": ["index.js", "cordis.patch.yml", "README.md"],
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "assets/icon.svg"
+  ],
   "license": "GPL-3.0",
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
-  "loomic": { "bundle": { "patch": "./cordis.patch.yml" } }
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "示例时钟",
+    "assets": true,
+    "icon": "assets/icon.svg"
+  }
 }

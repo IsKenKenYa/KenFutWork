@@ -1,5 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
+import {
+  resolveGovernanceEnvOverrides,
+  resolveGovernanceNumber,
+} from "@kenfutwork/shared";
+import { prependRuntimePath } from "./runtime-path.js";
+
+export { prependRuntimePath } from "./runtime-path.js";
 
 /**
  * 随包分发的语言运行时（Node / Python / uv / JDK）。
@@ -12,7 +20,7 @@ import { join } from "node:path";
  * 而 CPython 发行版不自带 uv。
  *
  * 解析链（每个运行时独立）：
- *   `LOOMIC_{NODE,PYTHON,UV,JAVA}_BIN_DIR`（显式覆盖）→ 发布包内 `<exeDir>/runtime/<x>/…`
+ *   `KENFUTWORK_{NODE,PYTHON,UV,JAVA}_BIN_DIR`（显式覆盖）→ 发布包内 `<exeDir>/runtime/<x>/…`
  * 显式覆盖但目录不存在 = 配置错，**fail loud**；未捆绑则返回 undefined（属增强项，
  * 不阻断启动——宿主自带的 node/python/java 仍可用）。
  */
@@ -33,54 +41,107 @@ export interface RuntimeResolutionInput {
   exeDir: string;
   /** 注入以便测试。 */
   exists?: (path: string) => boolean;
+  /** 注入以便测试（缺省 process.platform）。 */
+  platform?: NodeJS.Platform;
 }
 
-/** 每个运行时在包内的相对布局与可执行文件名。 */
-const RUNTIME_LAYOUT: Record<
-  RuntimeName,
-  {
-    /** 包内相对根目录。 */
-    dir: string;
-    /** 运行时根内的 bin 相对路径（Windows 与 POSIX 同构，统一用 bin/ 或根）。 */
-    bin: string;
-    /** 用于判定「确实装了」的可执行文件名。 */
-    probe: string;
-    /** 环境变量覆盖名。 */
-    envKey: string;
-  }
-> = {
-  // Node 官方 zip 顶层就是 node.exe（fetch 脚本会把顶层目录拍平到 runtime/node）
+/** 单个运行时的包内布局与可执行体名。 */
+interface RuntimeLayout {
+  /** 包内相对根目录。 */
+  dir: string;
+  /** 运行时根内的 bin 相对路径。 */
+  bin: string;
+  /** 用于判定「确实装了」的可执行文件名（相对 bin 目录）。 */
+  probe: string;
+  /** 环境变量覆盖名。 */
+  envKey: string;
+}
+
+/**
+ * Windows 布局：node/uv 官方 zip 顶层就是 exe（fetch 拍平到 runtime/<x>）；
+ * python 官方发行版 exe 在根上；MinGit 可执行体在 cmd/ 下。
+ */
+const RUNTIME_LAYOUT_WIN: Record<RuntimeName, RuntimeLayout> = {
   node: {
     dir: "node",
     bin: "",
     probe: "node.exe",
-    envKey: "LOOMIC_NODE_BIN_DIR",
+    envKey: "KENFUTWORK_NODE_BIN_DIR",
   },
   python: {
     dir: "python",
     bin: "",
     probe: "python.exe",
-    envKey: "LOOMIC_PYTHON_BIN_DIR",
+    envKey: "KENFUTWORK_PYTHON_BIN_DIR",
   },
-  // uv 发布 zip 顶层是 uv.exe / uvx.exe（fetch 脚本拍平到 runtime/uv）
-  uv: { dir: "uv", bin: "", probe: "uvx.exe", envKey: "LOOMIC_UV_BIN_DIR" },
+  uv: { dir: "uv", bin: "", probe: "uvx.exe", envKey: "KENFUTWORK_UV_BIN_DIR" },
   java: {
     dir: "jdk",
     bin: "bin",
     probe: "java.exe",
-    envKey: "LOOMIC_JAVA_BIN_DIR",
+    envKey: "KENFUTWORK_JAVA_BIN_DIR",
   },
-  // MinGit 的可执行体在 cmd/ 下（另有 mingw64/bin，二者都含 git.exe；取 cmd 更稳）
   git: {
     dir: "git",
     bin: "cmd",
     probe: "git.exe",
-    envKey: "LOOMIC_GIT_BIN_DIR",
+    envKey: "KENFUTWORK_GIT_BIN_DIR",
   },
 };
 
+/**
+ * macOS/Linux 布局（darwin 资产由 fetch-runtimes 的 darwin 分支下载）：
+ * - python-build-standalone 的 install_only.tar.gz 解出 `python/bin/python3`；
+ * - uv 的 tar.gz 顶层就是 uv / uvx（fetch 拍平）；
+ * - Adoptium 的 mac JRE 是 `jdk-21…/Contents/Home/bin/java`（顶层目录被拍平，
+ *   故 java 的根是 Contents/Home，JAVA_HOME 必须指到那里而非 jdk/）；
+ * - git 不随包（宿主 git 优先，见 hasSystemGit），留个宽松 probe 作兜底。
+ */
+const RUNTIME_LAYOUT_POSIX: Record<RuntimeName, RuntimeLayout> = {
+  // darwin tarball 拍平后是 bin/node（非 Windows 的根上 node.exe）
+  node: {
+    dir: "node",
+    bin: "bin",
+    probe: "node",
+    envKey: "KENFUTWORK_NODE_BIN_DIR",
+  },
+  python: {
+    dir: "python",
+    bin: "bin",
+    probe: "python3",
+    envKey: "KENFUTWORK_PYTHON_BIN_DIR",
+  },
+  uv: { dir: "uv", bin: "", probe: "uvx", envKey: "KENFUTWORK_UV_BIN_DIR" },
+  java: {
+    dir: "jdk",
+    bin: join("Contents", "Home", "bin"),
+    probe: "java",
+    envKey: "KENFUTWORK_JAVA_BIN_DIR",
+  },
+  git: { dir: "git", bin: "", probe: "git", envKey: "KENFUTWORK_GIT_BIN_DIR" },
+};
+
+/** 每个运行时在指定平台的包内布局（此前写死 .exe，mac 随包运行时全部探测不到）。 */
+export function runtimeLayout(
+  name: RuntimeName,
+  platform: NodeJS.Platform,
+): RuntimeLayout {
+  return (platform === "win32" ? RUNTIME_LAYOUT_WIN : RUNTIME_LAYOUT_POSIX)[
+    name
+  ];
+}
+
 function dirOf(input: { layoutBin: string; base: string }): string {
   return input.layoutBin ? join(input.base, input.layoutBin) : input.base;
+}
+
+/** 从 bin 目录回推运行时根（JAVA_HOME 用）：bin 有子路径时只剥**一个**末段——
+ * win jdk/bin → jdk/；mac jdk/Contents/Home/bin → jdk/Contents/Home/（JAVA_HOME
+ * 必须指到 Contents/Home，剥多了工具链全找不到）。bin 为空（node/uv 顶层形态）= 原样。 */
+function homeOf(binDir: string, layoutBin: string): string {
+  if (!layoutBin) return binDir;
+  const parent = dirname(binDir);
+  return parent === binDir ? binDir : parent;
 }
 
 /** 解析单个运行时；未捆绑返回 null，显式配置错误抛错。 */
@@ -88,7 +149,7 @@ export function resolveRuntime(
   name: RuntimeName,
   input: RuntimeResolutionInput,
 ): RuntimeRoot | null {
-  const layout = RUNTIME_LAYOUT[name];
+  const layout = runtimeLayout(name, input.platform ?? process.platform);
   const exists = input.exists ?? existsSync;
 
   const explicit = input.env[layout.envKey]?.trim();
@@ -98,11 +159,7 @@ export function resolveRuntime(
         `${layout.envKey} 指向的目录里找不到 ${layout.probe}：${explicit}（fail loud，避免静默回落宿主运行时）。`,
       );
     }
-    const homeDir =
-      layout.bin && explicit.endsWith(layout.bin)
-        ? explicit.slice(0, explicit.length - layout.bin.length - 1)
-        : explicit;
-    return { name, binDir: explicit, homeDir };
+    return { name, binDir: explicit, homeDir: homeOf(explicit, layout.bin) };
   }
 
   const base = join(input.exeDir, "runtime", layout.dir);
@@ -110,7 +167,7 @@ export function resolveRuntime(
   if (!exists(join(binDir, layout.probe))) {
     return null;
   }
-  return { name, binDir, homeDir: base };
+  return { name, binDir, homeDir: homeOf(binDir, layout.bin) };
 }
 
 export interface ResolvedRuntimes {
@@ -135,20 +192,80 @@ export interface ResolvedRuntimes {
  *
  * 纯函数（注入 exists）便于测试；`pathValue` 为 undefined 视为「本地没有」。
  */
-export function hasSystemGit(options: {
+export interface SystemGitSearchInput {
   path?: string | undefined;
   exists?: (path: string) => boolean;
+  platform?: NodeJS.Platform;
   separator?: string;
   executable?: string;
-}): boolean {
+}
+
+function findSystemGitExecutable(options: SystemGitSearchInput): string | null {
   const exists = options.exists ?? existsSync;
-  const executable = options.executable ?? "git.exe";
-  const separator = options.separator ?? ";";
-  return (options.path ?? "")
+  // 探测参数按平台取默认：Windows 是 git.exe + `;` 分隔，POSIX 是 git + `:`
+  // （此前写死 Windows 参数，macOS/Linux 上永远探不到宿主 git——检查点与 git
+  // 面板在非 Windows 桌面/自托管形态全部误判 unavailable，2026-09-22 真机抓到）。
+  const isWindows = (options.platform ?? process.platform) === "win32";
+  const executable = options.executable ?? (isWindows ? "git.exe" : "git");
+  const separator = options.separator ?? (isWindows ? ";" : ":");
+  const joinFor = separator === ":" ? posix.join : win32.join;
+  const directories = (options.path ?? "")
     .split(separator)
     .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .some((dir) => exists(join(dir, executable)));
+    .filter((part) => part.length > 0);
+  for (const directory of directories) {
+    const candidate = joinFor(directory, executable);
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function hasSystemGit(options: SystemGitSearchInput): boolean {
+  return findSystemGitExecutable(options) !== null;
+}
+
+/** 宿主启动期解析Apple启动器；Task只消费真实Git，不能在沙箱里调用开发工具selector。 */
+export function resolveSystemGitExecutable(
+  options: SystemGitSearchInput & {
+    env?: Record<string, string | undefined>;
+    /** 测试只替换Apple工具查询，PATH搜索仍走真实实现。 */
+    resolveAppleGit?: (timeoutMs: number) => string;
+  },
+): string | null {
+  const executable = findSystemGitExecutable(options);
+  if (
+    (options.platform ?? process.platform) !== "darwin" ||
+    executable?.replaceAll("\\", "/") !== "/usr/bin/git"
+  )
+    return executable;
+  // 宿主启动探测继承OS环境，再应用显式覆盖；这不是Task子进程的环境授权。
+  const env = { ...process.env, ...options.env };
+  const timeoutMs = resolveGovernanceNumber(
+    "localServiceStartupTimeoutMs",
+    undefined,
+    resolveGovernanceEnvOverrides(env),
+  );
+  const resolveAppleGit =
+    options.resolveAppleGit ??
+    ((budgetMs: number) =>
+      execFileSync("/usr/bin/xcrun", ["--find", "git"], {
+        encoding: "utf8",
+        timeout: budgetMs,
+        env,
+      }));
+  try {
+    const actual = resolveAppleGit(timeoutMs).trim();
+    if (
+      !isAbsolute(actual) ||
+      basename(actual) !== "git" ||
+      actual === "/usr/bin/git" ||
+      !(options.exists ?? existsSync)(actual)
+    )
+      return null;
+    return actual;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveRuntimes(
@@ -159,12 +276,14 @@ export function resolveRuntimes(
 ): ResolvedRuntimes {
   const roots: RuntimeRoot[] = [];
   const names: RuntimeName[] = ["node", "python", "uv", "java"];
-  // git 优先本地：宿主已有 git 就不注入打包的（显式 LOOMIC_GIT_BIN_DIR 仍优先，走同一解析）
-  const gitExplicit = input.env[RUNTIME_LAYOUT.git.envKey]?.trim();
+  // git 优先本地：宿主已有 git 就不注入打包的（显式 KENFUTWORK_GIT_BIN_DIR 仍优先，走同一解析）
+  const gitLayout = runtimeLayout("git", input.platform ?? process.platform);
+  const gitExplicit = input.env[gitLayout.envKey]?.trim();
   if (
     gitExplicit ||
     !hasSystemGit({
       path: input.systemPath ?? process.env.PATH,
+      platform: input.platform ?? process.platform,
       ...(input.exists ? { exists: input.exists } : {}),
     })
   ) {
@@ -183,19 +302,6 @@ export function resolveRuntimes(
     javaHome: java?.homeDir,
     bundled: roots.map((root) => root.name),
   };
-}
-
-/** 把运行时 bin 目录前置到既有 PATH（去重：已含则不加）。 */
-export function prependRuntimePath(
-  existingPath: string | undefined,
-  additions: readonly string[],
-  separator = ";",
-): string {
-  const parts = (existingPath ?? "")
-    .split(separator)
-    .filter((part) => part.length > 0);
-  const missing = additions.filter((dir) => !parts.includes(dir));
-  return [...missing, ...parts].join(separator);
 }
 
 export interface RuntimeEnvOptions {

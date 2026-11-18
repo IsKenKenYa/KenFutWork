@@ -1,20 +1,36 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolRegistry } from "../../kernel/types.js";
-import { type McpClientLike, registerMcpServerTools } from "./mcp-tools.js";
+import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
+import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
+import {
+  assertMcpContribution,
+  type McpClientLike,
+  type McpServerToolLike,
+  mcpConfigurationVersion,
+  registerMcpServerTools,
+} from "./mcp-tools.js";
 import type {
+  McpServerCreateRaw,
   McpServerPatch,
   McpServerStore,
-  McpServerUpsertInput,
   PublicMcpServer,
+  StoredMcpServer,
 } from "./server-store.js";
+import {
+  mcpFailure,
+  refreshMcpScope,
+  taskMcpContext,
+} from "./task-mcp-context.js";
 
 /**
  * MCP server 运行态管理（连接生命周期 + 配置变更后的收敛）。
  *
- * 此前 MCP 配置只能来自 `LOOMIC_MCP_SERVERS` 环境变量，连接在启动时一次性完成，
+ * 此前 MCP 配置只能来自 `KENFUTWORK_MCP_SERVERS` 环境变量，连接在启动时一次性完成，
  * 界面上既不能增删也不能重连。本服务把「连接」变成可增删改的运行态：
  *
  * - 来源两种：`env`（环境变量，只读，UI 标注来源）与 `managed`（库内配置，可增删改）；
@@ -29,22 +45,30 @@ export type McpServerStatusState = "connected" | "error" | "disabled";
 export interface McpServerStatus {
   id: string | null;
   name: string;
-  source: "env" | "managed";
+  source: "env" | "managed" | "plugin";
   enabled: boolean;
   status: McpServerStatusState;
+  kind: "stdio" | "http";
   command: string;
   args: string[];
+  /** http 类型的远程端点 URL（stdio 为 null）。 */
+  url: string | null;
   envKeys: string[];
+  /** http 类型的自定义请求头键名（值不外发）。 */
+  headerKeys: string[];
   toolCount: number;
   /** 上次连接失败原因（status=error 时有值）。 */
   error: string | null;
 }
 
 export interface McpService {
+  /** 仅供已授权本机设置编辑器；普通目录仍使用listStatuses。 */
+  readSettingsConfigurations(): Promise<McpSettingsConfiguration[]>;
+  computerUseConnections(): Promise<ComputerUseMcpConnection[]>;
   listStatuses(): Promise<McpServerStatus[]>;
   /** 启动期连接：环境变量 + 库内启用项。 */
   connectAll(): Promise<void>;
-  create(input: McpServerUpsertInput): Promise<PublicMcpServer>;
+  create(input: McpServerCreateRaw): Promise<PublicMcpServer>;
   update(id: string, patch: McpServerPatch): Promise<PublicMcpServer | null>;
   setEnabled(id: string, enabled: boolean): Promise<PublicMcpServer | null>;
   remove(id: string): Promise<number>;
@@ -53,81 +77,248 @@ export interface McpService {
   shutdown(): Promise<void>;
 }
 
+export interface McpSettingsConfiguration {
+  id: string | null;
+  name: string;
+  source: "env" | "managed" | "plugin";
+  enabled: boolean;
+  kind: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string | null;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+}
+
 interface Connection {
   client: Client;
   disposeTools: () => void;
   toolCount: number;
+  call: McpClientLike["callTool"];
+}
+
+export type McpConnectionConfiguration = Pick<
+  McpSettingsConfiguration,
+  "name" | "kind" | "command" | "url" | "args" | "env" | "headers"
+>;
+
+/** 插件贡献的 MCP server（只读；启停随插件安装态，不进 mcp_servers 表）。 */
+export interface McpPluginServerConfig {
+  pluginId: string;
+  name: string;
+  kind: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string | null;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  enabled: boolean;
 }
 
 export function createMcpService(options: {
   env: ServerEnv;
   registry: ToolRegistry;
   store: McpServerStore;
+  /** 已启用插件声明的 MCP server（文件贡献，只读）。 */
+  pluginServers?: () => Promise<McpPluginServerConfig[]>;
+  resolveTimeoutMs?: () => Promise<number>;
+  executeTool?: (
+    source: McpConnectionConfiguration,
+    tool: McpServerToolLike,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+    remoteCall: () => Promise<unknown>,
+  ) => Promise<unknown>;
+  onDisconnect?: (name: string) => Promise<void>;
 }): McpService {
   /** name → 已连接（含工具注销器）。 */
   const connections = new Map<string, Connection>();
   /** name → 上次失败原因（连接成功时清除）。 */
   const failures = new Map<string, string>();
+  const pending = new Map<string, Promise<void>>();
+  const initializing = new Set<Client>();
+  /** 已经自动重启过一次的条目；再次掉线只报错，避免崩溃循环。 */
+  const autoRestartBlocked = new Set<string>();
+  let closed = false;
+  const ensureOpen = () => {
+    if (closed) throw new Error("MCP服务已关闭，禁止迟到连接或配置变更。");
+  };
+  const requestOptions = async (signal?: AbortSignal) => {
+    const timeout =
+      (await options.resolveTimeoutMs?.()) ??
+      AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+    return { timeout, maxTotalTimeout: timeout, ...(signal ? { signal } : {}) };
+  };
 
   function envServers() {
     return options.env.mcpServers ?? [];
   }
 
+  async function pluginServers() {
+    return (await options.pluginServers?.()) ?? [];
+  }
+
   async function connect(
     name: string,
-    command: string,
-    args: string[],
-    env: Record<string, string>,
+    spec: {
+      kind: "stdio" | "http";
+      command: string;
+      url: string | null;
+      args: string[];
+      env: Record<string, string>;
+      headers: Record<string, string>;
+    },
   ) {
+    ensureOpen();
     await disconnect(name);
+    const mcpClient = new Client({
+      name: "kenfutwork-server",
+      version: options.env.version,
+    });
+    let closedDuringConnect = false;
+    mcpClient.onclose = () => {
+      closedDuringConnect = true;
+      const connection = connections.get(name);
+      if (connection?.client !== mcpClient) return;
+      connections.delete(name);
+      connection.disposeTools();
+      void options.onDisconnect?.(name).catch((error: unknown) => {
+        console.warn(`[mcp] ${name} Task连接停止失败：`, error);
+      });
+      if (closed) return;
+      // 掉线自动重启一次；重启后仍掉线就停下，避免守护进程反复拉起。
+      // 走 reconcile 而不是直接 connect：重启前重读配置，用户禁用或改配置以库内为准。
+      if (autoRestartBlocked.has(name)) {
+        failures.set(name, "MCP连接断开，自动重启未恢复，请在设置里重连。");
+        return;
+      }
+      autoRestartBlocked.add(name);
+      failures.delete(name);
+      void reconcile({ name, ...spec, enabled: true }).catch(
+        (error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          failures.set(name, message);
+          console.warn(`[mcp] ${name} 自动重连失败：`, message);
+        },
+      );
+    };
+    initializing.add(mcpClient);
     try {
-      const transport = new StdioClientTransport({
-        command,
-        args,
-        env,
-      });
-      const mcpClient = new Client({
-        name: "loomic-server",
-        version: options.env.version,
-      });
-      await mcpClient.connect(transport);
+      if (spec.kind === "http" && spec.url) {
+        const url = new URL(spec.url);
+        // 自定义请求头（如 HA 的 Authorization）在 Streamable HTTP 与 SSE 回退两条
+        // 路径上都必须带——否则 401 会让整个 http 连接失败。
+        const transportOptions =
+          Object.keys(spec.headers).length > 0
+            ? { requestInit: { headers: spec.headers } }
+            : undefined;
+        try {
+          await mcpClient.connect(
+            new StreamableHTTPClientTransport(
+              url,
+              transportOptions,
+            ) as Parameters<Client["connect"]>[0],
+            await requestOptions(),
+          );
+        } catch (streamableError) {
+          ensureOpen();
+          try {
+            closedDuringConnect = false;
+            await mcpClient.connect(
+              new SSEClientTransport(url, transportOptions),
+              await requestOptions(),
+            );
+          } catch {
+            throw streamableError;
+          }
+        }
+      } else {
+        await mcpClient.connect(
+          new StdioClientTransport({
+            command: spec.command,
+            args: spec.args,
+            env: spec.env,
+          }),
+          await requestOptions(),
+        );
+      }
       const client: McpClientLike = {
         listTools: async () => {
-          const result = await mcpClient.listTools();
+          const result = await mcpClient.listTools(
+            undefined,
+            await requestOptions(),
+          );
           return { tools: result.tools };
         },
-        callTool: async (callArgs) =>
-          await mcpClient.callTool({
-            name: callArgs.name,
-            ...(callArgs.arguments ? { arguments: callArgs.arguments } : {}),
-          }),
+        callTool: async (callArgs, signal) =>
+          await mcpClient.callTool(
+            {
+              name: callArgs.name,
+              ...(callArgs.arguments ? { arguments: callArgs.arguments } : {}),
+            },
+            undefined,
+            await requestOptions(signal),
+          ),
       };
       const { tools } = await client.listTools();
+      ensureOpen();
+      if (closedDuringConnect) throw new Error("MCP握手期间连接已经关闭。");
+      const source = structuredClone({ ...spec, name });
+      const taskClient: McpClientLike = {
+        listTools: client.listTools,
+        callTool: async (args, signal, context) => {
+          if (!context || !options.executeTool)
+            throw new Error("MCP调用缺少Task执行接线，请重启应用。");
+          await refreshMcpScope(taskMcpContext(context));
+          const metadata = tools.find((tool) => tool.name === args.name);
+          if (!metadata || connections.get(name)?.client !== mcpClient)
+            throw new Error("MCP工具或连接已改变，请重新发起调用。");
+          assertMcpContribution(
+            options.registry,
+            `mcp:instance:mcp__${name}__${metadata.name}`,
+            context,
+          );
+          return options.executeTool(
+            source,
+            metadata,
+            args.arguments ?? {},
+            context,
+            () => client.callTool(args, signal),
+          );
+        },
+      };
       const disposeTools = registerMcpServerTools(
         options.registry,
         name,
         tools,
-        client,
+        taskClient,
+        mcpConfigurationVersion(source),
       );
       connections.set(name, {
         client: mcpClient,
         disposeTools,
         toolCount: tools.length,
+        call: taskClient.callTool,
       });
       failures.delete(name);
       console.log(
         `[mcp] server ${name} connected, ${tools.length} tools registered.`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      await mcpClient.close().catch(() => {});
+      const message = mcpFailure(error, spec.env, "mcp_connect_failed").message;
       failures.set(name, message);
       console.warn(`[mcp] server ${name} 连接失败，跳过其工具：${message}`);
+    } finally {
+      initializing.delete(mcpClient);
     }
   }
 
   async function disconnect(name: string) {
     const connection = connections.get(name);
     if (!connection) {
+      await options.onDisconnect?.(name);
       return;
     }
     connections.delete(name);
@@ -136,35 +327,59 @@ export function createMcpService(options: {
     } catch (error) {
       console.warn(`[mcp] ${name} 工具注销失败：`, error);
     }
-    try {
-      await connection.client.close();
-    } catch (error) {
-      console.warn(`[mcp] ${name} 连接关闭失败：`, error);
-    }
+    await Promise.all([
+      options.onDisconnect?.(name),
+      connection.client
+        .close()
+        .catch((error: unknown) =>
+          console.warn(`[mcp] ${name} 连接关闭失败：`, error),
+        ),
+    ]);
   }
 
   async function reconcile(server: {
     name: string;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     env: Record<string, string>;
+    headers: Record<string, string>;
     enabled: boolean;
   }) {
-    if (!server.enabled) {
-      await disconnect(server.name);
-      return;
-    }
-    await connect(server.name, server.command, server.args, server.env);
+    ensureOpen();
+    const prior = pending.get(server.name) ?? Promise.resolve();
+    const next = prior
+      .catch(() => {})
+      .then(async () => {
+        ensureOpen();
+        const current = (await effectiveServers()).find(
+          (candidate) => candidate.name === server.name,
+        );
+        if (!current?.enabled) {
+          await disconnect(server.name);
+          return;
+        }
+        await connect(current.name, current);
+      });
+    const tracked = next.finally(() => {
+      if (pending.get(server.name) === tracked) pending.delete(server.name);
+    });
+    pending.set(server.name, tracked);
+    await tracked;
   }
 
   async function toStatus(server: {
     id: string | null;
     name: string;
-    source: "env" | "managed";
+    source: "env" | "managed" | "plugin";
     enabled: boolean;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     envKeys: string[];
+    headerKeys: string[];
   }): Promise<McpServerStatus> {
     const connection = connections.get(server.name);
     const failure = failures.get(server.name);
@@ -181,7 +396,7 @@ export function createMcpService(options: {
     };
   }
 
-  /** 合并来源：库内（managed）优先，环境变量补充未重名的项。 */
+  /** 合并来源：库内（managed）优先，环境变量次之，启用插件贡献的同名项最后。 */
   async function effectiveServers() {
     const managed = await options.store.list();
     const managedNames = new Set(managed.map((server) => server.name));
@@ -190,19 +405,98 @@ export function createMcpService(options: {
       .map((server) => ({
         id: null,
         name: server.name,
+        kind: "stdio" as const,
         command: server.command,
+        url: null,
         args: server.args ?? [],
         env: server.env ?? {},
+        headers: {},
         enabled: true,
         source: "env" as const,
+      }));
+    const takenNames = new Set([
+      ...managedNames,
+      ...fromEnv.map((server) => server.name),
+    ]);
+    const fromPlugin = (await pluginServers())
+      .filter((server) => !takenNames.has(server.name))
+      .map((server) => ({
+        id: null,
+        name: server.name,
+        kind: server.kind,
+        command: server.command,
+        url: server.url,
+        args: server.args,
+        env: server.env,
+        headers: server.headers,
+        enabled: server.enabled,
+        source: "plugin" as const,
       }));
     return [
       ...managed.map((server) => ({ ...server, source: "managed" as const })),
       ...fromEnv,
+      ...fromPlugin,
     ];
   }
 
+  /** 公开形态投影：env 与 headers 的**值**绝不下发，只给键名。 */
+  function publicServer(server: StoredMcpServer): PublicMcpServer {
+    const { env: _env, headers: _headers, ...rest } = server;
+    return {
+      ...rest,
+      envKeys: Object.keys(server.env),
+      headerKeys: Object.keys(server.headers),
+    };
+  }
+
   return {
+    async readSettingsConfigurations() {
+      ensureOpen();
+      return (await effectiveServers()).map((server) => ({
+        id: server.id,
+        name: server.name,
+        source: server.source,
+        enabled: server.enabled,
+        kind: server.kind,
+        command: server.command,
+        args: [...server.args],
+        url: server.url,
+        env: { ...server.env },
+        headers: { ...server.headers },
+      }));
+    },
+    async computerUseConnections() {
+      const statuses = await this.listStatuses();
+      return [...connections].flatMap(([name, connection]) => {
+        const capability = connection.client.getServerCapabilities()
+          ?.experimental?.["kenfutwork.computer-use"] as
+          | { version?: number }
+          | undefined;
+        if (capability?.version !== 1) return [];
+        const status = statuses.find((row) => row.name === name);
+        return [
+          {
+            id: status?.id ?? `env:${name}`,
+            name,
+            call: async (
+              tool: string,
+              args: Record<string, unknown>,
+              context: ToolExecutionContext,
+            ) => {
+              ensureOpen();
+              context.signal?.throwIfAborted();
+              if (connections.get(name) !== connection)
+                throw new Error("所选桌面MCP连接已断开或被替换，请重新选择");
+              return connection.call(
+                { name: tool, arguments: args },
+                context.signal,
+                context,
+              );
+            },
+          },
+        ];
+      });
+    },
     async listStatuses() {
       const servers = await effectiveServers();
       return Promise.all(
@@ -212,9 +506,12 @@ export function createMcpService(options: {
             name: server.name,
             source: server.source,
             enabled: server.enabled,
+            kind: server.kind,
             command: server.command,
+            url: server.url,
             args: server.args,
             envKeys: Object.keys(server.env),
+            headerKeys: Object.keys(server.headers),
           }),
         ),
       );
@@ -231,6 +528,7 @@ export function createMcpService(options: {
         const servers = await effectiveServers();
         for (const server of servers) {
           try {
+            autoRestartBlocked.delete(server.name);
             await reconcile(server);
           } catch (error) {
             const message =
@@ -249,51 +547,68 @@ export function createMcpService(options: {
       }
     },
 
-    async create(input) {
+    async create(rawInput) {
+      ensureOpen();
+      const kind = rawInput.kind ?? "stdio";
+      const input = {
+        ...rawInput,
+        kind,
+        command: kind === "http" ? "" : (rawInput.command ?? ""),
+        url: kind === "http" ? (rawInput.url ?? null) : null,
+        headers: kind === "http" ? (rawInput.headers ?? {}) : {},
+      };
       const created = await options.store.create(input);
+      autoRestartBlocked.delete(created.name);
       await reconcile(created);
-      // 回读公开形态（env 值不下发）
-      const { env: _env, ...rest } = created;
-      return { ...rest, envKeys: Object.keys(created.env) };
+      // 回读公开形态（env 与 headers 的值都不下发）
+      return publicServer(created);
     },
 
     async update(id, patch) {
+      ensureOpen();
       const updated = await options.store.update(id, patch);
       if (!updated) {
         return null;
       }
+      autoRestartBlocked.delete(updated.name);
       await reconcile(updated);
-      const { env: _env, ...rest } = updated;
-      return { ...rest, envKeys: Object.keys(updated.env) };
+      return publicServer(updated);
     },
 
     async setEnabled(id, enabled) {
+      ensureOpen();
       const updated = await options.store.setEnabled(id, enabled);
       if (!updated) {
         return null;
       }
+      autoRestartBlocked.delete(updated.name);
       await reconcile(updated);
-      const { env: _env, ...rest } = updated;
-      return { ...rest, envKeys: Object.keys(updated.env) };
+      return publicServer(updated);
     },
 
     async remove(id) {
+      ensureOpen();
       const stored = (await options.store.list()).find(
         (server) => server.id === id,
       );
+      const removed = await options.store.remove(id);
       if (stored) {
-        await disconnect(stored.name);
+        autoRestartBlocked.delete(stored.name);
+        await reconcile({ ...stored, enabled: false });
       }
-      return options.store.remove(id);
+      return removed;
     },
 
     async reconnect(idOrName) {
-      // 库内条目按 id 定位；环境变量条目没有 id（只读），允许按名称重连
+      ensureOpen();
+      // 库内条目按 id 定位；env / plugin 条目没有 id（只读），允许按名称重连
       const statuses = await this.listStatuses();
       const target =
         statuses.find((status) => status.id === idOrName) ??
         statuses.find(
-          (status) => status.source === "env" && status.name === idOrName,
+          (status) =>
+            (status.source === "env" || status.source === "plugin") &&
+            status.name === idOrName,
         );
       if (!target) {
         return null;
@@ -304,20 +619,39 @@ export function createMcpService(options: {
       const envFallback = envServers().find(
         (server) => server.name === target.name,
       );
+      const pluginFallback = (await pluginServers()).find(
+        (server) => server.name === target.name,
+      );
       const config =
         managed ??
         (envFallback
           ? {
               name: envFallback.name,
+              kind: "stdio" as const,
               command: envFallback.command,
+              url: null,
               args: envFallback.args ?? [],
               env: envFallback.env ?? {},
+              headers: {},
               enabled: true,
+            }
+          : null) ??
+        (pluginFallback
+          ? {
+              name: pluginFallback.name,
+              kind: pluginFallback.kind,
+              command: pluginFallback.command,
+              url: pluginFallback.url,
+              args: pluginFallback.args,
+              env: pluginFallback.env,
+              headers: pluginFallback.headers,
+              enabled: pluginFallback.enabled,
             }
           : null);
       if (!config) {
         return null;
       }
+      autoRestartBlocked.delete(target.name);
       await reconcile(config);
       const refreshed = (await this.listStatuses()).find(
         (status) =>
@@ -328,6 +662,11 @@ export function createMcpService(options: {
     },
 
     async shutdown() {
+      closed = true;
+      await Promise.allSettled(
+        [...initializing].map((client) => client.close()),
+      );
+      await Promise.allSettled([...pending.values()]);
       for (const name of [...connections.keys()]) {
         await disconnect(name);
       }

@@ -1,0 +1,28 @@
+diff --git a/crates/ui-egui/src/i18n/tests.rs b/crates/ui-egui/src/i18n/tests.rs
+index c05e465..a4740d3 100644
+--- a/crates/ui-egui/src/i18n/tests.rs
++++ b/crates/ui-egui/src/i18n/tests.rs
+@@ -136,0 +137,9 @@
++#[test]
++fn chinese_result_counts_use_the_catalog_template() {
++    needs_catalogs!();
++    for (code, expected) in [("zh-hans", "0 个结果"), ("zh-hant", "0 個結果")] {
++        assert_eq!(fmt(tr(lang(code), "{n} results"), &[("n", "0")]), expected);
++    }
++    assert_eq!(fmt(tr(Lang::EN, "{n} results"), &[("n", "0")]), "0 results");
++}
++
+diff --git a/crates/ui-egui/src/panes.rs b/crates/ui-egui/src/panes.rs
+index 8cd3f86..fef0252 100644
+--- a/crates/ui-egui/src/panes.rs
++++ b/crates/ui-egui/src/panes.rs
+@@ -169,7 +169,8 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
+         }
+         "results" => {
+             let results = app.session.find.results.clone();
+-            ui.label(egui::RichText::new(format!("{} results", results.len())).small().weak());
++            let count = crate::i18n::fmt(tl!("{n} results"), &[("n", &results.len().to_string())]);
++            ui.label(egui::RichText::new(count).small().weak());
+             for (a, b) in results.iter().take(500) {
+                 let Some(p) = app.session.doc.para_at(a) else { continue };
+                 let from = p.clamp(a.off.saturating_sub(30));

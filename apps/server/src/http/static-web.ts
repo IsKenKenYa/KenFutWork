@@ -1,9 +1,9 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, isAbsolute, join, normalize, sep } from "node:path";
+import { basename, extname, isAbsolute, join, normalize, sep } from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 /**
- * 静态 UI 托管（自托管/桌面包形态）：LOOMIC_WEB_DIST 指向 Next 静态导出目录时，
+ * 静态 UI 托管（自托管/桌面包形态）：KENFUTWORK_WEB_DIST 指向 Next 静态导出目录时，
  * server 直接托管前端（单一入口，无需额外静态服务器）。
  * 解析顺序：精确文件 → `<path>.html`（Next 导出约定）→ 目录 index.html → 404.html。
  */
@@ -43,7 +43,7 @@ export function registerStaticWebRoutes(
     !statSync(distDir).isDirectory()
   ) {
     throw new Error(
-      `LOOMIC_WEB_DIST 目录无效：${options.distDir}（启动期 fail loud）`,
+      `KENFUTWORK_WEB_DIST 目录无效：${options.distDir}（启动期 fail loud）`,
     );
   }
 
@@ -61,13 +61,28 @@ export function registerStaticWebRoutes(
 
   const sendFile = (reply: FastifyReply, file: string, code = 200) => {
     const isHtml = extname(file) === ".html";
+    // HTML 与品牌图必须 no-cache：WebView2 对 max-age 的图缓存一天且跨重装保留，
+    // 换标后应用里一直渲染老图。两次真实事故：
+    //   2026-09-20 favicon（exe 图标换了，任务栏还是老图）；
+    //   2026-09-26 logo-mark（安装包与向导都已是新标，应用内侧栏/加载页还是旧裁边大图，
+    //   用户看到「只有向导是对的」）。
+    // 这些文件由 apps/desktop/scripts/icons.mjs 换标链统一重出：文件名稳定、内容会变，
+    // 长缓存必然踩坑；no-cache 只是协商请求，图小量少，代价可忽略。其余照旧长缓存。
+    const base = basename(file).toLowerCase();
+    const noCache =
+      isHtml ||
+      base.startsWith("favicon.") ||
+      base.startsWith("logo-mark.") ||
+      base.startsWith("logo.") ||
+      base.startsWith("app-icon.") ||
+      base.startsWith("apple-touch-icon.");
     reply
       .code(code)
       .header(
         "content-type",
         MIME_TYPES[extname(file)] ?? "application/octet-stream",
       )
-      .header("cache-control", isHtml ? "no-cache" : "public, max-age=86400");
+      .header("cache-control", noCache ? "no-cache" : "public, max-age=86400");
     return reply.send(createReadStream(file));
   };
 

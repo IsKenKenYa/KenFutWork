@@ -13,9 +13,13 @@ import type { ServerEnv } from "../../config/env.js";
 import { runtimeEnvAdditions } from "../../desktop/runtimes.js";
 import type { AgentBackendResult } from "./index.js";
 
-type AgentBackendEnv = Pick<ServerEnv, "agentFilesRoot" | "skillsRoot">;
+type AgentBackendEnv = Pick<
+  ServerEnv,
+  "agentFilesRoot" | "sandboxRoot" | "skillsRoot"
+>;
 
-const DEFAULT_DEV_SANDBOX_ROOT = "/tmp/loomic-sandbox-dev";
+/** filesystem 模式的缺省沙箱根（相对 cwd；生产入口会注入 `<项目根>/tmp/sandbox`）。 */
+const DEFAULT_DEV_SANDBOX_ROOT = "tmp/sandbox-dev";
 
 /**
  * Create a development backend with local sandbox execution.
@@ -29,7 +33,7 @@ export function createDevelopmentBackend(
     /** Canvas ID — used for workspace-skills Store namespace when available. */
     canvasId?: string;
     /** When true, add a /workspace-skills/ route backed by the Store. */
-    hasWorkspaceSkills?: boolean;
+    hasInstanceSkills?: boolean;
     /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
     runtimePathAdditions?: string[];
     /** 随包 JDK 根目录（JAVA_HOME）。 */
@@ -38,12 +42,15 @@ export function createDevelopmentBackend(
 ): AgentBackendResult {
   if (!env.agentFilesRoot) {
     throw new Error(
-      "LOOMIC_AGENT_FILES_ROOT must be set when filesystem backend mode is enabled.",
+      "KENFUTWORK_AGENT_FILES_ROOT must be set when filesystem backend mode is enabled.",
     );
   }
 
   const runId = crypto.randomUUID();
-  const sandboxDir = join(resolve(DEFAULT_DEV_SANDBOX_ROOT), runId);
+  const sandboxDir = join(
+    resolve(env.sandboxRoot ?? DEFAULT_DEV_SANDBOX_ROOT),
+    runId,
+  );
   mkdirSync(sandboxDir, { recursive: true });
   const realSandboxDir = realpathSync(sandboxDir);
 
@@ -84,11 +91,7 @@ export function createDevelopmentBackend(
     };
 
     // In dev mode, workspace skills are served from the Store when available.
-    if (
-      options?.hasWorkspaceSkills &&
-      options.canvasId &&
-      stateAndStore.store
-    ) {
+    if (options?.hasInstanceSkills && options.canvasId && stateAndStore.store) {
       routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
         namespace: ["projects", options.canvasId, "workspace-skills"],
       });
