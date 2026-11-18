@@ -7,9 +7,10 @@
  * + `Bearer` 鉴权 → 响应 `{ webpages: [{ title, link, snippet }] }`，业务错误同样走
  * 秘塔口径（HTTP 200 + `{ errCode, errMsg }`）——只是检索结果来自真实 Bing 而非秘塔。
  *
- * 什么时候用它：**没有秘塔 Key 时**。秘塔按量付费、无免费额度（实测无 Key / 空 Bearer /
- * 任意字符串 Key 一律 `errCode 2005`），没有 Key 时 search 插件按 enabled 判定不装配、
- * `web_search` 不注册。把本代理跑起来并在 `.env.local` 里指过去，联网搜索即可用：
+ * 什么时候用它：验证结构化 API 契约，或把 `KENFUTWORK_SEARCH_ENDPOINT` 指向自定义上游。
+ * 默认不带 Key 时 search 插件已经走网页通道（Bing RSS），不需要本代理；秘塔按量付费、
+ * 无免费额度（实测无 Key / 空 Bearer / 任意字符串 Key 一律 `errCode 2005`），只有要接秘塔
+ * 本体或固定结构化接口时才需要 Key + 端点。要用本代理联调：
  *
  *   node scripts/本地搜索代理.mjs        # 监听 127.0.0.1:9099（可用 KENFUTWORK_SEARCH_PORT 改）
  *

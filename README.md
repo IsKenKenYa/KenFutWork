@@ -182,18 +182,11 @@ pnpm fetch:runtimes / pnpm package:win            # 随包运行时 / Windows �
 
 ## 8. 联网搜索（`web_search`）
 
-走 BYOK：把秘塔 Key 写进 `.env.local` 的 `KENFUTWORK_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`）。
-秘塔**按量付费、无免费额度**——实测无 Key/任意 Key 一律 `errCode 2005「API密钥无效」`，所以未配 Key 时该工具不装配，属预期不是故障。
+开箱即用，不需要任何配置：未设置搜索 Key 时，`web_search` 走本机网页通道——抓取 Bing 结果页的 RSS，返回标题、链接和摘要。不需要 Key、不需要启动代理，也不需要打开「允许 AI 控制浏览器」。
 
-**没有秘塔 Key 也能用**：起本地搜索代理（同一套契约接到真实必应），Key 填任意非空、端点指过去：
+可选：改用秘塔结构化 API。把 Key 写进 `.env.local` 的 `KENFUTWORK_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`）。秘塔按量付费、无免费额度，Key 无效时会返回 `errCode 2005`。
 
-```bash
-node scripts/本地搜索代理.mjs      # 监听 127.0.0.1:9099
-# .env.local：KENFUTWORK_SEARCH_API_KEY=local + KENFUTWORK_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
-```
-
-代理是抓取式上游，不是稳定服务：命中无关兜底页时会被判为失败并给出可读原因（"搜索失败"≠"没搜到"）。
-验收真实端点：`node scripts/诊断联网搜索.mjs`。
+网页通道默认用 Bing；设置 `KENFUTWORK_SEARCH_ENGINE=baidu` 可切换为百度静态抓取（可能遇到验证页）。`scripts/本地搜索代理.mjs` 只用于验证结构化 API 契约或指向自定义上游，不是安装步骤；默认网页通道不需要它。
 
 ---
 

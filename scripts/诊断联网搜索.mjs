@@ -2,9 +2,9 @@
 /**
  * 联网搜索验收脚本（真 Key 专用，不被 CI 调用）。
  *
- * 背景：`KENFUTWORK_SEARCH_API_KEY` 是秘塔的付费 Key，只能由用户提供——没有它时
- * 「真实检索结果」这一格无法验收（此前只验收了「替身端点验缝 + 真实端点验契约与
- * 错误语义」）。拿到 Key 后跑这一条命令即可完成验收：
+ * 背景：本脚本验收的是**秘塔结构化 API**这条可选路径；不配 Key 时 `web_search` 已经
+ * 默认走本机网页通道（Bing RSS），不需要本脚本。`KENFUTWORK_SEARCH_API_KEY` 是秘塔的
+ * 付费 Key，只能由用户提供；拿到 Key 后跑这一条命令即可验收结构化端点：
  *
  *   node scripts/诊断联网搜索.mjs                 # 读 .env.local 里的 Key
  *   node scripts/诊断联网搜索.mjs --key=sk-xxx    # 或直接给 Key
