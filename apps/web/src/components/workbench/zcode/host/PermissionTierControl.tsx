@@ -16,7 +16,13 @@ import {
 } from "@zui/components/ui/select.js";
 import { Textarea } from "@zui/components/ui/textarea.js";
 import { toast } from "@zui/components/ui/toast.js";
-import { SettingsGroupCard } from "@zui/settings/SettingsPageParts.js";
+import { ChevronDownIcon } from "lucide-react";
+import { cn } from "@zui/components/lib/utils.js";
+import {
+  SettingsGroupCard,
+  SettingsRow,
+  SettingsSubheading,
+} from "@zui/settings/SettingsPageParts.js";
 import { useCallback, useEffect, useState } from "react";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 import { surfaceJson } from "./surfaceApi.js";
@@ -91,13 +97,30 @@ export function usePermissionTier() {
   return { tier, save };
 }
 
-/** composer 的权限档 chip（C1）：与 ZCode 协作档、六档执行模式并排。 */
+/**
+ * composer 的权限档 chip：只列三档，名称与说明对齐产品口径。
+ *
+ * `custom`（自定义规则表）不在此出现——它只在设置页的权限分区里编辑，
+ * 聊天框摆一个出来会多一个档位却无从配置。
+ */
+const CHIP_TIERS: ReadonlyArray<{
+  value: PermissionTier;
+  label: string;
+  hint: string;
+}> = [
+  { value: "default", label: "变更前确认", hint: "人工或审批模型" },
+  { value: "auto-approve", label: "自动编辑", hint: "自动修改文件" },
+  { value: "full-access", label: "完全访问", hint: "访问本机文件与网络" },
+];
+
 export function PermissionTierChip() {
   const { tier, save } = usePermissionTier();
   const [busy, setBusy] = useState(false);
 
   if (!tier) return null;
-  const label = TIERS.find((entry) => entry.value === tier)?.label ?? tier;
+  // custom 档不在三档里：菜单仍显示它最接近的语义，避免按钮空白。
+  const current =
+    CHIP_TIERS.find((entry) => entry.value === tier) ?? CHIP_TIERS[0]!;
 
   return (
     <DropdownMenu>
@@ -105,15 +128,16 @@ export function PermissionTierChip() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 px-2 text-xs"
+          className="h-7 gap-1 rounded-lg px-2 text-ui-base"
           disabled={busy}
-          aria-label="权限档"
+          aria-label="权限"
           data-testid="permission-tier-chip"
         >
-          {label}
+          <span>{current.label}</span>
+          <ChevronDownIcon className="size-3.5 text-foreground-subtle" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent side="top" sideOffset={4} className="w-64">
         <DropdownMenuRadioGroup
           value={tier}
           onValueChange={(next) => {
@@ -121,9 +145,18 @@ export function PermissionTierChip() {
             void save(next as PermissionTier).finally(() => setBusy(false));
           }}
         >
-          {TIERS.map((entry) => (
-            <DropdownMenuRadioItem key={entry.value} value={entry.value}>
-              {entry.label}
+          {CHIP_TIERS.map((entry) => (
+            <DropdownMenuRadioItem
+              key={entry.value}
+              value={entry.value}
+              className="min-h-13 items-start gap-3 py-2"
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span>{entry.label}</span>
+                <span className="text-ui-sm text-foreground-subtle">
+                  {entry.hint}
+                </span>
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
@@ -169,33 +202,45 @@ export function PermissionTierSection() {
   };
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-3">
-        <div className="text-ui-base font-medium text-foreground-subtle">
-          新会话默认档
-        </div>
-        <TierPicker
-          label="常规任务档位"
-          name="permission-tier"
-          current={tier ?? "default"}
-          saving={busy || tier === null}
-          onPick={(next) => {
-            setBusy(true);
-            void save(next).finally(() => setBusy(false));
-          }}
-        />
+    <div className="space-y-6">
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>常规任务</SettingsSubheading>
+        <SettingsGroupCard>
+          <SettingsRow
+            label="默认档"
+            description="改文件 / 跑命令前先问我"
+            control={
+              <TierPicker
+                label="常规任务档位"
+                name="permission-tier"
+                current={tier ?? "default"}
+                saving={busy || tier === null}
+                onPick={(next) => {
+                  setBusy(true);
+                  void save(next).finally(() => setBusy(false));
+                }}
+              />
+            }
+          />
+        </SettingsGroupCard>
       </section>
-      <section className="space-y-3">
-        <div className="text-ui-base font-medium text-foreground-subtle">
-          自动化任务档
-        </div>
-        <TierPicker
-          label="自动化任务档位"
-          name="automation-permission-tier"
-          current={automationTier ?? "default"}
-          saving={automationTier === null}
-          onPick={(next) => void saveAutomation(next)}
-        />
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>自动化任务</SettingsSubheading>
+        <SettingsGroupCard>
+          <SettingsRow
+            label="自动化任务档"
+            description="无人值守轮次使用的档位"
+            control={
+              <TierPicker
+                label="自动化任务档位"
+                name="automation-permission-tier"
+                current={automationTier ?? "default"}
+                saving={automationTier === null}
+                onPick={(next) => void saveAutomation(next)}
+              />
+            }
+          />
+        </SettingsGroupCard>
       </section>
       <CustomRulesSection active={tier === "custom"} />
       <ModelDefaultsSection approvalOnly />
@@ -205,6 +250,7 @@ export function PermissionTierSection() {
 }
 
 /** 四档横排（用户口径「能左右就别上下」），选中档的含义在下面给一行小字。 */
+/** 权限档选择：与设置页其他分区同一形状（SettingsRow + 右控件），不再自造卡片。 */
 function TierPicker({
   label,
   name,
@@ -220,30 +266,57 @@ function TierPicker({
 }) {
   return (
     <fieldset aria-label={label} className="min-w-0">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {TIERS.map((entry) => (
-          <label
-            key={entry.value}
-            data-active={current === entry.value}
-            className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-ui-base transition-colors hover:bg-surface-hover data-[active=true]:border-foreground/40 data-[active=true]:bg-surface"
-          >
-            <input
-              type="radio"
-              name={name}
-              value={entry.value}
-              checked={current === entry.value}
-              onChange={() => onPick(entry.value)}
-              disabled={saving}
-              className="shrink-0"
-            />
-            {entry.label}
-          </label>
-        ))}
-      </div>
-      <p className="mt-1 text-ui-sm text-foreground-subtle">
-        {TIERS.find((entry) => entry.value === current)?.hint ?? ""}
-      </p>
+      <TierRadioRow
+        name={name}
+        current={current}
+        saving={saving}
+        onPick={onPick}
+      />
     </fieldset>
+  );
+}
+
+function TierRadioRow({
+  name,
+  current,
+  saving,
+  onPick,
+}: {
+  name: string;
+  current: PermissionTier;
+  saving: boolean;
+  onPick: (value: PermissionTier) => void;
+}) {
+  const selected = TIERS.find((entry) => entry.value === current);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {TIERS.map((entry) => (
+        <label
+          key={entry.value}
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-ui-base transition-colors hover:bg-surface-hover",
+            current === entry.value &&
+              "border-foreground/30 bg-surface text-foreground",
+          )}
+        >
+          <input
+            type="radio"
+            name={name}
+            value={entry.value}
+            checked={current === entry.value}
+            onChange={() => onPick(entry.value)}
+            disabled={saving}
+            className="size-3.5 shrink-0 accent-foreground"
+          />
+          {entry.label}
+        </label>
+      ))}
+      {selected ? (
+        <span className="text-ui-sm text-foreground-subtle">
+          {selected.hint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -304,17 +377,15 @@ function CustomRulesSection({ active }: { active: boolean }) {
   };
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2 text-ui-base font-medium text-foreground-subtle">
-        <span>自定义规则</span>
-        {active ? null : (
-          <span className="text-ui-sm text-foreground-subtle">
-            切到自定义档后按这条规则表判定
-          </span>
-        )}
-      </div>
+    <section className="min-w-0 space-y-3">
+      <SettingsSubheading>自定义规则</SettingsSubheading>
       <SettingsGroupCard>
         <div className="space-y-3 p-3">
+          {active ? null : (
+            <p className="text-ui-sm text-foreground-subtle">
+              切到自定义档后按这条规则表判定
+            </p>
+          )}
           <div className="block text-ui-base">
             <span>拒绝这些工具</span>
             <Textarea
@@ -421,10 +492,8 @@ function ToolApprovalSection() {
   };
 
   return (
-    <section className="space-y-3">
-      <div className="text-ui-base font-medium text-foreground-subtle">
-        工具审批
-      </div>
+    <section className="min-w-0 space-y-3">
+      <SettingsSubheading>工具审批</SettingsSubheading>
       <SettingsGroupCard>
         <div className="space-y-3 p-3">
           <div className="flex flex-wrap items-center gap-2">

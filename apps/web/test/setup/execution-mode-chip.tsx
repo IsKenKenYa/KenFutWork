@@ -2,6 +2,7 @@ import type { ExecutionMode } from "@kenfutwork/shared";
 import { screen } from "@testing-library/react";
 import { TooltipProvider } from "@zui/components/ui/tooltip.js";
 import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
+import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { V4ComposerModeSwitch } from "@zui/v4/composer/V4ComposerModeControls.js";
 import { useEffect, useRef, useState } from "react";
@@ -47,6 +48,7 @@ export function ComposerModeMenu({
           onConfigPickerOpenChange={(_picker, next) => setOpen(next)}
           onSwitchMode={onSwitchMode}
         />
+        <PermissionTierChip />
         <ExecutionModeChip controller={controller} disabled={disabled} />
       </TooltipProvider>
     </ZCodeIntlProvider>

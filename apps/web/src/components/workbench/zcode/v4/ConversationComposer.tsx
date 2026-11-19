@@ -2327,7 +2327,6 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={executionModeController.switchCollaborationMode}
         />
-        {/* 执行方式与权限档各自成块、并排摆放；两个菜单只改自己那一项。 */}
         <ExecutionModeChip
           controller={executionModeController}
           disabled={disabled}

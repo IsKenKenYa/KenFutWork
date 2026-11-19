@@ -131,7 +131,7 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 });
 
-test("权限与执行方式各自一个入口，并排出现，全权保留原橙色图标", async () => {
+test("权限与执行方式各自一个入口，并排出现，权限只用文字不带图标", async () => {
   const user = userEvent.setup();
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/execution-modes") return MODES;
@@ -149,8 +149,10 @@ test("权限与执行方式各自一个入口，并排出现，全权保留原�
   await readyComposerModeTrigger();
   const permissionTrigger = screen.getByTestId("chat-mode-select-trigger");
   expect(screen.getAllByTestId("chat-mode-select-trigger")).toHaveLength(1);
-  expect(permissionTrigger.className).toContain("text-warning");
-  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
+  // 权限按钮只写文字，不再带手形/盾牌图标（用户口径：最左边这个手去掉）。
+  expect(permissionTrigger.textContent).toContain("完全访问");
+  expect(permissionTrigger.querySelector("svg.lucide-hand")).toBeNull();
+  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).toBeNull();
 
   // 执行方式独立成块：菜单里只有执行方式一档，不再混入权限组。
   await openModeMenu(user);
@@ -181,12 +183,9 @@ test("权限与执行方式各自一个入口，并排出现，全权保留原�
   await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
   expect(onSwitchMode).toHaveBeenLastCalledWith("build");
   expect(permissionTrigger.textContent).toContain("变更前确认");
-  expect(permissionTrigger.className).not.toContain("text-warning");
   await user.click(permissionTrigger);
   await user.click(screen.getByRole("menuitemradio", { name: /^完全访问/ }));
   expect(onSwitchMode).toHaveBeenLastCalledWith("yolo");
-  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
-  expect(permissionTrigger.className).toContain("text-warning");
   expect(
     surfaceJson.mock.calls.some(([, init]) => init?.method === "PUT"),
   ).toBe(false);

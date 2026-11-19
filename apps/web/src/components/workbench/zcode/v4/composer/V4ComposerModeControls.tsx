@@ -89,7 +89,6 @@ function V4ComposerModeSwitchImpl({
     onCycleThoughtLevel: noop,
   });
   if (!selected) return null;
-  const Icon = resolveModeOptionIcon(selected.id);
   return (
     <div className="flex min-w-0 items-center gap-1">
       <DropdownMenu
@@ -114,7 +113,6 @@ function V4ComposerModeSwitchImpl({
                 selected.id === "yolo" && "text-warning hover:text-warning aria-expanded:text-warning",
               )}
             >
-              <Icon className="size-4" />
               <span className="inline group-data-[composer-compact=true]/mode:hidden">
                 {label(selected)}
               </span>
