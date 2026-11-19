@@ -278,6 +278,7 @@ it("原Code侧栏的技能与MCP操作交给共用宿主文档，主工作区不
       page: "settings",
       section: "plugin",
       pluginTab: "skills",
+      pluginScopeKey: "user",
     }),
   );
   expect(screen.queryByTestId("settings-page")).toBeNull();
@@ -287,6 +288,7 @@ it("原Code侧栏的技能与MCP操作交给共用宿主文档，主工作区不
       page: "settings",
       section: "plugin",
       pluginTab: "mcps",
+      pluginScopeKey: "user",
     }),
   );
   expect(calls.filter((c) => c.method === "createTask")).toEqual([]);

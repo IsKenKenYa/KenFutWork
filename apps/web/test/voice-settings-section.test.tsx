@@ -205,7 +205,7 @@ describe("语音设置页", () => {
       },
     });
     const warning = await screen.findByText(
-      "听 2.31× · 想 1.80s 6t/s · 建议只转文本",
+      "听 偏慢 · 想 1.80s 6t/s · 建议只转文本",
     );
     expect(warning.className).toContain("text-destructive");
     // 强制开仍可：模式单选不被禁用
@@ -317,7 +317,7 @@ describe("语音设置页", () => {
   it("检测报告：显示硬件、三段结论与可应用的建议", async () => {
     await mount();
     expect(await screen.findByText(/12 核/)).toBeTruthy();
-    expect(screen.getByText(/听 0.08× 首载 2.7s/)).toBeTruthy();
+    expect(screen.getByText(/听 首字 2.7s/)).toBeTruthy();
     // 听达标但想未测 → 推荐仍是「只转文本」（只给结论，不写理由句）
     expect(screen.getByText(/推荐 只转文本/)).toBeTruthy();
 
@@ -332,7 +332,7 @@ describe("语音设置页", () => {
   it("三段读数同行：相邻同状态合并成「想/说 不可用」", async () => {
     await mount();
     expect(
-      await screen.findByText("听 0.08× 首载 2.7s · 想/说 不可用"),
+      await screen.findByText("听 首字 2.7s · 想/说 不可用"),
     ).toBeTruthy();
   });
 
@@ -354,7 +354,7 @@ describe("语音设置页", () => {
     });
     // 说说的是「0.50× 首包 0.10s」，想说的是「0.50s 40t/s」，数字格式不同 → 不合并；
     // 关键断言是：两段同时 measured 时不会出现合并标签
-    const line = await screen.findByText(/听 0\.08× 首载 2\.7s/);
+    const line = await screen.findByText(/听 首字 2\.7s/);
     expect(line.textContent).not.toMatch(/听\/想|想\/说/);
   });
 

@@ -2,8 +2,12 @@ import { logger } from "@zui/logger.js";
 import type { ConversationTransport } from "@zui/v4/transport.js";
 
 type FrameListener = Parameters<ConversationTransport["onFrame"]>[0];
-type AssemblyFaultListener = Parameters<ConversationTransport["onAssemblyFault"]>[0];
-type RuntimeRestartListener = Parameters<ConversationTransport["onRuntimeRestart"]>[0];
+type AssemblyFaultListener = Parameters<
+  ConversationTransport["onAssemblyFault"]
+>[0];
+type RuntimeRestartListener = Parameters<
+  ConversationTransport["onRuntimeRestart"]
+>[0];
 type RuntimeLifecycleListener = Parameters<
   NonNullable<ConversationTransport["onRuntimeLifecycle"]>
 >[0];
@@ -33,8 +37,12 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   private readonly frameListeners = new Set<FrameListener>();
   private readonly assemblyFaultListeners = new Set<AssemblyFaultListener>();
   private readonly runtimeRestartListeners = new Set<RuntimeRestartListener>();
-  private readonly runtimeLifecycleListeners = new Set<RuntimeLifecycleListener>();
-  private readonly transportBySubscriptionId = new Map<string, ConversationTransport>();
+  private readonly runtimeLifecycleListeners =
+    new Set<RuntimeLifecycleListener>();
+  private readonly transportBySubscriptionId = new Map<
+    string,
+    ConversationTransport
+  >();
   private offFrame: (() => void) | null = null;
   private offAssemblyFault: (() => void) | null = null;
   private offRuntimeRestart: (() => void) | null = null;
@@ -45,7 +53,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
    * 能力按构造时的 current 判定：同一 workspace 的后续 transport 均由
    * createAgentConversationTransport 产出，支持性只取决于 agentService，换代不会翻转。
    */
-  onRuntimeLifecycle?: (listener: RuntimeLifecycleListener) => () => void = (listener,
+  onRuntimeLifecycle?: (listener: RuntimeLifecycleListener) => () => void = (
+    listener,
   ) => {
     this.runtimeLifecycleListeners.add(listener);
     this.bindRuntimeLifecycleListener();
@@ -81,7 +90,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     this.bindCurrentListeners();
     // proxy 换代只会让 connection ownership 失效，CLI runtime/logEpoch 仍可能连续；
     // 显式携带原因，让 Store 用当前水位 fresh subscribe，由服务端裁决 resume/snapshot。
-    for (const listener of this.runtimeRestartListeners) listener("transportReplaced");
+    for (const listener of this.runtimeRestartListeners)
+      listener("transportReplaced");
   }
 
   async subscribe(
@@ -99,27 +109,35 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   }
 
   activate(subscriptionId: string): void {
-    (this.transportBySubscriptionId.get(subscriptionId) ?? this.current).activate(subscriptionId);
+    (
+      this.transportBySubscriptionId.get(subscriptionId) ?? this.current
+    ).activate(subscriptionId);
   }
 
   resync(
     params: Parameters<ConversationTransport["resync"]>[0],
   ): ReturnType<ConversationTransport["resync"]> {
-    return (this.transportBySubscriptionId.get(params.subscriptionId) ?? this.current).resync(
-      params);
+    return (
+      this.transportBySubscriptionId.get(params.subscriptionId) ?? this.current
+    ).resync(params);
   }
 
-  unsubscribe(subscriptionId: string,
+  unsubscribe(
+    subscriptionId: string,
   ): ReturnType<ConversationTransport["unsubscribe"]> {
-    const owner = this.transportBySubscriptionId.get(subscriptionId) ?? this.current;
+    const owner =
+      this.transportBySubscriptionId.get(subscriptionId) ?? this.current;
     this.transportBySubscriptionId.delete(subscriptionId);
     return owner.unsubscribe(subscriptionId);
   }
 
   sendCommand(
     envelope: Parameters<ConversationTransport["sendCommand"]>[0],
+    executionMode?: Parameters<ConversationTransport["sendCommand"]>[1],
   ): ReturnType<ConversationTransport["sendCommand"]> {
-    return this.current.sendCommand(envelope);
+    return executionMode
+      ? this.current.sendCommand(envelope, executionMode)
+      : this.current.sendCommand(envelope);
   }
 
   queryCommands(
@@ -284,10 +302,12 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   }
 
   private bindRuntimeRestartListener(): void {
-    if (this.offRuntimeRestart || this.runtimeRestartListeners.size === 0) return;
+    if (this.offRuntimeRestart || this.runtimeRestartListeners.size === 0)
+      return;
     const owner = this.current;
     this.offRuntimeRestart = owner.onRuntimeRestart(() => {
-      for (const [subscriptionId, subscriptionOwner] of this.transportBySubscriptionId) {
+      for (const [subscriptionId, subscriptionOwner] of this
+        .transportBySubscriptionId) {
         if (subscriptionOwner === owner) {
           this.transportBySubscriptionId.delete(subscriptionId);
         }
@@ -297,7 +317,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   }
 
   private bindRuntimeLifecycleListener(): void {
-    if (this.offRuntimeLifecycle || this.runtimeLifecycleListeners.size === 0) return;
+    if (this.offRuntimeLifecycle || this.runtimeLifecycleListeners.size === 0)
+      return;
     this.offRuntimeLifecycle =
       this.current.onRuntimeLifecycle?.((state) => {
         for (const listener of this.runtimeLifecycleListeners) listener(state);

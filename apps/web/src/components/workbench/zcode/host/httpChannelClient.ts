@@ -7,10 +7,6 @@ import {
   canvasDocumentUpdatedMessageSchema,
   clampCodeUiReconnectDelayMs,
   codeGoalControlStateSchema,
-  codeProjectPreparedSessionSchema,
-  codeProjectPrepareSessionArgsSchema,
-  codeProjectTreeSchema,
-  codeUiViewerScopeSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
   type ProjectDirectoryRelinkSnapshot,
@@ -25,39 +21,22 @@ import {
   ProxyChannel,
 } from "@zcode/rpc";
 import {
-  IFileService,
-  IFileWatcherService,
-  IGitService,
   type IServiceAccessor,
   IWindowControllerService,
 } from "@zcode/services";
-import { ServiceChannels, zcodeTaskMetaSchema } from "@zcode/shared";
+import { ServiceChannels } from "@zcode/shared";
 import {
   type ClientHello,
   clientHelloSchema,
   windowHostControllerTaskFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
-import { registerCodeFileViewerClient } from "./fileViewerServices.js";
 import {
   chooseDirectoryProject,
   confirmDirectoryRelink,
   DirectoryChoiceCancelledError,
 } from "./ProjectDirectoryChoice.js";
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
-import { captureTaskPinCall, readTaskPinResult } from "./taskPinRpc.js";
-import {
-  captureTaskRenameCall,
-  runTaskRenameCall,
-  type TaskRenameCall,
-} from "./taskRenameRpc.js";
-import {
-  captureTaskUnreadCall,
-  readTaskUnreadResult,
-} from "./taskUnreadRpc.js";
-import {
-  projectSupportsMode,
-  TaskWorkspaceRegistry,
-} from "./taskWorkspaceRegistry.js";
+import { TaskWorkspaceRegistry } from "./taskWorkspaceRegistry.js";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
 
 export interface CodeHostConfig {
@@ -266,7 +245,6 @@ export class CodeHttpChannelClient implements IChannelClient {
         },
       }),
     };
-    registerCodeFileViewerClient(this);
   }
 
   registerWorkspaces(workspaces: CodeUiWorkspace[]) {
@@ -297,9 +275,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     snapshot: ProjectDirectoryRelinkSnapshot,
     path: string,
   ) {
-    let choice = await confirmDirectoryRelink(path, snapshot.projectId, {
-      signal: this.controller.signal,
-    });
+    let choice = await confirmDirectoryRelink(path, snapshot.projectId);
     if (!choice) throw new DirectoryChoiceCancelledError();
     const submit = () =>
       this.request(
@@ -322,9 +298,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         error.code !== "project_directory_conflict"
       )
         throw error;
-      choice = await confirmDirectoryRelink(path, snapshot.projectId, {
-        signal: this.controller.signal,
-      });
+      choice = await confirmDirectoryRelink(path, snapshot.projectId);
       if (!choice) throw new DirectoryChoiceCancelledError();
       result = await submit();
     }
@@ -340,34 +314,6 @@ export class CodeHttpChannelClient implements IChannelClient {
   setViewerContextResolver(resolve: (() => CodeUiViewerScope | null) | null) {
     this.viewerContext = resolve;
   }
-  fileServicesForViewer(
-    source: CodeUiViewerScope,
-  ): Pick<
-    IServiceAccessor,
-    "fileService" | "fileWatcherService" | "gitService"
-  > {
-    const viewerScope = Object.freeze(codeUiViewerScopeSchema.parse(source));
-    const channelFor = (channelName: string): IChannel => {
-      const channel = this.getChannel<IChannel>(channelName);
-      const service = servicesByChannel[channelName] ?? channelName;
-      return {
-        call: <TResult>(method: string, args?: unknown) =>
-          this.callChannel<TResult>(service, method, args, viewerScope),
-        listen: channel.listen,
-      };
-    };
-    return {
-      fileService: ProxyChannel.toService<IFileService>(
-        channelFor(IFileService.channelName),
-      ),
-      fileWatcherService: ProxyChannel.toService<IFileWatcherService>(
-        channelFor(IFileWatcherService.channelName),
-      ),
-      gitService: ProxyChannel.toService<IGitService>(
-        channelFor(IGitService.channelName),
-      ),
-    };
-  }
   async openWorkspace(
     path: string,
     projectId?: string,
@@ -378,9 +324,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     await this.connect();
     let independent = false;
     const select = async () => {
-      const choice = await chooseDirectoryProject(path, preset, {
-        signal: this.controller.signal,
-      });
+      const choice = await chooseDirectoryProject(path, preset);
       if (!choice) throw new DirectoryChoiceCancelledError();
       if ("projectId" in choice) projectId = choice.projectId;
       else independent = "independent" in choice;
@@ -736,14 +680,6 @@ export class CodeHttpChannelClient implements IChannelClient {
               ),
           };
           this.servicesChanges.fire();
-          // 实例项目与分组可能在断线期间改变；沿原失效通知重读，保留当前编辑意图。
-          for (const channel of ["state:projects", "state:task-groups"])
-            this.notifications.fire({
-              event: "service",
-              service: ServiceChannels.Broadcast,
-              name: "onMessage",
-              data: { channel, payload: {} },
-            });
           for (const [key, scope] of this.workspaceSubscriptions)
             this.notifications.fire({
               event: "service",
@@ -845,26 +781,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     });
   }
 
-  private registerTaskProjection(value: unknown) {
-    const task = zcodeTaskMetaSchema.parse(value);
-    if (!task.projectId || !task.workspaceIdentity) {
-      this.workspaces.registerTask(task);
-      return;
-    }
-    this.workspaces.applyProjectTask({
-      taskId: task.taskId,
-      projectId: task.projectId,
-      workspacePath: task.workspacePath,
-      workspaceIdentity: task.workspaceIdentity,
-      ...(task.taskControl ? { taskControl: task.taskControl } : {}),
-      ...(task.conversationRevision === undefined
-        ? {}
-        : { conversationRevision: task.conversationRevision }),
-    });
-  }
-
   private publishNotification(notification: Notification) {
-    if (this.controller.signal.aborted) return;
     if (notification.event === "canvasDocumentUpdated") {
       const message = canvasDocumentUpdatedMessageSchema.safeParse(
         notification.data,
@@ -889,21 +806,9 @@ export class CodeHttpChannelClient implements IChannelClient {
         if (state.success)
           this.goalStates.set(state.data.taskId, state.data.goal);
       }
-      if (
-        notification.service === ServiceChannels.ZCodeTask &&
-        notification.name === "onDynamicWorkspaceEvent" &&
-        data &&
-        typeof data === "object" &&
-        "type" in data &&
-        data.type === "workspace_task_list_changed" &&
-        "taskMeta" in data &&
-        data.taskMeta !== undefined
-      )
-        this.registerTaskProjection(data.taskMeta);
-      if (
-        notification.service === IWindowControllerService.channelName &&
-        notification.name === "onDynamicControllerFrame"
-      ) {
+      if (data && typeof data === "object" && "taskMeta" in data)
+        this.workspaces.registerTask(data.taskMeta);
+      if (notification.service === IWindowControllerService.channelName) {
         const frame = windowHostControllerTaskFrameSchema.safeParse(data);
         if (frame.success) {
           const payload = frame.data.payload;
@@ -913,7 +818,7 @@ export class CodeHttpChannelClient implements IChannelClient {
               : payload.deltas.flatMap((delta) =>
                   delta.op === "task.upserted" ? [delta.task] : [],
                 );
-          for (const row of rows) this.registerTaskProjection(row.meta);
+          for (const row of rows) this.workspaces.registerTask(row.meta);
         }
       }
     }
@@ -948,17 +853,6 @@ export class CodeHttpChannelClient implements IChannelClient {
     method: string,
     values: unknown[],
   ) {
-    if (
-      service === ServiceChannels.ZCodeTask &&
-      [
-        "archiveTask",
-        "unarchiveTask",
-        "deleteArchivedTask",
-        "setTaskUnread",
-        "setTaskPinned",
-      ].includes(method)
-    )
-      return values;
     const value = values[0];
     if (!value || typeof value !== "object" || Array.isArray(value))
       return values;
@@ -967,8 +861,6 @@ export class CodeHttpChannelClient implements IChannelClient {
     if (task && project && method === "subscribeConversationV4")
       this.workspaces.selectProject(task.projectId, task.rootDirectory);
     const updated = { ...first };
-    if (service === ServiceChannels.Project && method === "prepareSession")
-      updated.preset = first.preset ?? this.workPreset();
     if (task && typeof first.workspacePath === "string") {
       updated.workspacePath = task.rootDirectory;
       if (typeof first.workspaceIdentity === "string")
@@ -1029,12 +921,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     return [updated, ...values.slice(1)];
   }
 
-  private injectViewer(
-    service: string,
-    method: string,
-    values: unknown[],
-    fixedViewer?: CodeUiViewerScope,
-  ) {
+  private injectViewer(service: string, method: string, values: unknown[]) {
     if (service === ServiceChannels.Terminal && method === "create") {
       const scope = this.viewerContext?.();
       if (scope?.kind !== "task")
@@ -1050,68 +937,25 @@ export class CodeHttpChannelClient implements IChannelClient {
       (service === ServiceChannels.FileWatcher && method === "watch");
     if (!viewerRequest) return values;
     const first = values[0] as Record<string, unknown> | undefined;
-    if (!fixedViewer && first?.humanPurpose === "directory-picker")
-      return values;
-    const viewerScope = fixedViewer ?? this.viewerContext?.();
+    if (first?.humanPurpose === "directory-picker") return values;
+    const viewerScope = this.viewerContext?.();
     if (!viewerScope)
       throw new Error("请先选择 Code 项目或 Task 后使用工作区能力。");
-    const request: Record<string, unknown> = { ...first, viewerScope };
-    if (fixedViewer) delete request.humanPurpose;
-    return [request, ...values.slice(1)];
-  }
-
-  private async renameTask(call: TaskRenameCall) {
-    const requireTarget = () => {
-      const current = this.workspaces.taskObservation(call.target.taskId);
-      if (
-        current &&
-        (current.projectId !== call.target.taskControl.projectId ||
-          current.rootDirectory !== call.target.workspacePath ||
-          current.branchGeneration !== call.target.taskControl.branchGeneration)
-      )
-        throw new Error("任务身份已改变，请重新加载列表。");
-    };
-    requireTarget();
-    await this.connect();
-    const connectionId = this.connectionId;
-    const generation = this.generation;
-    return runTaskRenameCall(call, {
-      agentService: this.services.zcodeAgentService,
-      requireCurrent: () => {
-        if (
-          this.controller.signal.aborted ||
-          connectionId !== this.connectionId ||
-          generation !== this.generation
-        )
-          throw new Error("任务更新期间连接已改变，请重新加载列表。");
-        requireTarget();
-      },
-      readMeta: (target) =>
-        this.callChannel<unknown>(ServiceChannels.ZCodeTask, "getTaskMeta", [
-          target,
-        ]),
-    });
+    return [{ ...first, viewerScope }, ...values.slice(1)];
   }
 
   private async callChannel<TResult>(
     service: string,
     method: string,
     args?: unknown,
-    fixedViewer?: CodeUiViewerScope,
   ): Promise<TResult> {
-    const renameCall = captureTaskRenameCall(service, method, args ?? []);
-    if (renameCall) return (await this.renameTask(renameCall)) as TResult;
-    const pinCall = captureTaskPinCall(service, method, args ?? []);
-    let values = pinCall?.args ?? args ?? [];
-    if (!pinCall && Array.isArray(values))
+    let values = args ?? [];
+    if (Array.isArray(values))
       values = this.injectViewer(
         service,
         method,
         this.rewriteHostArguments(service, method, values),
-        fixedViewer,
       );
-    const unreadCall = captureTaskUnreadCall(service, method, values);
-    if (unreadCall) values = unreadCall.args;
     await this.connect();
     if (
       service === "zcodeAgentService" &&
@@ -1119,7 +963,6 @@ export class CodeHttpChannelClient implements IChannelClient {
     )
       this.clientHello = clientHelloSchema.parse((values as unknown[])[0]);
     const connectionId = this.connectionId;
-    const generation = this.generation;
     let response: { result: TResult };
     try {
       response = await this.request<{ result: TResult }>("/api/code-ui/rpc", {
@@ -1143,51 +986,6 @@ export class CodeHttpChannelClient implements IChannelClient {
         notifyPluginInventoryChanged();
       }
     }
-    if (pinCall) {
-      const current = this.workspaces.taskObservation(pinCall.target.taskId);
-      if (
-        this.controller.signal.aborted ||
-        connectionId !== this.connectionId ||
-        generation !== this.generation ||
-        (current &&
-          (current.projectId !== pinCall.target.taskControl.projectId ||
-            current.rootDirectory !== pinCall.target.workspacePath ||
-            current.branchGeneration !==
-              pinCall.target.taskControl.branchGeneration))
-      )
-        throw new Error("任务更新期间连接已改变，请重新加载列表。");
-      return readTaskPinResult(pinCall, response.result) as TResult;
-    }
-    if (unreadCall) {
-      if (this.controller.signal.aborted || connectionId !== this.connectionId)
-        throw new Error("任务更新期间连接已改变，请重新加载列表。");
-      return readTaskUnreadResult(unreadCall, response.result) as TResult;
-    }
-    if (service === ServiceChannels.Project && method === "readTree") {
-      if (this.controller.signal.aborted || connectionId !== this.connectionId)
-        throw new Error("项目读取期间连接已改变，请重新加载项目。");
-      const tree = codeProjectTreeSchema.parse(response.result);
-      for (const task of tree.tasks) this.workspaces.applyProjectTask(task);
-      return tree as TResult;
-    }
-    if (service === ServiceChannels.Project && method === "prepareSession") {
-      const [intent] = codeProjectPrepareSessionArgsSchema.parse(values);
-      const prepared = codeProjectPreparedSessionSchema.parse(response.result);
-      if (prepared.projectId !== intent.projectId)
-        throw new Error("项目准备结果不一致，请重新选择项目。");
-      const project = (await this.refreshWorkspaces()).find(
-        (entry) => entry.projectId === prepared.projectId,
-      );
-      if (
-        !project ||
-        project.path !== prepared.workspacePath ||
-        this.workspaces.identityFor(project.projectId, project.path) !==
-          prepared.workspaceIdentity
-      )
-        throw new Error("项目目录已改变，请重新选择项目。");
-      if (!projectSupportsMode(project, intent.preset))
-        throw new Error("项目工作方式已改变，请重新选择项目。");
-    }
     if (service === ServiceChannels.Terminal && method === "create") {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)
         throw new Error("终端启动期间通知连接已改变，请重新打开终端。");
@@ -1204,8 +1002,6 @@ export class CodeHttpChannelClient implements IChannelClient {
       service === ServiceChannels.ZCodeTask ||
       service === IWindowControllerService.channelName
     ) {
-      if (this.controller.signal.aborted || connectionId !== this.connectionId)
-        throw new Error("任务读取期间连接已改变，请重新加载任务。");
       const value = response.result;
       const tasks =
         value &&
@@ -1216,13 +1012,7 @@ export class CodeHttpChannelClient implements IChannelClient {
           : Array.isArray(value)
             ? value
             : [value];
-      for (const task of tasks) {
-        const candidate =
-          task && typeof task === "object" && "meta" in task ? task.meta : task;
-        const parsed = zcodeTaskMetaSchema.safeParse(candidate);
-        if (parsed.success) this.registerTaskProjection(parsed.data);
-        else this.workspaces.registerTask(candidate);
-      }
+      for (const task of tasks) this.workspaces.registerTask(task);
     }
     let result = response.result;
     if (service === ServiceChannels.Skills && method === "list")

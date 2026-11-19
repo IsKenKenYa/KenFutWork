@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 /** 仅拥有 DOM 布局投影；权限、Plan 和 CUA 业务状态仍由原有 hooks 管理。 */
-function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {}) {
+function fitComposerToolbar(root: HTMLElement) {
   const available = root.querySelector<HTMLElement>("[data-composer-leading-actions]");
   const content = root.querySelector<HTMLElement>("[data-composer-leading-content]");
   if (!available || !content) return;
@@ -13,7 +13,7 @@ function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {}) {
   const trailing = root.querySelector<HTMLElement>("[data-composer-trailing-actions]");
   const gap = Number.parseFloat(getComputedStyle(root).columnGap) || 12;
   const overflow = () =>
-    iconOnly ? Number.POSITIVE_INFINITY : Math.max(
+    Math.max(
       0,
       content.getBoundingClientRect().width - available.getBoundingClientRect().width,
       trailing
@@ -44,16 +44,12 @@ function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {}) {
   root.dataset.composerModelIcon = "true";
 }
 
-export function useComposerToolbarFit({ iconOnly = false } = {}) {
+export function useComposerToolbarFit() {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
     const update = () => {
-      if (iconOnly) {
-        fitComposerToolbar(root, { iconOnly });
-        return;
-      }
       if (!root.parentElement || root.getBoundingClientRect().width <= 0) return;
       // 在不可见副本上尝试展开，避免真实按钮测量时来回移动、丢失 hover 或关闭 Tooltip。
       const probe = root.cloneNode(true) as HTMLElement;
@@ -103,6 +99,6 @@ export function useComposerToolbarFit({ iconOnly = false } = {}) {
       resize?.disconnect();
       mutations.disconnect();
     };
-  }, [iconOnly]);
+  }, []);
   return ref;
 }

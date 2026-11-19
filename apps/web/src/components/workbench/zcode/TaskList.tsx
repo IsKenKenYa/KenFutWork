@@ -1,22 +1,33 @@
 /* eslint-disable max-lines -- TaskList 同时承接 workspace 列表渲染、行内操作和外部数据源兼容，先集中收口避免 UI 结构漂移。 */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Settings2 } from "lucide-react";
+
 import type { ZCodeTaskMeta } from "@zcode/shared";
-import { TID_TASK_LIST, TID_TASK_EMPTY, TID_TASK_SETTINGS_BUTTON } from "@zcode/shared";
+import {
+  TID_TASK_EMPTY,
+  TID_TASK_LIST,
+  TID_TASK_SETTINGS_BUTTON,
+} from "@zcode/shared";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { Button } from "@zui/components/ui/button.js";
-import { ContextMenu, ContextMenuTrigger } from "@zui/components/ui/context-menu.js";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+} from "@zui/components/ui/context-menu.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import { compareZCodeTaskListItems } from "@zui/lib/taskListOrdering.js";
+import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache.js";
+import { logger } from "@zui/logger.js";
 import { NewTaskButtonGroup } from "@zui/NewTaskButtonGroup.js";
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
-import { MemoTaskItem, TaskListItemContextMenuContent } from "@zui/TaskListItem.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import {
+  MemoTaskItem,
+  TaskListItemContextMenuContent,
+} from "@zui/TaskListItem.js";
 import { TaskListLoadingHint } from "@zui/TaskListLoadingHint.js";
 import { TaskRenameDialog } from "@zui/TaskRenameDialog.js";
-import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache.js";
-import { compareZCodeTaskListItems } from "@zui/lib/taskListOrdering.js";
-import { logger } from "@zui/logger.js";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { Settings2 } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export { deriveTaskLeadingIndicator } from "@zui/lib/taskListItemPresentation.js";
 
@@ -39,22 +50,15 @@ export const TaskList = memo(function TaskList({
   showCreateButton = true,
   showFooter = true,
   showEmptyState = true,
-  taskRowVariant = "default",
-  hoverEnabled = true,
   loading: inputLoading,
   hasMore = false,
   onShowMore,
   onRenameTask,
   onSetTaskPinned,
   onArchiveTask,
-  isArchived = false,
   onSetTaskUnread,
-  mobileActiveTaskKey,
   readOnlyReason,
-  onOpenFileTree,
-  organizationActions,
 }: {
-  organizationActions?: React.ReactNode;
   workspacePath: string;
   remoteSessionId?: string;
   workspaceIdentity?: string;
@@ -67,31 +71,42 @@ export const TaskList = memo(function TaskList({
   showCreateButton?: boolean;
   showFooter?: boolean;
   showEmptyState?: boolean;
-  taskRowVariant?: "default" | "timeline";
-  hoverEnabled?: boolean;
   loading?: boolean;
   hasMore?: boolean;
   onShowMore?: () => void;
-  onRenameTask: (taskId: string, title: string) => Promise<ZCodeTaskMeta | null>;
-  onSetTaskPinned: (taskId: string, pinned: boolean) => Promise<ZCodeTaskMeta | null>;
+  onRenameTask: (
+    taskId: string,
+    title: string,
+  ) => Promise<ZCodeTaskMeta | null>;
+  onSetTaskPinned: (
+    taskId: string,
+    pinned: boolean,
+  ) => Promise<ZCodeTaskMeta | null>;
   onArchiveTask: (taskId: string) => Promise<ZCodeTaskMeta | null>;
-  isArchived?: boolean;
-  onSetTaskUnread: (taskId: string, unread: boolean) => Promise<ZCodeTaskMeta | null>;
-  mobileActiveTaskKey?: string | null;
+  onSetTaskUnread: (
+    taskId: string,
+    unread: boolean,
+  ) => Promise<ZCodeTaskMeta | null>;
   readOnlyReason?: string;
-  onOpenFileTree?: () => void | Promise<void>;
 }) {
   const { intl } = useZCodeIntl();
   const pinnedTaskIdSet = useMemo(
     () => new Set(pinnedTasks.map((task) => task.taskId)),
     [pinnedTasks],
   );
-  const taskLookup = useMemo(() => [...tasks, ...pinnedTasks], [pinnedTasks, tasks]);
+  const taskLookup = useMemo(
+    () => [...tasks, ...pinnedTasks],
+    [pinnedTasks, tasks],
+  );
   const startDraft = useZCodeSessionStore((state) => state.startDraft);
   const openSettingsTab = useTabStore((state) => state.openSettingsTab);
-  const [pendingArchiveTaskId, setPendingArchiveTaskId] = useState<string | null>(null);
+  const [pendingArchiveTaskId, setPendingArchiveTaskId] = useState<
+    string | null
+  >(null);
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
-  const [contextMenuTaskId, setContextMenuTaskId] = useState<string | null>(null);
+  const [contextMenuTaskId, setContextMenuTaskId] = useState<string | null>(
+    null,
+  );
   const [renameDraft, setRenameDraft] = useState("");
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const pendingArchiveTaskIdRef = useRef<string | null>(pendingArchiveTaskId);
@@ -134,7 +149,9 @@ export const TaskList = memo(function TaskList({
     // 新建会话如果在按钮点击时就立即 createTask，会把"空任务"也持久化到列表里，
     // 用户只是想先打开输入框，侧边栏却会平白多出一条没有任何消息的记录。
     // 这里改成进入 workspace 级草稿态，等用户真正发送首条消息时再自动创建 task。
-    startDraft(workspacePath, undefined, workspaceIdentity, { createSource: "project" });
+    startDraft(workspacePath, undefined, workspaceIdentity, {
+      createSource: "project",
+    });
   }, [readOnlyReason, startDraft, workspaceIdentity, workspacePath]);
 
   const handleArchiveTaskFromInline = useCallback(
@@ -320,7 +337,9 @@ export const TaskList = memo(function TaskList({
     const orderedTasks =
       sortBy === "manual"
         ? tasks
-        : [...tasks].sort((left, right) => compareZCodeTaskListItems(left, right, sortBy));
+        : [...tasks].sort((left, right) =>
+            compareZCodeTaskListItems(left, right, sortBy),
+          );
     return orderedTasks;
   }, [sortBy, tasks]);
   useEffect(() => {
@@ -328,7 +347,9 @@ export const TaskList = memo(function TaskList({
       return;
     }
 
-    const stillExists = visibleSourceTasks.some((task) => task.taskId === pendingArchiveTaskId);
+    const stillExists = visibleSourceTasks.some(
+      (task) => task.taskId === pendingArchiveTaskId,
+    );
     if (!stillExists) {
       setPendingArchiveTaskId(null);
     }
@@ -339,7 +360,9 @@ export const TaskList = memo(function TaskList({
       return;
     }
 
-    const stillExists = visibleSourceTasks.some((task) => task.taskId === renamingTaskId);
+    const stillExists = visibleSourceTasks.some(
+      (task) => task.taskId === renamingTaskId,
+    );
     if (!stillExists) {
       handleCancelRenameTask();
     }
@@ -350,7 +373,9 @@ export const TaskList = memo(function TaskList({
       return;
     }
 
-    const stillExists = visibleSourceTasks.some((task) => task.taskId === contextMenuTaskId);
+    const stillExists = visibleSourceTasks.some(
+      (task) => task.taskId === contextMenuTaskId,
+    );
     if (!stillExists) {
       setContextMenuTaskId(null);
     }
@@ -372,15 +397,9 @@ export const TaskList = memo(function TaskList({
         workspacePath={workspacePath}
         remoteSessionId={remoteSessionId}
         task={task}
-        variant={taskRowVariant}
-        hoverEnabled={hoverEnabled}
         isPinned={isPinned}
-        isArchived={isArchived}
         isActive={isWorkspaceActive && task.taskId === activeTaskId}
-        isMobileActive={
-          mobileActiveTaskKey ===
-          `${buildTaskWorkspaceKey(workspacePath, workspaceIdentity)}:${task.taskId}`
-        }
+        isMobileActive={false}
         onSelectTask={handleSelectTaskItem}
         onArchiveTaskInline={handleArchiveTaskFromInline}
         onCancelArchiveConfirm={handleCancelArchiveConfirm}
@@ -390,7 +409,6 @@ export const TaskList = memo(function TaskList({
         onArchiveTask={handleArchiveTask}
         onMarkTaskAsUnread={handleMarkTaskAsUnread}
         onOpenTaskContextMenu={handleOpenTaskContextMenu}
-        onOpenFileTree={onOpenFileTree}
         actionsDisabled={Boolean(readOnlyReason)}
         actionsDisabledReason={readOnlyReason}
         intl={intl}
@@ -431,7 +449,9 @@ export const TaskList = memo(function TaskList({
       {showCreateButton ? (
         <div className="border-b p-3">
           <ControlHintTooltip
-            title={readOnlyReason ?? intl.formatMessage({ id: "taskList.newThread" })}
+            title={
+              readOnlyReason ?? intl.formatMessage({ id: "taskList.newThread" })
+            }
           >
             <div>
               <NewTaskButtonGroup
@@ -446,7 +466,7 @@ export const TaskList = memo(function TaskList({
       {/* 任务列表 */}
       <div>
         <div className="space-y-1">
-          {Boolean(inputLoading) && visibleSourceTasks.length === 0 ? (
+          {inputLoading && visibleSourceTasks.length === 0 ? (
             <TaskListLoadingHint />
           ) : visibleSourceTasks.length === 0 ? (
             showEmptyState ? (
@@ -466,7 +486,9 @@ export const TaskList = memo(function TaskList({
               }}
             >
               <ContextMenuTrigger asChild>
-                <ul className="space-y-0.5">{visibleSourceTasks.map(renderTaskItem)}</ul>
+                <ul className="space-y-0.5">
+                  {visibleSourceTasks.map(renderTaskItem)}
+                </ul>
               </ContextMenuTrigger>
               {contextMenuTask ? (
                 <TaskListItemContextMenuContent
@@ -474,8 +496,6 @@ export const TaskList = memo(function TaskList({
                   remoteSessionId={remoteSessionId}
                   task={contextMenuTask}
                   isPinned={pinnedTaskIdSet.has(contextMenuTask.taskId)}
-                  isArchived={isArchived}
-                  organizationActions={organizationActions}
                   intl={intl}
                   onTogglePinTask={handleTogglePinTask}
                   onStartRenameTask={handleStartRenameTask}
@@ -489,21 +509,19 @@ export const TaskList = memo(function TaskList({
           )}
         </div>
         {hasMore && onShowMore ? (
-          <div className="pl-8.5">
-            <button
-              type="button"
-              data-task-list-show-more="true"
-              className="rounded-sm bg-transparent p-0 text-ui-sm text-foreground-subtle outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
+          <div className="cursor-pointer pl-8.5">
+            <span
+              className="text-ui-base text-foreground-subtlest hover:text-foreground-subtle"
               onClick={onShowMore}
             >
               {intl.formatMessage({ id: "taskList.showMore" })}
-            </button>
+            </span>
           </div>
         ) : null}
       </div>
 
       {showFooter ? (
-        <div className="border-t border-outline/40 p-3">
+        <div className="border-t border-foreground/20 p-3">
           <Button
             type="button"
             variant="outline"

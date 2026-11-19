@@ -10,12 +10,6 @@ import {
 } from "./DocumentPane.js";
 import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
 import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
-import { pluginCardRenderer } from "./pluginCardRenderer.js";
-import {
-  getPluginCardsVersion,
-  loadPluginCards,
-  subscribePluginCards,
-} from "./pluginCards.js";
 import {
   admitProjectMode,
   SharedProjectNavigationProvider,
@@ -24,13 +18,12 @@ import {
 const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
   { resourceType: "canvas", component: CanvasDocumentView },
 ];
-const generatedToolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
+const toolCallRenderers = [generatedMediaRenderer];
 
 import {
   type CodeUiWorkspace,
   hostNewTaskRequestSchema,
   type InstanceContext,
-  pluginInventoryChangedSchema,
   type VoiceSettings,
 } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
@@ -50,7 +43,7 @@ import {
   CodeVoiceProvider,
   type CodeVoiceTransport,
 } from "@zui/voice/binding.js";
-import { useMemo, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
@@ -96,12 +89,6 @@ const config: CodeHostConfig = {
 const client = new CodeHttpChannelClient(config);
 // 壳内嵌面（Design/Flow 主区视图）的服务端访问缝：与 client 同一 apiBase/cookie 口径。
 setSurfaceApiBase(config.apiBase);
-// 卡片声明在渲染前读一次：工具卡按工具名匹配声明，读不到就回退到既有工具卡。
-await loadPluginCards(client);
-// 插件启用或停用后重读声明；版本号变化让已渲染的工具卡重新选择渲染器，无需重开工作台。
-client.onPluginInventoryChanged(() => {
-  void loadPluginCards(client);
-});
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
@@ -178,15 +165,6 @@ function CodeHost({
     client.subscribeServices,
     () => client.services,
   );
-  const pluginCardsVersion = useSyncExternalStore(
-    subscribePluginCards,
-    getPluginCardsVersion,
-    getPluginCardsVersion,
-  );
-  const toolCallRenderers = useMemo(
-    () => [...generatedToolCallRenderers],
-    [pluginCardsVersion],
-  );
   const workspaceIdentity = workspace
     ? client.workspaces.identityFor(workspace.projectId, workspace.path)
     : null;
@@ -230,7 +208,7 @@ function CodeHost({
                           if (mode === "office")
                             workbenchNavigation?.open("design");
                         }}
-                        preferDirectoryBrowser={!platform.selectDirectories}
+                        preferDirectoryBrowser={false}
                         restoreSession
                         allowRemoteWorkspace={false}
                         // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
@@ -334,15 +312,11 @@ if (window.parent !== window && bootstrap) {
       event.origin !== window.location.origin
     )
       return;
-    if (pluginInventoryChangedSchema.safeParse(event.data).success) {
-      void loadPluginCards(client);
-      return;
-    }
-    const newTask = hostNewTaskRequestSchema.safeParse(event.data);
-    if (newTask.success) {
+    const task = hostNewTaskRequestSchema.safeParse(event.data);
+    if (task.success) {
       dispatchHostNewTask({
-        prompt: newTask.data.prompt,
-        executionMode: newTask.data.executionMode,
+        prompt: task.data.prompt,
+        executionMode: task.data.executionMode,
       });
       return;
     }

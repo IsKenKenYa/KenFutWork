@@ -86,12 +86,10 @@ function getWorkspaceFileTreeDirectoryLoadDepth(
 }
 
 export function WorkspaceFileTree({
-  workspacePath: hostWorkspacePath,
-  browseDirectory,
+  workspacePath,
   workspaceName,
   workspaceIdentity,
   workspaceRemoteSessionId,
-  viewerScope,
   revealPath,
   temporaryExternalDirectory = false,
   canOpenLocalFileManager = false,
@@ -100,7 +98,6 @@ export function WorkspaceFileTree({
   onOpenBrowserUrl,
   onOpenPreview,
 }: WorkspaceFileTreeProps) {
-  const workspacePath = browseDirectory ?? hostWorkspacePath;
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -123,16 +120,14 @@ export function WorkspaceFileTree({
   }, []);
   const treeData = useWorkspaceFileTreeData({
     workspacePath,
-    hostWorkspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
-    viewerScope,
     enableWorkspaceFeatures: !temporaryExternalDirectory,
   });
   const { installedEditors } = useInstalledFileTreeEditors();
   const isRemoteWorkspaceFileTree = Boolean(workspaceRemoteSessionId || workspaceIdentity);
   const { remoteTarget } = useWorkspaceOpenInEditorTarget({
-    workspacePath: hostWorkspacePath,
+    workspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
   });
@@ -153,10 +148,8 @@ export function WorkspaceFileTree({
   const hasFileSearchQuery = fileSearchQuery.trim().length > 0;
   const searchIndex = useWorkspaceFileSearchIndex({
     workspacePath,
-    hostWorkspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
-    viewerScope,
     enabled: hasFileSearchQuery,
   });
   const {
@@ -206,7 +199,7 @@ export function WorkspaceFileTree({
     setSelectedPath(null);
     setFileSearchQuery("");
     setShowChangedOnly(false);
-  }, [viewerScope, workspaceIdentity, workspacePath]);
+  }, [workspaceIdentity, workspacePath]);
 
   useEffect(() => {
     if (!treeData.gitStatusAvailable) {
@@ -558,12 +551,9 @@ export function WorkspaceFileTree({
         // 即使未来有其它入口直接调用预览，也要在父级兜底阻止打开。
         return;
       }
-      onOpenPreview?.({
-        ...createCodeViewerSourceForWorkspaceFile(row.path),
-        ...(viewerScope ? { viewerScope } : {}),
-      });
+      onOpenPreview?.(createCodeViewerSourceForWorkspaceFile(row.path));
     },
-    [handleDirectoryAction, onOpenPreview, treeData.gitStatusByPath, viewerScope],
+    [handleDirectoryAction, onOpenPreview, treeData.gitStatusByPath],
   );
   const handleRowKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: WorkspaceFileTreeRow) => {
@@ -618,7 +608,7 @@ export function WorkspaceFileTree({
       className="flex h-full min-h-0 flex-col text-foreground"
       data-testid={TID_WORKSPACE_FILE_TREE_PANEL}
     >
-      {onClose ? <div className="px-2 pb-3 pt-3">
+      <div className="px-2 pb-3 pt-3">
         <Button
           type="button"
           variant="ghost"
@@ -631,7 +621,7 @@ export function WorkspaceFileTree({
             {intl.formatMessage({ id: "workspaceFileTree.backToTasks" })}
           </span>
         </Button>
-      </div> : null}
+      </div>
       <div className="flex shrink-0 items-center px-2 pb-2">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-foreground-subtlest" />
@@ -757,7 +747,7 @@ export function WorkspaceFileTree({
             gitStatusLabelByStatus={gitStatusLabelByStatus}
             contextMenuLabels={fileContextMenuLabels}
             editorState={editorState}
-            workspacePath={hostWorkspacePath}
+            workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
             onSelect={setSelectedPath}
             onToggleDirectory={handleToggleDirectory}
@@ -782,7 +772,7 @@ export function WorkspaceFileTree({
                 : "workspaceFileTree.empty",
             })}
             workspaceTitle={workspaceTitle}
-            workspacePath={hostWorkspacePath}
+            workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
             selectedPath={selectedPath}
             gitStatusByPath={treeData.gitStatusByPath}

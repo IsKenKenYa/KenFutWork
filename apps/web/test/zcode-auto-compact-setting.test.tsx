@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-} from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostInstanceAutoCompactSetting } from "../src/components/workbench/zcode/host/InstanceAutoCompactSetting";
@@ -102,11 +96,10 @@ describe("通用分区：上下文自动压缩（服务端实例设置缝）", (
     });
     await user.click(toggle);
 
-    const notice = await screen.findByText("写入失败");
-    expect(notice).toBeVisible();
-    expect(toggle).toHaveAttribute("aria-checked", "true");
-    // 提示使用独立的 React 根节点，等待退出动画结束后再清理测试页面。
-    await waitForElementToBeRemoved(notice);
+    expect(
+      await screen.findByRole("switch", { name: "上下文自动压缩" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByText("写入失败")).toBeVisible();
   });
 
   it("读取期间开关禁用（不摆可点的假开关）", async () => {

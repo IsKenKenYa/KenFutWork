@@ -40,7 +40,6 @@ import { TabStoreProvider, useTabStore, useTabStoreApi } from "@zui/store/TabSto
 import { isSettingsTab, isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
 import { logger } from "@zui/logger.js";
 import { RootShell } from "@zui/root/RootShell.js";
-import { ProjectDirectoryProvider } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
 import { RootWorkspaceContent } from "@zui/root/RootWorkspaceContent.js";
 import { resolveRootWorkspaceShellTarget } from "@zui/root/rootWorkspaceShellTarget.js";
 import { OccupationOnboarding } from "@zui/onboarding/OccupationOnboarding.js";
@@ -125,17 +124,15 @@ export function Root(props: RootProps) {
               onInterfaceModeChange={props.onInterfaceModeChange}
             >
               <TabStoreProvider onOpenSettings={props.platform.openSettingsDocument}>
-                <ProjectDirectoryProvider>
-                  <DiffsWorkerPoolProvider>
-                    <AssistantCodeCommentFeatureProvider
-                      enabled={props.assistantCodeCommentCardsEnabled}
-                    >
-                      <CodingPlanUpgradeDialogProvider>
-                        <RootInner {...props} />
-                      </CodingPlanUpgradeDialogProvider>
-                    </AssistantCodeCommentFeatureProvider>
-                  </DiffsWorkerPoolProvider>
-                </ProjectDirectoryProvider>
+                <DiffsWorkerPoolProvider>
+                  <AssistantCodeCommentFeatureProvider
+                    enabled={props.assistantCodeCommentCardsEnabled}
+                  >
+                    <CodingPlanUpgradeDialogProvider>
+                      <RootInner {...props} />
+                    </CodingPlanUpgradeDialogProvider>
+                  </AssistantCodeCommentFeatureProvider>
+                </DiffsWorkerPoolProvider>
               </TabStoreProvider>
             </StoreProvider>
           </PlatformProvider>

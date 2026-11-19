@@ -396,7 +396,6 @@ export function useGitRepository(options: {
     remoteTarget,
   );
   const workspaceRpcEnabled = shouldEnableWorkspaceRpc({
-    workspacePath,
     workspaceIdentity,
     remoteSessionId,
     remoteTarget,

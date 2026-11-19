@@ -392,7 +392,6 @@ function buildPermissionBlockContext(
     kindLabelOverride,
     canToggle,
     forceOpen,
-    isPermissionPreview: true,
     onOpenCodeViewer: undefined,
     onOpenBrowserUrl: undefined,
   };

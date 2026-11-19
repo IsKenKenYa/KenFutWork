@@ -74,7 +74,7 @@ const REPORT: VoiceDiagnoseReport = {
   },
   listen: {
     state: "measured",
-    summary: "比实时快 3.2 倍 首载 4.2s",
+    summary: "首字 4.2s",
     listen: { samples: 1, rtfMedian: 0.31, modelLoadMs: 4_200 },
   },
   think: { state: "measured", summary: "首字 2.26s · 18 tokens/s" },
@@ -147,7 +147,7 @@ describe("设置 → 语音（code-ui）", () => {
     render(<VoiceSection client={client} />);
     expect(await screen.findByText(/模型文件缺失/)).toBeTruthy();
     // 转换模型已经实测：显示读数
-    expect(screen.getByText(/比实时快 3\.2 倍/)).toBeTruthy();
+    expect(screen.getByText(/首字 4\.2s/)).toBeTruthy();
   });
 
   it("选中的内置模型未下载：行上出现下载按钮，点了打 /download 并进入下载态", async () => {
@@ -173,7 +173,7 @@ describe("设置 → 语音（code-ui）", () => {
     const { client, calls } = stubClient({
       diagnoseReport: {
         ...REPORT,
-        speak: { state: "measured", summary: "首包 0.62s · 比实时快 2.4 倍" },
+        speak: { state: "measured", summary: "首包 0.62s、实时率 0.28" },
       },
     });
     render(<VoiceSection client={client} />);

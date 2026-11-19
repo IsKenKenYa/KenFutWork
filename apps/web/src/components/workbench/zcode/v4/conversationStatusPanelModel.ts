@@ -108,12 +108,6 @@ export function workflowRunOpenTarget(
 
 export interface ConversationStatusPanelModel {
   hasContent: boolean;
-  /**
-   * 有可回看的 Task（宿主已绑定 activeTaskId）时成立，不依赖 Git 状态。
-   * 宿主据此把「运行记录」入口渲染成独立区块：Git 摘要缺席的仓库里，
-   * 入口过去随 Git 状态区一起消失，用户就打不开本 Task 的运行轮次。
-   */
-  runHistory: boolean;
   git: ConversationStatusPanelGitModel | null;
   goal: GoalState | null;
   sessionPlans: ConversationStatusPanelSessionPlansModel | null;
@@ -135,8 +129,6 @@ interface BuildConversationStatusPanelModelInput {
   backgroundWorks?: readonly BackgroundWorkSummary[];
   runningSubagents?: readonly RunningSubagentSummary[];
   workflowRuns?: readonly WorkflowRunState[];
-  /** 宿主已为该会话绑定 activeTaskId；运行记录入口只看这个事实。 */
-  hasActiveTask?: boolean;
 }
 
 function buildGitModel({
@@ -371,11 +363,9 @@ export function buildConversationStatusPanelModel(
   }
 
   const runningWorkflowRuns = buildRunningWorkflowRuns(input.workflowRuns, workflowWorkByWorkId);
-  const runHistory = input.hasActiveTask === true;
 
   return {
     git,
-    runHistory,
     goal,
     sessionPlans,
     plan,
@@ -384,7 +374,6 @@ export function buildConversationStatusPanelModel(
     runningWorkflowRuns,
     hasContent: Boolean(
       git ||
-      runHistory ||
       goal ||
       sessionPlans ||
       plan ||

@@ -1997,8 +1997,6 @@ const ToolCallRowView = memo(function ToolCallRowView({
           onOpenFileLink={context.onOpenFileLink}
           onOpenBrowserUrl={context.onOpenBrowserUrl}
           onOpenAutomationsMain={context.onOpenAutomationsMain}
-          sessionId={context.sessionId ?? undefined}
-          onReadToolOutput={context.onReadToolOutput}
           onOpenPlanDetail={
             context.onOpenPlanDetail && context.sessionId
               ? (request) =>

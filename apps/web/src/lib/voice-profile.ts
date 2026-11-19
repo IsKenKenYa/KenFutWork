@@ -35,7 +35,7 @@ export function gradeAsrRtf(rtf: number): VoiceAsrVerdict {
   if (rtf <= ASR_RTF_EXCELLENT) {
     return {
       grade: "excellent",
-      summary: `${shown}，识别很快（约 ${(1 / rtf).toFixed(1)} 倍速）。`,
+      summary: `${shown}，识别很快。`,
       recommended: true,
     };
   }

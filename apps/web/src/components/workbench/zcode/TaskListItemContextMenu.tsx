@@ -6,10 +6,8 @@ import {
 import { TaskActionMenuContent } from "@zui/TaskActionMenuContent.js";
 
 export function TaskListItemContextMenu({
-  organizationActions,
   intl,
   isPinned,
-  isArchived = false,
   fileManagerLabel,
   taskSessionFile,
   activeSessionId,
@@ -30,12 +28,10 @@ export function TaskListItemContextMenu({
   disableTaskActions = false,
   disabledReason,
 }: {
-  organizationActions?: React.ReactNode;
   intl: {
     formatMessage: (desc: { id: string }, values?: Record<string, string>) => string;
   };
   isPinned: boolean;
-  isArchived?: boolean;
   fileManagerLabel: string;
   taskSessionFile: { loading: boolean; path: string | null; exists: boolean };
   activeSessionId?: string | null;
@@ -64,11 +60,9 @@ export function TaskListItemContextMenu({
 }) {
   return (
     <ContextMenuContent className="w-52">
-      {organizationActions}
       <TaskActionMenuContent
         intl={intl}
         isPinned={isPinned}
-        isArchived={isArchived}
         fileManagerLabel={fileManagerLabel}
         taskSessionFile={taskSessionFile}
         activeSessionId={activeSessionId}

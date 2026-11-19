@@ -1,7 +1,6 @@
 /* eslint-disable max-lines -- 文件树数据 hook 需要集中维护目录加载、watcher 刷新和 Git 状态竞态。 */
-import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFileViewerServices } from "@zui/host/useFileViewerServices.js";
+import { useWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { logger } from "@zui/logger.js";
 import {
   WORKSPACE_FILE_TREE_WATCH_BULK_REFRESH_THRESHOLD,
@@ -55,25 +54,20 @@ async function withWorkspaceFileTreeTimeout<T>(
 
 export function useWorkspaceFileTreeData({
   workspacePath,
-  hostWorkspacePath = workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
-  viewerScope,
   enableWorkspaceFeatures = true,
 }: {
   workspacePath: string;
-  hostWorkspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
-  viewerScope?: CodeUiViewerScope;
   enableWorkspaceFeatures?: boolean;
 }) {
-  const { fileService, fileWatcherService, gitService } = useFileViewerServices({
-    workspacePath: hostWorkspacePath,
+  const { fileService, fileWatcherService, gitService } = useWorkspaceServices(
+    workspacePath,
     workspaceRemoteSessionId,
     workspaceIdentity,
-    viewerScope,
-  });
+  );
   const workspaceGenerationRef = useRef(0);
   const requestVersionRef = useRef(0);
   const directoryRequestVersionRef = useRef<Map<string, number>>(new Map());
@@ -236,7 +230,7 @@ export function useWorkspaceFileTreeData({
         if (enableWorkspaceFeatures) {
           void gitService
             .getIgnoredPaths({
-              workspacePath: hostWorkspacePath,
+              workspacePath,
               paths: entries.map((entry) => entry.path),
             })
             .then((ignoredPaths) => {
@@ -314,7 +308,6 @@ export function useWorkspaceFileTreeData({
       enableWorkspaceFeatures,
       fileService,
       gitService,
-      hostWorkspacePath,
       setDirectoryLoaded,
       setDirectoryLoading,
       workspacePath,
@@ -337,7 +330,7 @@ export function useWorkspaceFileTreeData({
       try {
         const gitStatus = await loadWorkspaceFileTreeGitStatus({
           gitService,
-          workspacePath: hostWorkspacePath,
+          workspacePath,
         });
         if (
           gitStatusRequestVersionRef.current !== requestVersion ||
@@ -364,7 +357,7 @@ export function useWorkspaceFileTreeData({
         setGitStatusByPath(new Map());
       }
     },
-    [enableWorkspaceFeatures, gitService, workspacePath, hostWorkspacePath],
+    [enableWorkspaceFeatures, gitService, workspacePath],
   );
 
   const refreshDirectoryFromWatcher = useCallback(
@@ -613,15 +606,7 @@ export function useWorkspaceFileTreeData({
     });
     void loadGitStatus({ workspaceGeneration });
     return () => {
-      workspaceGenerationRef.current += 1;
-      requestVersionRef.current += 1;
-      gitStatusRequestVersionRef.current += 1;
       cancelRefreshBatch();
-      pendingWatchRefreshPathsRef.current = new Set();
-      if (watchRefreshTimerRef.current) {
-        clearTimeout(watchRefreshTimerRef.current);
-        watchRefreshTimerRef.current = null;
-      }
     };
   }, [cancelRefreshBatch, loadDirectory, loadGitStatus, workspaceIdentity, workspacePath]);
 

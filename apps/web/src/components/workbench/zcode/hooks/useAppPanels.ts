@@ -30,6 +30,7 @@ import {
   applyBrowserUseSidePaneVisibilityEvent,
   BROWSER_USE_OPERATION_INDICATOR_DURATION_MS,
   type BrowserSidePaneMetadata,
+  closeCodeViewerSidePane,
   closeGitSidePane,
   closeSidePaneTab,
   closeSidePaneTabForParent,
@@ -55,9 +56,6 @@ import {
   openBackgroundBashSidePane,
   openBrowserSidePane,
   openCodeViewerSidePane,
-  openFileManagerSidePane,
-  navigateFileManagerSidePane,
-  type FileManagerTarget,
   openCodeViewerSidePanes,
   openDocumentSidePane,
   openModelTrajectorySidePane,
@@ -97,7 +95,6 @@ import { useWhiteboardStore } from "@zui/store/whiteboardStore.js";
 // 关闭 terminal tab 时必须显式 release，杀掉 PTY，避免常驻 registry 造成孤儿进程。
 import { sidePaneTerminalSessionRegistry } from "@zui/terminal/sidePaneTerminalSessionRegistry.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { freezeCodeViewerSource } from "@zui/host/fileViewerServices.js";
 
 export interface BrowserNavigationRequest {
   id: string;
@@ -196,8 +193,7 @@ export function useAppPanels(options: {
   const supportsEmbeddedBrowser =
     explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
   const activeWorkspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
-  const services = useServices();
-  const { zcodeAgentService, zcodeSessionService } = services;
+  const { zcodeAgentService, zcodeSessionService } = useServices();
   const isOfficeMode = useIsOfficeMode();
   const sidePaneMemoryKey = useMemo(
     () =>
@@ -238,18 +234,6 @@ export function useAppPanels(options: {
   const lastActiveSubagentTabByRootRef = useRef<Map<string, string>>(new Map());
   const sidePaneOwnerIdRef = useRef(sidePaneOwnerId);
   sidePaneOwnerIdRef.current = sidePaneOwnerId;
-  const codeViewerOriginRef = useRef({
-    workspacePath: workspaceAbsPath,
-    workspaceIdentity,
-    workspaceRemoteSessionId,
-    taskId: activeTaskId,
-  });
-  codeViewerOriginRef.current = {
-    workspacePath: workspaceAbsPath,
-    workspaceIdentity,
-    workspaceRemoteSessionId,
-    taskId: activeTaskId,
-  };
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
   const projectIdRef = useRef(projectId);
@@ -438,16 +422,11 @@ export function useAppPanels(options: {
 
   const handleOpenCodeViewer = useCallback(
     (source: CodeViewerSource) => {
-      const fixedSource = freezeCodeViewerSource(
-        services,
-        source,
-        codeViewerOriginRef.current,
-      );
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
         const next = openCodeViewerSidePane(
           current,
-          fixedSource,
+          source,
           sidePaneOwnerIdRef.current,
         );
         const activeTab = getActiveSidePaneTab(next);
@@ -464,39 +443,18 @@ export function useAppPanels(options: {
     [
       commitOpenedSidePaneState,
       revealSidePaneForCurrentOwner,
-      services,
       workspaceAbsPath,
     ],
-  );
-
-  const handleOpenFileManager = useCallback(
-    (target: FileManagerTarget) => {
-      const fixedTarget = structuredClone(target);
-      if (!fixedTarget.viewerScope) throw new Error("文件目录缺少读取来源，请重新打开。");
-      revealSidePaneForCurrentOwner();
-      commitOpenedSidePaneState((current) => openFileManagerSidePane(current, fixedTarget));
-    },
-    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner],
-  );
-  const handleNavigateFileManager = useCallback(
-    (tabId: string, source: CodeViewerSource) => {
-      const fixedSource = freezeCodeViewerSource(services, source, codeViewerOriginRef.current);
-      commitSidePaneState((current) => navigateFileManagerSidePane(current, tabId, fixedSource));
-    },
-    [commitSidePaneState, services],
   );
 
   const handleOpenCodeViewers = useCallback(
     (sources: readonly CodeViewerSource[]) => {
       if (sources.length === 0) return;
-      const fixedSources = sources.map((source) =>
-        freezeCodeViewerSource(services, source, codeViewerOriginRef.current),
-      );
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
         const next = openCodeViewerSidePanes(
           current,
-          fixedSources,
+          sources,
           sidePaneOwnerIdRef.current,
           0,
         );
@@ -509,7 +467,6 @@ export function useAppPanels(options: {
     [
       commitOpenedSidePaneState,
       revealSidePaneForCurrentOwner,
-      services,
       workspaceAbsPath,
     ],
   );
@@ -1562,6 +1519,17 @@ export function useAppPanels(options: {
     });
   }, [sidePaneState, workspaceAbsPath]);
 
+  const handleCloseCodeViewer = useCallback(() => {
+    logger.info(
+      `[App] 关闭右侧面板 mode=code-viewer workspace=${workspaceAbsPath}`,
+    );
+    commitSidePaneState((current) => {
+      const next = closeCodeViewerSidePane(current);
+      syncSidePaneCollapsedWithTabs(next);
+      return next;
+    });
+  }, [commitSidePaneState, syncSidePaneCollapsedWithTabs, workspaceAbsPath]);
+
   const handleCloseGit = useCallback(() => {
     logger.info(`[App] 关闭右侧面板 mode=git workspace=${workspaceAbsPath}`);
     commitSidePaneState((current) => {
@@ -1955,8 +1923,6 @@ export function useAppPanels(options: {
     setBrowserNavigationRequest,
     // 回调
     handleOpenCodeViewer,
-    handleOpenFileManager,
-    handleNavigateFileManager,
     handleOpenCodeViewers,
     handleOpenBrowserUrl,
     handleToggleBrowser,
@@ -1984,6 +1950,7 @@ export function useAppPanels(options: {
     handleToggleTerminal,
     handleToggleSidebar,
     handleToggleSidePaneCollapse,
+    handleCloseCodeViewer,
     handleCloseGit,
     handleActivateSidePaneTab,
     handleReorderSidePaneTab,

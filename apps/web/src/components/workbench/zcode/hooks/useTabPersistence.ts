@@ -8,8 +8,7 @@ import { useEffect, useRef } from "react";
 import { useState } from "react";
 import type { AppSettings } from "@zcode/shared";
 import type { ISettingService } from "@zcode/services";
-import { hasRemoteWorkspaceIdentity, readPersistedWorkspaceSessionEntries } from "@zui/lib/remoteWorkspaceHistory.js";
-import { buildRemoteWorkspacePersistPatch } from "@zui/root/remoteWorkspaceSessionPersistence.js";
+import { readPersistedWorkspaceSessionEntries } from "@zui/lib/remoteWorkspaceHistory.js";
 import { useTabStoreApi } from "../store/TabStoreProvider.js";
 import { isWorkspaceTab, type TabStoreState } from "../store/tabStore.js";
 import { logger } from "../logger.js";
@@ -89,10 +88,19 @@ function buildRestoredRecentProjectPaths(
 }
 
 function buildDefaultPersistPatch(state: TabStoreState): Partial<AppSettings> {
-  return buildRemoteWorkspacePersistPatch({
-    ...state,
-    tabs: state.tabs.filter(isWorkspaceTab).filter((tab) => !hasRemoteWorkspaceIdentity(tab)),
-  }, []);
+  const workspaceTabs = state.tabs.filter(isWorkspaceTab).filter((tab) => !tab.remoteSessionId);
+  const activeIndex = state.activeWorkspacePath
+    ? workspaceTabs.findIndex((tab) => tab.workspacePath === state.activeWorkspacePath)
+    : 0;
+
+  return {
+    lastWorkspaceSession: workspaceTabs.map((tab) => ({
+      kind: "local" as const,
+      workspacePath: tab.workspacePath,
+      ...(tab.workspacePurpose ? { workspacePurpose: tab.workspacePurpose } : {}),
+    })),
+    lastActiveTabIndex: Math.max(activeIndex, 0),
+  };
 }
 
 export function useTabPersistence({

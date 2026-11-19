@@ -24,9 +24,6 @@ import {
 import { requestCanvasDocumentOpen } from "./conversationWorkContext.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
-import { projectSupportsMode } from "./taskWorkspaceRegistry.js";
-
-export { projectSupportsMode } from "./taskWorkspaceRegistry.js";
 
 type Preset = "code" | "design";
 type ProjectHost = Pick<
@@ -36,15 +33,11 @@ type ProjectHost = Pick<
   | "openWorkspace"
   | "refreshWorkspaces"
   | "currentWorkPreset"
-  | "services"
 >;
 interface NavigationContext {
   projects: CodeUiWorkspace[];
-  refreshProjects: () => Promise<void>;
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
-  createProject: (preset: Preset) => Promise<void>;
-  creation: { creationId: string; kind: Preset } | null;
-  closeProjectCreation: (creationId: string) => void;
+  createProject: (name?: string) => Promise<void>;
   refreshWorkspaces: () => Promise<CodeUiWorkspace[]>;
   registerTabs: (tabs: TabStore | null) => void;
   error: string | null;
@@ -59,6 +52,9 @@ const pendingAdmissions = new Set<{
 export function admitProjectMode(preset: Preset): Promise<boolean> {
   if (modeAdmission) return modeAdmission(preset);
   return new Promise((resolve) => pendingAdmissions.add({ preset, resolve }));
+}
+export function projectSupportsMode(project: CodeUiWorkspace, preset: Preset) {
+  return (project.enabledModes ?? [project.kind ?? "code"]).includes(preset);
 }
 export function filterProjectTabs(
   tabs: WorkspaceTabState[],
@@ -263,12 +259,6 @@ export function SharedProjectNavigationProvider({
   }, []);
   const sharingRef = useRef(new Map<string, Promise<boolean>>());
   const [error, setError] = useState<string | null>(null);
-  const [creation, setCreation] = useState<NavigationContext["creation"]>(null);
-  const closeProjectCreation = useCallback((creationId: string) => {
-    setCreation((current) =>
-      current?.creationId === creationId ? null : current,
-    );
-  }, []);
   /** 切工作方式为该项目启用新档位：不弹确认框，失败才回落成侧栏错误提示。 */
   const askShare = useCallback(
     (project: CodeUiWorkspace, preset: Preset) => {
@@ -315,59 +305,11 @@ export function SharedProjectNavigationProvider({
     [client],
   );
   useEffect(() => {
-    const release = client.workspaces.subscribe(() => {
-      const nextProjects = client.workspaces.projectCatalog();
-      setProjects(nextProjects);
-    });
-    return () => {
-      release();
-    };
-  }, [client]);
-  useEffect(() => {
-    if (!tabs) return;
-    const updateLabels = () => {
-      const names = new Map(
-        projects.map((project) => [project.projectId, project.name]),
-      );
-      tabs.setState((state) => {
-        let changed = false;
-        const nextTabs = state.tabs.map((tab) => {
-          if (!isWorkspaceTab(tab)) return tab;
-          const projectId = parseLocalWorkspaceIdentity(
-            tab.workspaceIdentity ?? "",
-            tab.workspacePath,
-          )?.projectId;
-          const name = projectId ? names.get(projectId) : undefined;
-          if (!name || name === tab.label) return tab;
-          changed = true;
-          return { ...tab, label: name };
-        });
-        return changed ? { tabs: nextTabs } : state;
-      });
-    };
-    updateLabels();
-    return tabs.subscribe((state, previous) => {
-      if (state.tabs !== previous.tabs) updateLabels();
-    });
-  }, [projects, tabs]);
-  useEffect(() => {
-    let active = true;
-    const subscription = client.services.broadcastService.onMessage(
-      ({ channel }) => {
-        if (channel !== "state:projects") return;
-        void client.refreshWorkspaces().catch((cause: unknown) => {
-          if (active)
-            setError(
-              cause instanceof Error
-                ? cause.message
-                : "项目读取失败 请重新连接工作台",
-            );
-        });
-      },
+    const release = client.workspaces.subscribe(() =>
+      setProjects(client.workspaces.projectCatalog()),
     );
     return () => {
-      active = false;
-      subscription.dispose();
+      release();
     };
   }, [client]);
   useProjectModeAdmission(
@@ -421,15 +363,28 @@ export function SharedProjectNavigationProvider({
     openProject,
     setError,
   );
-  const refreshProjects = useCallback(async () => {
-    await client.refreshWorkspaces();
-  }, [client]);
-  const createProject = useCallback(async (preset: Preset) => {
-    setCreation({ creationId: crypto.randomUUID(), kind: preset });
-  }, []);
+  const createProject = async (name?: string) => {
+    const preset = client.currentWorkPreset();
+    const result = await surfaceJson<{ project: { id: string } }>(
+      "/api/projects",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: name?.trim() || "未命名项目",
+          kind: preset,
+        }),
+      },
+    );
+    const project = (await client.refreshWorkspaces()).find(
+      (item) => item.projectId === result.project.id,
+    );
+    if (!project) throw new Error("项目未加载，请重新打开工作台。");
+    await openProject(project, preset);
+  };
   useEffect(() => {
     const created = () => {
-      void createProject(client.currentWorkPreset()).catch((failure) =>
+      void createProject().catch((failure) =>
         setError(
           failure instanceof Error ? failure.message : "创建项目失败，请重试。",
         ),
@@ -475,16 +430,13 @@ export function SharedProjectNavigationProvider({
       window.removeEventListener("kenfutwork:focus-session", focused);
       window.removeEventListener("kenfutwork:project-deleted", deleted);
     };
-  }, [client, createProject]);
+  }, [client]);
   return (
     <Context.Provider
       value={{
         projects,
-        refreshProjects,
         openProject,
         createProject,
-        creation,
-        closeProjectCreation,
         refreshWorkspaces: () => client.refreshWorkspaces(),
         registerTabs,
         error,
@@ -496,32 +448,12 @@ export function SharedProjectNavigationProvider({
   );
 }
 
-export function useSharedProjectRefresh() {
-  return useContext(Context)?.refreshProjects ?? null;
-}
-
-/** 原项目菜单按稳定身份消费全量目录，工作方式仍取同一服务端投影。 */
-export function useSharedProjectCatalog() {
-  return useContext(Context)?.projects ?? null;
-}
-
-export function useSharedProjectCreation() {
-  const context = useContext(Context);
-  return context
-    ? {
-        creation: context.creation,
-        createProject: context.createProject,
-        closeProjectCreation: context.closeProjectCreation,
-      }
-    : null;
-}
-
 /** 壳侧栏的项目切换/打开入口（全部项目菜单等宿主组件复用同一份打开逻辑）。 */
 export function useSharedProjectNavigation() {
   return useContext(Context);
 }
 
-export function useSharedProjectTabRegistration() {
+export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
   const context = useContext(Context);
   const store = useTabStoreApi();
   const registerTabs = context?.registerTabs;
@@ -529,11 +461,6 @@ export function useSharedProjectTabRegistration() {
     registerTabs?.(store);
     return () => registerTabs?.(null);
   }, [registerTabs, store]);
-}
-
-export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
-  const context = useContext(Context);
-  useSharedProjectTabRegistration();
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const mode = useSyncExternalStore(
     navigation?.subscribe ?? (() => () => {}),

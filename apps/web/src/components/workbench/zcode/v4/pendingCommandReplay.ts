@@ -10,7 +10,6 @@ export type PendingCommandReplay =
   | {
       kind: "sensitiveDigest";
       type:
-        | "renameSession"
         | "resolveInteraction"
         | "respondWorkspaceHookReview"
         | "toggleWorkspaceHookReviewItem"
@@ -41,7 +40,6 @@ export function pendingCommandReplayFor(envelope: CommandEnvelope): PendingComma
     };
   }
   if (
-    envelope.type === "renameSession" ||
     envelope.type === "resolveInteraction" ||
     envelope.type === "respondWorkspaceHookReview" ||
     envelope.type === "toggleWorkspaceHookReviewItem" ||
