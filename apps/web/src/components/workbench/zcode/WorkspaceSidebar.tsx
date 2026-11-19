@@ -646,11 +646,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     );
   }, []);
   // 分组视图的服务端结构只存组织，任务行仍由任务列表提供；这里汇总可见任务。
-  // 任务列表按仓库分组返回，个别分组可能尚未加载出 tasks（undefined），必须过滤掉。
+  // 任务列表按仓库分组返回（字段是 items），个别分组可能尚未加载，必须过滤掉。
   const groupedViewTasks = useMemo(
     () =>
       workspaceTaskLists.groups.flatMap((group) =>
-        Array.isArray(group.tasks) ? group.tasks : [],
+        Array.isArray(group.items) ? group.items : [],
       ),
     [workspaceTaskLists.groups],
   );
@@ -1469,7 +1469,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     <WorkspaceGroupedTasksSection
                       tasks={groupedViewTasks}
                       activeTaskId={activeTaskId}
-                      onSelectTask={handleTaskRowSelect}
+                      onSelectTask={(task) =>
+                        handleTaskRowSelect(
+                          task.workspacePath,
+                          task.taskId,
+                          task.workspaceIdentity,
+                        )
+                      }
                     />
                   ) : (
                     <DndContext
