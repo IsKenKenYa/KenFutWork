@@ -1,3 +1,19 @@
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
@@ -6,12 +22,19 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   FolderPlus,
+  GripVertical,
   Pencil,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useTaskGroupPort } from "./TaskGroupPort.js";
 import {
   groupMembersInOrder,
@@ -116,6 +139,14 @@ export function WorkspaceGroupedTasksSection({
     });
   }, []);
 
+  // 与侧栏项目分区同一套传感器：8px 位移才起拖，避免误触；键盘可排序。
+  const groupSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
   /** 改名/换色/删除都要带当前观察修订；服务端以修订做并发保护。 */
   const currentRevision =
     state.status === "ready" ? state.structure.revision : 0;
@@ -175,30 +206,27 @@ export function WorkspaceGroupedTasksSection({
   );
 
   /**
-   * 分组上下移动：分组只能在根层重排，用相邻分组作锚点。
-   * 服务端 `move` 接收 `{node, sourceGroupId: null, groupId: null, anchor}`。
+   * 分组重排：分组只能在根层移动，用目标分组作锚点。
+   * 拖到目标之前还是之后，由两个分组在根层顺序里的相对位置决定。
    */
-  const moveGroup = useCallback(
-    async (groupId: string, direction: "up" | "down") => {
-      if (!port || state.status !== "ready") return;
-      const rootGroups = groupsInOrder(state.structure);
-      const index = rootGroups.findIndex((group) => group.id === groupId);
-      if (index < 0) return;
-      const neighbourIndex = direction === "up" ? index - 1 : index + 1;
-      const neighbour = rootGroups[neighbourIndex];
-      if (!neighbour) return;
+  const moveGroupTo = useCallback(
+    async (activeGroupId: string, overGroupId: string) => {
+      if (!port || state.status !== "ready" || activeGroupId === overGroupId)
+        return;
+      const ordered = groupsInOrder(state.structure);
+      const fromIndex = ordered.findIndex((g) => g.id === activeGroupId);
+      const toIndex = ordered.findIndex((g) => g.id === overGroupId);
+      if (fromIndex < 0 || toIndex < 0) return;
+      // 向下拖 = 落到目标之后；向上拖 = 落到目标之前。
+      const side: "before" | "after" = fromIndex < toIndex ? "after" : "before";
       setSaving(true);
       try {
         await port.move({
-          node: { type: "group", groupId },
+          node: { type: "group", groupId: activeGroupId },
           sourceGroupId: null,
           groupId: null,
           expectedRevision: currentRevision,
-          anchor: {
-            node: { type: "group", groupId: neighbour.id },
-            // 上移 = 放到上一个分组之前；下移 = 放到下一个分组之后。
-            side: direction === "up" ? "before" : "after",
-          },
+          anchor: { node: { type: "group", groupId: overGroupId }, side },
         });
         await load();
       } finally {
@@ -206,6 +234,15 @@ export function WorkspaceGroupedTasksSection({
       }
     },
     [currentRevision, load, port, state],
+  );
+
+  const handleGroupDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      void moveGroupTo(String(active.id), String(over.id));
+    },
+    [moveGroupTo],
   );
 
   const submitGroup = useCallback(async () => {
@@ -234,148 +271,49 @@ export function WorkspaceGroupedTasksSection({
     const { structure } = state;
     const rootTasks = rootTasksInOrder(structure, tasks);
     const orderedGroups = groupsInOrder(structure);
-    const lastGroupIndex = orderedGroups.length - 1;
     return (
       <>
-        {orderedGroups.map((group, groupIndex) => {
-          const members = groupMembersInOrder(structure, group.id);
-          const isCollapsed = collapsed.has(group.id);
-          return (
-            <section key={group.id} className="group/row space-y-0.5">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => toggle(group.id)}
-                  aria-expanded={!isCollapsed}
-                  className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-2 py-1 text-left text-ui-base text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="size-3.5 shrink-0" aria-hidden />
-                  ) : (
-                    <ChevronDown className="size-3.5 shrink-0" aria-hidden />
-                  )}
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "size-2 shrink-0 rounded-full",
-                      GROUP_COLOR_CLASS[group.color],
-                    )}
-                  />
-                  <span className="min-w-0 truncate">{group.title}</span>
-                  <span className="ml-auto shrink-0 text-ui-sm">
-                    {members.length}
-                  </span>
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
-                  aria-label={intl.formatMessage({
-                    id: "workspaceSidebar.groupedMoveUp",
-                  })}
-                  disabled={saving || groupIndex === 0}
-                  onClick={() => void moveGroup(group.id, "up")}
-                >
-                  <ChevronUp className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
-                  aria-label={intl.formatMessage({
-                    id: "workspaceSidebar.groupedMoveDown",
-                  })}
-                  disabled={saving || groupIndex === lastGroupIndex}
-                  onClick={() => void moveGroup(group.id, "down")}
-                >
-                  <ChevronDown className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
-                  aria-label={intl.formatMessage({
-                    id: "workspaceSidebar.groupedRename",
-                  })}
-                  onClick={() => {
+        <DndContext
+          sensors={groupSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleGroupDragEnd}
+        >
+          <SortableContext
+            items={orderedGroups.map((group) => group.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {orderedGroups.map((group) => (
+              <SortableGroupRow
+                key={group.id}
+                groupId={group.id}
+                dragHandleLabel={intl.formatMessage({
+                  id: "workspaceSidebar.groupedReorder",
+                })}
+              >
+                <GroupRowBody
+                  group={group}
+                  members={groupMembersInOrder(structure, group.id)}
+                  isCollapsed={collapsed.has(group.id)}
+                  activeTaskId={activeTaskId}
+                  editing={editingGroup === group.id}
+                  editingTitle={editingTitle}
+                  intl={intl}
+                  onToggle={() => toggle(group.id)}
+                  onBeginRename={() => {
                     setEditingGroup(group.id);
                     setEditingTitle(group.title);
                   }}
-                >
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-destructive group-hover/row:opacity-100"
-                  aria-label={intl.formatMessage({
-                    id: "workspaceSidebar.groupedRemove",
-                  })}
-                  onClick={() => void removeGroup(group.id)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-              {editingGroup === group.id ? (
-                <div className="flex items-center gap-2 pl-6">
-                  <Input
-                    value={editingTitle}
-                    onChange={(event) => setEditingTitle(event.target.value)}
-                    aria-label={intl.formatMessage({
-                      id: "workspaceSidebar.groupedNamePlaceholder",
-                    })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void submitRename(group.id);
-                      if (event.key === "Escape") setEditingGroup(null);
-                    }}
-                  />
-                  <div className="flex shrink-0 items-center gap-1">
-                    {GROUP_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        aria-label={color}
-                        onClick={() => void submitColor(group.id, color)}
-                        className={cn(
-                          "size-3.5 rounded-full ring-offset-1 hover:ring-1 hover:ring-foreground/30",
-                          GROUP_COLOR_CLASS[color],
-                          group.color === color && "ring-1 ring-foreground/50",
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void submitRename(group.id)}
-                  >
-                    {intl.formatMessage({
-                      id: "workspaceSidebar.groupedSave",
-                    })}
-                  </Button>
-                </div>
-              ) : null}
-              {isCollapsed
-                ? null
-                : members.map((task) => (
-                    <button
-                      key={task.taskId}
-                      type="button"
-                      data-active={task.taskId === activeTaskId}
-                      onClick={() => onSelectTask(task)}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md py-1 pr-2 pl-6 text-left text-ui-base text-foreground-subtle hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
-                    >
-                      <span className="min-w-0 truncate">{task.title}</span>
-                    </button>
-                  ))}
-            </section>
-          );
-        })}
+                  onEditingTitleChange={setEditingTitle}
+                  onCancelRename={() => setEditingGroup(null)}
+                  onCommitRename={() => void submitRename(group.id)}
+                  onPickColor={(color) => void submitColor(group.id, color)}
+                  onRemove={() => void removeGroup(group.id)}
+                  onSelectTask={onSelectTask}
+                />
+              </SortableGroupRow>
+            ))}
+          </SortableContext>
+        </DndContext>
         {rootTasks.length > 0 ? (
           <section className="space-y-0.5">
             <div className="px-2 py-1 text-ui-sm text-foreground-subtlest">
@@ -401,11 +339,11 @@ export function WorkspaceGroupedTasksSection({
     collapsed,
     editingGroup,
     editingTitle,
+    groupSensors,
+    handleGroupDragEnd,
     intl,
-    moveGroup,
     onSelectTask,
     removeGroup,
-    saving,
     state,
     submitColor,
     submitRename,
@@ -472,6 +410,191 @@ export function WorkspaceGroupedTasksSection({
         rendered
       )}
     </div>
+  );
+}
+
+/**
+ * 可拖拽的分组行：拖拽抓手独立于折叠按钮，避免点标题时误拖。
+ * 位移与过渡交给 dnd-kit，拖拽中稍微降低不透明度提示「正在搬」。
+ */
+function SortableGroupRow({
+  groupId,
+  dragHandleLabel,
+  children,
+}: {
+  groupId: string;
+  dragHandleLabel: string;
+  children: ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: groupId });
+  const style: CSSProperties = {
+    transform: transform
+      ? CSS.Transform.toString({ ...transform, scaleX: 1, scaleY: 1 })
+      : undefined,
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+    opacity: isDragging ? 0.85 : 1,
+  };
+  return (
+    <section ref={setNodeRef} style={style} className="group/row space-y-0.5">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={dragHandleLabel}
+          className="shrink-0 cursor-grab rounded-md p-1 text-foreground-subtlest opacity-0 hover:text-foreground active:cursor-grabbing group-hover/row:opacity-100"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3.5" aria-hidden />
+        </button>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+/** 分组行主体：折叠标题、改名/换色/删除按钮，以及展开后的成员列表。 */
+function GroupRowBody({
+  group,
+  members,
+  isCollapsed,
+  activeTaskId,
+  editing,
+  editingTitle,
+  intl,
+  onToggle,
+  onBeginRename,
+  onEditingTitleChange,
+  onCancelRename,
+  onCommitRename,
+  onPickColor,
+  onRemove,
+  onSelectTask,
+}: {
+  group: { id: string; title: string; color: (typeof GROUP_COLORS)[number] };
+  members: readonly ZCodeTaskMeta[];
+  isCollapsed: boolean;
+  activeTaskId?: string | null | undefined;
+  editing: boolean;
+  editingTitle: string;
+  intl: ReturnType<typeof useZCodeIntl>["intl"];
+  onToggle: () => void;
+  onBeginRename: () => void;
+  onEditingTitleChange: (value: string) => void;
+  onCancelRename: () => void;
+  onCommitRename: () => void;
+  onPickColor: (color: string) => void;
+  onRemove: () => void;
+  onSelectTask: (task: ZCodeTaskMeta) => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!isCollapsed}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-2 py-1 text-left text-ui-base text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+          )}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              GROUP_COLOR_CLASS[group.color],
+            )}
+          />
+          <span className="min-w-0 truncate">{group.title}</span>
+          <span className="ml-auto shrink-0 text-ui-sm">{members.length}</span>
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
+          aria-label={intl.formatMessage({
+            id: "workspaceSidebar.groupedRename",
+          })}
+          onClick={onBeginRename}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 text-foreground-subtle opacity-0 hover:text-destructive group-hover/row:opacity-100"
+          aria-label={intl.formatMessage({
+            id: "workspaceSidebar.groupedRemove",
+          })}
+          onClick={onRemove}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-2 pl-6">
+          <Input
+            value={editingTitle}
+            onChange={(event) => onEditingTitleChange(event.target.value)}
+            aria-label={intl.formatMessage({
+              id: "workspaceSidebar.groupedNamePlaceholder",
+            })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommitRename();
+              if (event.key === "Escape") onCancelRename();
+            }}
+          />
+          <div className="flex shrink-0 items-center gap-1">
+            {GROUP_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={color}
+                onClick={() => onPickColor(color)}
+                className={cn(
+                  "size-3.5 rounded-full ring-offset-1 hover:ring-1 hover:ring-foreground/30",
+                  GROUP_COLOR_CLASS[color],
+                  group.color === color && "ring-1 ring-foreground/50",
+                )}
+              />
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCommitRename}
+          >
+            {intl.formatMessage({ id: "workspaceSidebar.groupedSave" })}
+          </Button>
+        </div>
+      ) : null}
+      {isCollapsed
+        ? null
+        : members.map((task) => (
+            <button
+              key={task.taskId}
+              type="button"
+              data-active={task.taskId === activeTaskId}
+              onClick={() => onSelectTask(task)}
+              className="flex w-full min-w-0 items-center gap-2 rounded-md py-1 pr-2 pl-6 text-left text-ui-base text-foreground-subtle hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+            >
+              <span className="min-w-0 truncate">{task.title}</span>
+            </button>
+          ))}
+    </>
   );
 }
 
