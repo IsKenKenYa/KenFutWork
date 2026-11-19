@@ -1749,6 +1749,8 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.groupedRename": "Rename group",
   "workspaceSidebar.groupedRemove": "Delete group",
   "workspaceSidebar.groupedSave": "Save",
+  "workspaceSidebar.groupedMoveUp": "Move group up",
+  "workspaceSidebar.groupedMoveDown": "Move group down",
   "workspaceSidebar.organizeByProject": "Project",
   "workspaceSidebar.organizeCanvas": "Canvas",
   "workspaceSidebar.conversationsSection": "Tasks",

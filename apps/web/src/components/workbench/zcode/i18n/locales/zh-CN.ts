@@ -1652,6 +1652,8 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.groupedRename": "重命名分组",
   "workspaceSidebar.groupedRemove": "删除分组",
   "workspaceSidebar.groupedSave": "保存",
+  "workspaceSidebar.groupedMoveUp": "上移分组",
+  "workspaceSidebar.groupedMoveDown": "下移分组",
   "workspaceSidebar.organizeByProject": "项目",
   "workspaceSidebar.organizeCanvas": "画布",
   "workspaceSidebar.conversationsSection": "任务",

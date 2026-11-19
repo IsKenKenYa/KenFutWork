@@ -17,6 +17,9 @@ import type { ZCodeTaskMeta } from "@zcode/shared";
  */
 
 /** 与 `buildTaskWorkspaceKey` 同口径：identity 优先，缺省回落到路径。 */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export function taskGroupWorkspaceKey(
   workspacePath: string,
   workspaceIdentity?: string,
@@ -26,21 +29,57 @@ export function taskGroupWorkspaceKey(
     : workspacePath;
 }
 
+/**
+ * 解析任务顺序键。
+ *
+ * 服务端把任务归属写成 JSON 数组（`[workspaceIdentity, workspacePath, taskId]` 形式的
+ * 复合键）。这里按结构取前两个可识别字段，取不到就返回 null，由调用方跳过。
+ */
+export function parseTaskOrderKey(
+  key: string,
+): { workspaceKey: string; taskId: string } | null {
+  const uuidIn = (value: unknown) =>
+    typeof value === "string" && UUID_PATTERN.test(value) ? value : null;
+  try {
+    const parsed: unknown = JSON.parse(key);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const taskId = uuidIn(parsed.at(-1));
+    if (!taskId) return null;
+    const identities = parsed
+      .slice(0, -1)
+      .filter(
+        (part): part is string => typeof part === "string" && part.length > 0,
+      );
+    if (identities.length === 0) return null;
+    // 复合键里 identity 与路径同时存在时，identity 是 join 键；只有路径时用路径。
+    const workspaceKey =
+      identities.find((part) => UUID_PATTERN.test(part)) ??
+      identities.at(-1) ??
+      "";
+    return workspaceKey ? { workspaceKey, taskId } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 校验宿主导入的原始读取结果；形状不符直接报错，不做兜底。 */
 export function parseTaskGroupStructure(raw: unknown): CodeTaskGroupStructure {
   return codeTaskGroupStructureSchema.parse(raw);
 }
 
 /**
- * 根层顺序键的编码方式与服务端一致：`group:<id>` / `task:<workspaceKey>|<taskId>`。
- * 服务端 `order[].key` 是拆解过的稳定键，这里按同样规则还原成结构引用。
+ * 根层顺序条目的 `key` 还原成结构引用的判定。
+ *
+ * 服务端 `order[].key` 的两种真实形状（实测）：
+ * - 分组：**裸分组 UUID**（不是 `group:<id>`）；
+ * - 任务：任务归属键的 JSON 序列化串（含 workspaceIdentity 与路径）。
+ * 早期猜过 `group:` 前缀，服务端并不产出该前缀，会让分组排序恒为空。
  */
 export function decodeTopLevelOrderKey(
   key: string,
-): ZCodeGroupedTaskViewStructureTopOrder["type"] extends never
-  ? never
-  : { type: "group"; groupId: string } | { type: "task"; key: string } {
+): { type: "group"; groupId: string } | { type: "task"; key: string } {
   if (key.startsWith("group:")) return { type: "group", groupId: key.slice(6) };
+  if (UUID_PATTERN.test(key)) return { type: "group", groupId: key };
   return { type: "task", key };
 }
 
@@ -79,25 +118,58 @@ export function toGroupedTaskViewStructure(
       sortOrder: member.sortOrder,
       addedAt: 0,
     })),
-    topLevelOrders: structure.order.map((entry) => {
-      const decoded = decodeTopLevelOrderKey(entry.key);
-      if (decoded.type === "group")
-        return {
-          type: "group" as const,
-          groupId: decoded.groupId,
+    topLevelOrders: (() => {
+      const orders: ZCodeGroupedTaskViewStructureTopOrder[] = [];
+      for (const entry of structure.order) {
+        const decoded = decodeTopLevelOrderKey(entry.key);
+        if (decoded.type === "group") {
+          orders.push({
+            type: "group",
+            groupId: decoded.groupId,
+            sortOrder: entry.sortOrder,
+          });
+          continue;
+        }
+        const parsed = parseTaskOrderKey(decoded.key);
+        // 解析不出的任务键说明服务端编码变了；跳过而不是编造身份。
+        if (!parsed) continue;
+        orders.push({
+          type: "task",
+          workspaceKey: parsed.workspaceKey,
+          taskId: parsed.taskId,
           sortOrder: entry.sortOrder,
-        };
-      const [workspaceKey = "", taskId = ""] = decoded.key.split("|");
-      return {
-        type: "task" as const,
-        workspaceKey,
-        taskId,
-        sortOrder: entry.sortOrder,
-      };
-    }),
+        });
+      }
+      return orders;
+    })(),
     revision: structure.revision,
     taskByKey,
   };
+}
+
+/**
+ * 根层分组按服务端 `order` 排序。
+ *
+ * 服务端 `groups` 数组本身按创建时间返回，真正的根层次序只存在 `order` 里；
+ * 直接用 `groups` 会让上移/下移看起来没有生效。
+ */
+export function groupsInOrder(
+  structure: ReturnType<typeof toGroupedTaskViewStructure>,
+): ZCodeTaskGroup[] {
+  const sortOrderByGroupId = new Map<string, number>();
+  for (const entry of structure.topLevelOrders) {
+    if (entry.type !== "group") continue;
+    sortOrderByGroupId.set(entry.groupId, entry.sortOrder);
+  }
+  return [...structure.groups].sort((left, right) => {
+    const leftOrder = sortOrderByGroupId.get(left.id);
+    const rightOrder = sortOrderByGroupId.get(right.id);
+    // 未出现在 order 里的分组（极少见）排在有次序的之后，保持稳定。
+    if (leftOrder === undefined && rightOrder === undefined) return 0;
+    if (leftOrder === undefined) return 1;
+    if (rightOrder === undefined) return -1;
+    return leftOrder - rightOrder;
+  });
 }
 
 /** 组内成员按服务端 sortOrder 升序；缺序（null）排在同序之后，保证稳定。 */
@@ -126,7 +198,9 @@ export function rootTasksInOrder(
   tasks: readonly ZCodeTaskMeta[],
 ): ZCodeTaskMeta[] {
   const grouped = new Set(
-    structure.members.map((member) => `${member.workspaceKey}|${member.taskId}`),
+    structure.members.map(
+      (member) => `${member.workspaceKey}|${member.taskId}`,
+    ),
   );
   const rootOrder = new Map<string, number>();
   for (const entry of structure.topLevelOrders) {

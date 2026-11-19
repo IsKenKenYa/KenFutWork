@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
   decodeTopLevelOrderKey,
   groupMembersInOrder,
+  groupsInOrder,
   parseTaskGroupStructure,
   rootTasksInOrder,
   taskGroupWorkspaceKey,
@@ -15,7 +16,11 @@ const TASK_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const TASK_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TASK_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-function task(taskId: string, title: string, workspacePath = "/w"): ZCodeTaskMeta {
+function task(
+  taskId: string,
+  title: string,
+  workspacePath = "/w",
+): ZCodeTaskMeta {
   return {
     taskId,
     title,
@@ -58,10 +63,30 @@ test("编码/解码根层顺序键：group 与 task 两种都认得", () => {
     type: "group",
     groupId: GROUP_ID,
   });
+  // 服务端实际产出的是裸 UUID，不是 group: 前缀。
+  expect(decodeTopLevelOrderKey(GROUP_ID)).toEqual({
+    type: "group",
+    groupId: GROUP_ID,
+  });
   expect(decodeTopLevelOrderKey(`/w|${TASK_C}`)).toEqual({
     type: "task",
     key: `/w|${TASK_C}`,
   });
+});
+
+test("裸 UUID 形态的 order 能驱动分组排序（服务端真实形状）", () => {
+  const bare = {
+    ...STRUCTURE,
+    order: [
+      { type: "group" as const, key: OTHER_GROUP_ID, sortOrder: 0 },
+      { type: "group" as const, key: GROUP_ID, sortOrder: 1 },
+    ],
+  };
+  const structure = toGroupedTaskViewStructure(bare, []);
+  expect(groupsInOrder(structure).map((g) => g.id)).toEqual([
+    OTHER_GROUP_ID,
+    GROUP_ID,
+  ]);
 });
 
 test("workspaceKey 口径：identity 优先，缺省回落路径", () => {
@@ -73,18 +98,19 @@ test("workspaceKey 口径：identity 优先，缺省回落路径", () => {
 test("组内成员按 sortOrder 升序，缺序排最后", () => {
   const tasks = [task(TASK_A, "A"), task(TASK_B, "B")];
   const structure = toGroupedTaskViewStructure(STRUCTURE, tasks);
-  expect(groupMembersInOrder(structure, GROUP_ID).map((t) => t.taskId)).toEqual([
-    TASK_A,
-    TASK_B,
-  ]);
+  const memberIds = groupMembersInOrder(structure, GROUP_ID).map(
+    (t) => t.taskId,
+  );
+  expect(memberIds).toEqual([TASK_A, TASK_B]);
 });
 
 test("成员指向的任务不在列表时跳过，不造占位行", () => {
   // 只提供 A，B 已不在可见列表
   const structure = toGroupedTaskViewStructure(STRUCTURE, [task(TASK_A, "A")]);
-  expect(groupMembersInOrder(structure, GROUP_ID).map((t) => t.taskId)).toEqual([
-    TASK_A,
-  ]);
+  const memberIds = groupMembersInOrder(structure, GROUP_ID).map(
+    (t) => t.taskId,
+  );
+  expect(memberIds).toEqual([TASK_A]);
 });
 
 test("根层任务排除已入组成员，并按服务端根层顺序排列", () => {
@@ -103,13 +129,47 @@ test("任务列表里的空洞不会让适配崩溃", () => {
   ];
   expect(() => toGroupedTaskViewStructure(STRUCTURE, tasks)).not.toThrow();
   const structure = toGroupedTaskViewStructure(STRUCTURE, tasks);
-  expect(groupMembersInOrder(structure, GROUP_ID).map((t) => t.taskId)).toEqual([
-    TASK_A,
-  ]);
+  const memberIds = groupMembersInOrder(structure, GROUP_ID).map(
+    (t) => t.taskId,
+  );
+  expect(memberIds).toEqual([TASK_A]);
   expect(() => rootTasksInOrder(structure, tasks)).not.toThrow();
 });
 
 test("结构校验：缺字段直接报错，不做兜底", () => {
   expect(() => parseTaskGroupStructure({ revision: 1 })).toThrow();
   expect(parseTaskGroupStructure(STRUCTURE).revision).toBe(7);
+});
+
+test("根层分组按 order 排序，而不是按服务端 groups 数组顺序", () => {
+  // 服务端 groups 按创建时间返回（OTHER 在后），但 order 把 OTHER 排在前面。
+  const reordered = {
+    ...STRUCTURE,
+    order: [
+      { type: "group" as const, key: `group:${OTHER_GROUP_ID}`, sortOrder: 0 },
+      { type: "group" as const, key: `group:${GROUP_ID}`, sortOrder: 1 },
+      { type: "task" as const, key: `/w|${TASK_C}`, sortOrder: 2 },
+    ],
+  };
+  const structure = toGroupedTaskViewStructure(reordered, []);
+  expect(groupsInOrder(structure).map((g) => g.id)).toEqual([
+    OTHER_GROUP_ID,
+    GROUP_ID,
+  ]);
+  // 原始顺序未变，仅视图排序改变。
+  expect(structure.groups.map((g) => g.id)).toEqual([GROUP_ID, OTHER_GROUP_ID]);
+});
+
+test("缺少 order 条目的分组排在最后，不丢失", () => {
+  const partial = {
+    ...STRUCTURE,
+    order: [
+      { type: "group" as const, key: `group:${OTHER_GROUP_ID}`, sortOrder: 0 },
+    ],
+  };
+  const structure = toGroupedTaskViewStructure(partial, []);
+  expect(groupsInOrder(structure).map((g) => g.id)).toEqual([
+    OTHER_GROUP_ID,
+    GROUP_ID,
+  ]);
 });

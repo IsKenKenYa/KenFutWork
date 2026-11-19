@@ -6,6 +6,7 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   FolderPlus,
   Pencil,
   Trash2,
@@ -14,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTaskGroupPort } from "./TaskGroupPort.js";
 import {
   groupMembersInOrder,
+  groupsInOrder,
   parseTaskGroupStructure,
   rootTasksInOrder,
   toGroupedTaskViewStructure,
@@ -172,6 +174,40 @@ export function WorkspaceGroupedTasksSection({
     [currentRevision, load, port],
   );
 
+  /**
+   * 分组上下移动：分组只能在根层重排，用相邻分组作锚点。
+   * 服务端 `move` 接收 `{node, sourceGroupId: null, groupId: null, anchor}`。
+   */
+  const moveGroup = useCallback(
+    async (groupId: string, direction: "up" | "down") => {
+      if (!port || state.status !== "ready") return;
+      const rootGroups = groupsInOrder(state.structure);
+      const index = rootGroups.findIndex((group) => group.id === groupId);
+      if (index < 0) return;
+      const neighbourIndex = direction === "up" ? index - 1 : index + 1;
+      const neighbour = rootGroups[neighbourIndex];
+      if (!neighbour) return;
+      setSaving(true);
+      try {
+        await port.move({
+          node: { type: "group", groupId },
+          sourceGroupId: null,
+          groupId: null,
+          expectedRevision: currentRevision,
+          anchor: {
+            node: { type: "group", groupId: neighbour.id },
+            // 上移 = 放到上一个分组之前；下移 = 放到下一个分组之后。
+            side: direction === "up" ? "before" : "after",
+          },
+        });
+        await load();
+      } finally {
+        setSaving(false);
+      }
+    },
+    [currentRevision, load, port, state],
+  );
+
   const submitGroup = useCallback(async () => {
     const trimmed = title.trim();
     if (!trimmed || saving || !port) return;
@@ -197,9 +233,11 @@ export function WorkspaceGroupedTasksSection({
     if (state.status !== "ready") return null;
     const { structure } = state;
     const rootTasks = rootTasksInOrder(structure, tasks);
+    const orderedGroups = groupsInOrder(structure);
+    const lastGroupIndex = orderedGroups.length - 1;
     return (
       <>
-        {structure.groups.map((group) => {
+        {orderedGroups.map((group, groupIndex) => {
           const members = groupMembersInOrder(structure, group.id);
           const isCollapsed = collapsed.has(group.id);
           return (
@@ -228,6 +266,32 @@ export function WorkspaceGroupedTasksSection({
                     {members.length}
                   </span>
                 </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
+                  aria-label={intl.formatMessage({
+                    id: "workspaceSidebar.groupedMoveUp",
+                  })}
+                  disabled={saving || groupIndex === 0}
+                  onClick={() => void moveGroup(group.id, "up")}
+                >
+                  <ChevronUp className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-foreground-subtle opacity-0 hover:text-foreground group-hover/row:opacity-100"
+                  aria-label={intl.formatMessage({
+                    id: "workspaceSidebar.groupedMoveDown",
+                  })}
+                  disabled={saving || groupIndex === lastGroupIndex}
+                  onClick={() => void moveGroup(group.id, "down")}
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -338,8 +402,10 @@ export function WorkspaceGroupedTasksSection({
     editingGroup,
     editingTitle,
     intl,
+    moveGroup,
     onSelectTask,
     removeGroup,
+    saving,
     state,
     submitColor,
     submitRename,
