@@ -1,6 +1,7 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
 import { screen } from "@testing-library/react";
 import { TooltipProvider } from "@zui/components/ui/tooltip.js";
+import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { V4ComposerModeSwitch } from "@zui/v4/composer/V4ComposerModeControls.js";
 import { useEffect, useRef, useState } from "react";
@@ -16,11 +17,11 @@ vi.mock("@zui/hooks/useSettingService.js", () => ({
 }));
 
 export async function readyComposerModeTrigger() {
-  await screen.findByTestId("execution-mode-label");
-  return screen.getByTestId("chat-mode-select-trigger");
+  await screen.findByTestId("execution-mode-chip");
+  return screen.getByTestId("execution-mode-chip");
 }
 
-/** 同一个真实盾牌菜单；只提供Renderer依赖和受控草稿，不复制菜单或策略实现。 */
+/** 同一个真实控件组合：权限菜单与执行方式按钮并排，各管各的一项。 */
 export function ComposerModeMenu({
   controller,
   disabled,
@@ -45,8 +46,8 @@ export function ComposerModeMenu({
           activeConfigPicker={open ? "mode" : null}
           onConfigPickerOpenChange={(_picker, next) => setOpen(next)}
           onSwitchMode={onSwitchMode}
-          executionModeController={controller}
         />
+        <ExecutionModeChip controller={controller} disabled={disabled} />
       </TooltipProvider>
     </ZCodeIntlProvider>
   );

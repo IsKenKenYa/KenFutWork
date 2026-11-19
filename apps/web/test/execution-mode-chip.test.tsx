@@ -16,7 +16,7 @@ afterEach(() => {
   surfaceJson.mockReset();
 });
 
-test("原盾牌始终可用，执行方式标签仅在真实策略加载后显示", async () => {
+test("权限按钮与执行方式按钮并排，执行方式只在真实策略加载后出现", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/execution-modes") {
       return {
@@ -31,17 +31,20 @@ test("原盾牌始终可用，执行方式标签仅在真实策略加载后显�
   const { rerender } = render(
     <ExecutionModeChip sessionId={null} disabled={false} />,
   );
+  // 权限按钮只写权限档，不再把执行方式拼进自己的文案。
   expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
     "完全访问",
   );
-  expect(screen.queryByTestId("execution-mode-label")).toBeNull();
   expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
 
   rerender(<ExecutionModeChip sessionId="s1" disabled={false} />);
   await waitFor(() =>
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("目标"),
+    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
+      "目标",
+    ),
+  );
+  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
+    "完全访问",
   );
 
   surfaceJson.mockImplementation(async () => {
@@ -49,7 +52,7 @@ test("原盾牌始终可用，执行方式标签仅在真实策略加载后显�
   });
   rerender(<ExecutionModeChip sessionId="s2" disabled={false} />);
   await waitFor(() =>
-    expect(screen.queryByTestId("execution-mode-label")).toBeNull(),
+    expect(screen.queryByTestId("execution-mode-chip")).toBeNull(),
   );
   expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
     "完全访问",

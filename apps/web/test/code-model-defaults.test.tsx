@@ -160,14 +160,14 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
   ).toContain("网关2");
 });
 
-it("权限设置只选择真实审批模型，不再展示不作用于Task的全局权限档", async () => {
+it("权限设置含审批模型选择，同时保留四档与自动化档", async () => {
   const { calls, ids } = openDefaults(false, true);
   const approval = await screen.findByRole("combobox", {
     name: "帮我批准模型",
   });
   await waitFor(() => expect(approval).toHaveProperty("disabled", false));
-  expect(screen.getAllByRole("combobox")).toHaveLength(1);
-  expect(screen.queryByLabelText("默认档")).toBeNull();
+  // 四档横排与自动化档都要在：权限分区不再只剩审批模型一项。
+  expect(screen.getAllByRole("group", { name: /档位/ })).toHaveLength(2);
   expect(approval.textContent).toContain("人工审批");
   act(() => approval.focus());
   await userEvent.keyboard("[Space]");

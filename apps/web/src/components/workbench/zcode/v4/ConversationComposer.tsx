@@ -137,7 +137,11 @@ import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupM
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
 // 原模式菜单与发送瞬间冻结共用唯一宿主策略owner。
-import { useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
+import {
+  ExecutionModeChip,
+  useExecutionModeController,
+} from "@zui/host/ExecutionModeChip.js";
+import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -2322,8 +2326,13 @@ function ConversationComposerImpl({
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={executionModeController.switchCollaborationMode}
-          executionModeController={executionModeController}
         />
+        {/* 执行方式与权限档各自成块、并排摆放；两个菜单只改自己那一项。 */}
+        <ExecutionModeChip
+          controller={executionModeController}
+          disabled={disabled}
+        />
+        <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry

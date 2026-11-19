@@ -131,8 +131,9 @@ function seedTextDraft(host: Host) {
 async function waitForComposer(session: OriginalSessionView) {
   await waitFor(
     () => {
+      // 执行方式与权限档是两个并排按钮：执行方式写在自己的按钮上。
       expect(
-        session.view.getByTestId("chat-mode-select-trigger").textContent,
+        session.view.getByTestId("execution-mode-chip").textContent,
       ).toContain("自主");
       expect(
         session.view.getByTestId("v4-composer-input").textContent,
@@ -252,7 +253,7 @@ async function assertOriginalSend(f: {
   expect.soft(input).toContain("PLAN_CLOSE_THROUGH_ORIGINAL_COMPOSER");
   expect.soft(input).not.toContain('<execution_mode name="plan">');
   expect
-    .soft(f.session.view.getByTestId("chat-mode-select-trigger").textContent)
+    .soft(f.session.view.getByTestId("execution-mode-chip").textContent)
     .toContain("自主");
 }
 
@@ -263,9 +264,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
         f.holdPlanPut();
-        await user.click(
-          f.session.view.getByTestId("chat-mode-select-trigger"),
-        );
+        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
           await f.session.view.findByRole("menuitemradio", {
             name: "计划",
@@ -273,9 +272,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         await waitFor(() => expect(f.planPutStarted()).toBe(true));
         // 灯泡标记已删：改选自主即本地关闭规划，agent 偏好排在挂起的 plan PUT 之后
-        await user.click(
-          f.session.view.getByTestId("chat-mode-select-trigger"),
-        );
+        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
           await f.session.view.findByRole("menuitemradio", {
             name: "自主",
@@ -283,7 +280,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         await waitFor(() =>
           expect(
-            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
+            f.session.view.getByTestId("execution-mode-chip").textContent,
           ).toContain("自主"),
         );
         await act(async () =>
@@ -291,7 +288,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         await waitFor(() =>
           expect(
-            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
+            f.session.view.getByTestId("execution-mode-chip").textContent,
           ).toContain("自主"),
         );
         await assertOriginalSend(f);
@@ -301,16 +298,14 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
     it("策略plan保存成功后改选自主退出策略，原发送冻结关闭规划且保留基础权限", async () => {
       await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
-        await user.click(
-          f.session.view.getByTestId("chat-mode-select-trigger"),
-        );
+        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
           await f.session.view.findByRole("menuitemradio", {
             name: "计划",
           }),
         );
         await waitFor(() => {
-          const chip = f.session.view.getByTestId("chat-mode-select-trigger");
+          const chip = f.session.view.getByTestId("execution-mode-chip");
           expect(chip.textContent).toContain("计划");
           expect(chip.getAttribute("data-execution-mode-saving")).toBe("false");
         });
@@ -327,9 +322,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         ).toBe(200);
         expect(persisted.body.mode).toBe("plan");
         // 灯泡标记已删：退出策略 = 菜单里改选自主
-        await user.click(
-          f.session.view.getByTestId("chat-mode-select-trigger"),
-        );
+        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
           await f.session.view.findByRole("menuitemradio", {
             name: "自主",
@@ -339,7 +332,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         // the old implementation, so its real Run config is also observed.
         expect
           .soft(
-            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
+            f.session.view.getByTestId("execution-mode-chip").textContent,
           )
           .toContain("自主");
         await assertOriginalSend(f);

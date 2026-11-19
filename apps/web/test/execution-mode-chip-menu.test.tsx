@@ -21,7 +21,7 @@ const MODES = {
 };
 
 async function openModeMenu(user: ReturnType<typeof userEvent.setup>) {
-  const trigger = screen.getByTestId("chat-mode-select-trigger");
+  const trigger = screen.getByTestId("execution-mode-chip");
   await waitFor(() =>
     expect(trigger.getAttribute("aria-expanded")).toBe("false"),
   );
@@ -125,13 +125,13 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
   );
   await waitFor(() =>
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("计划"),
   );
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 });
 
-test("权限与执行方式（含计划）只有原盾牌一个入口，全权保留原橙色图标", async () => {
+test("权限与执行方式各自一个入口，并排出现，全权保留原橙色图标", async () => {
   const user = userEvent.setup();
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/execution-modes") return MODES;
@@ -146,14 +146,14 @@ test("权限与执行方式（含计划）只有原盾牌一个入口，全权�
       onSwitchMode={onSwitchMode}
     />,
   );
-  const trigger = await readyComposerModeTrigger();
-  expect(trigger.className).toContain("text-warning");
-  expect(trigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
-  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
-  expect(screen.queryByTestId("permission-tier-chip")).toBeNull();
+  await readyComposerModeTrigger();
+  const permissionTrigger = screen.getByTestId("chat-mode-select-trigger");
   expect(screen.getAllByTestId("chat-mode-select-trigger")).toHaveLength(1);
-  await user.click(trigger);
-  const permissions = screen.getByRole("group", { name: "权限" });
+  expect(permissionTrigger.className).toContain("text-warning");
+  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
+
+  // 执行方式独立成块：菜单里只有执行方式一档，不再混入权限组。
+  await openModeMenu(user);
   const executionModes = screen.getByRole("group", { name: "执行方式" });
   for (const [label, icon] of [
     ["自主", "bot"],
@@ -165,7 +165,13 @@ test("权限与执行方式（含计划）只有原盾牌一个入口，全权�
     expect(item.querySelector(`svg.lucide-${icon}`)).not.toBeNull();
     expect(executionModes.contains(item)).toBe(true);
   }
-  expect(screen.queryByRole("menuitemcheckbox")).toBeNull();
+  expect(screen.queryByRole("group", { name: "权限" })).toBeNull();
+  await user.keyboard("[Escape]");
+
+  // 权限菜单仍然只管权限档。
+  await user.click(permissionTrigger);
+  const permissions = screen.getByRole("group", { name: "权限" });
+  expect(screen.queryByRole("group", { name: "执行方式" })).toBeNull();
   expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
   expect(
     permissions.contains(
@@ -174,14 +180,13 @@ test("权限与执行方式（含计划）只有原盾牌一个入口，全权�
   ).toBe(true);
   await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
   expect(onSwitchMode).toHaveBeenLastCalledWith("build");
-  expect(trigger.textContent).toContain("自主");
-  expect(trigger.textContent).toContain("变更前确认");
-  expect(trigger.className).not.toContain("text-warning");
-  await openModeMenu(user);
+  expect(permissionTrigger.textContent).toContain("变更前确认");
+  expect(permissionTrigger.className).not.toContain("text-warning");
+  await user.click(permissionTrigger);
   await user.click(screen.getByRole("menuitemradio", { name: /^完全访问/ }));
   expect(onSwitchMode).toHaveBeenLastCalledWith("yolo");
-  expect(trigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
-  expect(trigger.className).toContain("text-warning");
+  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
+  expect(permissionTrigger.className).toContain("text-warning");
   expect(
     surfaceJson.mock.calls.some(([, init]) => init?.method === "PUT"),
   ).toBe(false);

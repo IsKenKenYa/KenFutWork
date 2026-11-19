@@ -126,7 +126,7 @@ test("目标已显示时发送即捕获目标，偏好写入失败只回滚后�
   render(<ComposerProbe sessionId="a" sent={sent} onSwitchMode={vi.fn()} />);
   await user.click(await readyComposerModeTrigger());
   await user.click(await screen.findByRole("menuitemradio", { name: "目标" }));
-  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
+  expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
     "目标",
   );
   await user.click(screen.getByRole("button", { name: "发送" }));
@@ -134,7 +134,7 @@ test("目标已显示时发送即捕获目标，偏好写入失败只回滚后�
   await act(async () => pending.reject(new Error("preference write failed")));
   await waitFor(() =>
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("自主"),
   );
   await user.click(screen.getByRole("button", { name: "发送" }));
@@ -156,7 +156,7 @@ test("Task切换后忽略旧Task迟到PUT，不改新Task策略或规划草稿",
   );
   await waitFor(() =>
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("自主"),
   );
   onSwitchMode.mockClear();
@@ -195,7 +195,7 @@ test("离开计划立即发送关闭规划，偏好失败回滚只影响后续�
   await act(async () => pending.reject(new Error("preference write failed")));
   await waitFor(() =>
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("计划"),
   );
   await user.click(screen.getByRole("button", { name: "发送" }));
@@ -242,7 +242,7 @@ test("切换Task后旧计划PUT失败不回滚新Task的规划草稿", async () 
   );
   await waitFor(() =>
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("自主"),
   );
   onSwitchMode.mockClear();
@@ -341,7 +341,7 @@ test.each(["success", "failure"] as const)(
       { executionMode: "agent", planEnabled: false },
     ]);
     expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
+      screen.getByTestId("execution-mode-chip").textContent,
     ).toContain("自主");
   },
 );
@@ -374,7 +374,7 @@ test("策略未加载时明确关闭规划，迟到plan读取不重开且本次�
       onSwitchMode={vi.fn()}
     />,
   );
-  expect(screen.queryByTestId("execution-mode-label")).toBeNull();
+  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
   expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
     "完全访问",
   );
