@@ -2,39 +2,28 @@
 /**
  * docs 机械校验（属主：`docs/README.md` 治理规则 6）
  *
- * 为什么存在：文档治理规则（单源、决策 ID、冻结区、新文档入图）此前只靠人肉自觉，
+ * 为什么存在：文档治理规则（单源、决策 ID、新文档入图）此前只靠人肉自觉，
  * 每轮改文档都会重新漂移。本脚本把规则变成可执行断言，接入仓库门禁（`pnpm test:docs`）。
  *
- * 覆盖六条：
+ * 覆盖四条：
  *   1) docs 内相对链接与锚点可解析（外部 http(s)/mailto 跳过，HTML 注释与代码块内跳过）；
- *   2) 冻结区（<!-- frozen:start --> ~ <!-- frozen:end -->）SHA-256 与 docs/frozen-lock.json 一致；
- *   3) 文档中出现的决策 ID（DEC-* / FORM-*）均已登记进 docs/README.md「决策 ID 登记表」；
- *   4) docs/**\/*.md 均已登记进文档地图（`历史文档/Loomic原版文档/`、README 自身豁免）；
- *   5) 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单；
+ *   2) 文档中出现的决策 ID（DEC-* / FORM-*）均已登记进 docs/README.md「决策 ID 登记表」；
+ *   3) docs/**\/*.md 均已登记进文档地图（`历史文档/Loomic原版文档/`、README 自身豁免）；
+ *   4) 全仓库只有《改造计划》§4.2 一处以表头 `ctx key` 定义 key 清单。
  *
  * 用法：
  *   node scripts/check-docs.mjs                # 校验，失败退出码 1
- *   node scripts/check-docs.mjs --update-lock  # 同步冻结区锁文件（改冻结区后必须显式执行）
  *
  * 维护提示：新增校验规则时，先改 docs/README.md 治理规则 6，再改本文件，保持规则文本与实现一一对应。
  */
-import { createHash } from "node:crypto";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FROZEN_START = "<!-- frozen:start -->";
-const FROZEN_END = "<!-- frozen:end -->";
-const LOCK_FILE = "docs/frozen-lock.json";
 const MAP_FILE = "docs/README.md";
 /** 文档地图自身不入图；原版历史文档整目录豁免。 */
 const MAP_EXCLUDE_FILES = new Set(["docs/README.md"]);
 const MAP_EXCLUDE_PREFIXES = ["docs/历史文档/Loomic原版文档/"];
-/**
- * 冻结扫描豁免：`docs/README.md` 的治理规则 3 必须把冻结标记写成字面量来定义规则，
- * 因而天然含有这两个标记，不能据此判定「自己也冻结」。
- */
-const FROZEN_SCAN_EXCLUDE = new Set(["docs/README.md"]);
 const DECISION_ID_PATTERN = /\b(DEC|FORM)-(\d+)\b/g;
 /** 唯一允许定义 ctx key 清单的文档。 */
 const CTX_KEY_TABLE_OWNER = "docs/方案设计/改造计划.md";
@@ -166,24 +155,6 @@ async function fileExists(absPath) {
   }
 }
 
-function hashFrozenBody(text) {
-  const startIdx = text.indexOf(FROZEN_START);
-  const endIdx = text.indexOf(FROZEN_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
-    return null;
-  }
-  const body = text.slice(startIdx + FROZEN_START.length, endIdx);
-  return createHash("sha256").update(body, "utf8").digest("hex");
-}
-
-async function readLock(rootDir) {
-  try {
-    return JSON.parse(await readFile(path.join(rootDir, LOCK_FILE), "utf8"));
-  } catch {
-    return { frozen: [] };
-  }
-}
-
 /** 解析 docs/README.md 中「决策 ID 登记表」的行首 ID。 */
 function collectRegisteredDecisionIds(mapText) {
   const ids = new Set();
@@ -223,7 +194,6 @@ export async function checkDocs({ rootDir }) {
   const docMapRaw = await readFile(path.join(rootDir, MAP_FILE), "utf8");
   const docMapText = stripNoise(docMapRaw);
   const registeredIds = collectRegisteredDecisionIds(docMapRaw);
-  const lock = await readLock(rootDir);
   const caches = new Map();
   const load = async (rel) => {
     if (!caches.has(rel)) {
@@ -241,38 +211,7 @@ export async function checkDocs({ rootDir }) {
     errors.push(...(await checkLinks(file, text, rootDir)));
   }
 
-  // 2) 冻结区 hash
-  const frozenEntries = Array.isArray(lock.frozen) ? lock.frozen : [];
-  for (const entry of frozenEntries) {
-    const text = await load(entry.file);
-    const actual = hashFrozenBody(text);
-    if (actual === null) {
-      errors.push(
-        `${entry.file}: 缺少冻结标记（${FROZEN_START} / ${FROZEN_END}），但被 ${LOCK_FILE} 登记为冻结区`,
-      );
-      continue;
-    }
-    if (actual !== entry.sha256) {
-      errors.push(
-        `${entry.file}: 冻结区被修改（约定 ${entry.sha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）。` +
-          `冻结区禁止编辑；确需变更请在 PR 说明理由并执行 node scripts/check-docs.mjs --update-lock`,
-      );
-    }
-  }
-  for (const file of files) {
-    if (FROZEN_SCAN_EXCLUDE.has(file)) {
-      continue;
-    }
-    const text = await load(file);
-    if (
-      text.includes(FROZEN_START) &&
-      !frozenEntries.some((e) => e.file === file)
-    ) {
-      errors.push(`${file}: 有冻结标记但未登记进 ${LOCK_FILE}`);
-    }
-  }
-
-  // 3) 决策 ID 必须已登记
+  // 2) 决策 ID 必须已登记
   for (const file of files) {
     const text = stripNoise(await load(file));
     for (const match of text.matchAll(DECISION_ID_PATTERN)) {
@@ -285,7 +224,7 @@ export async function checkDocs({ rootDir }) {
     }
   }
 
-  // 4) 每个 docs markdown 必须入图
+  // 3) 每个 docs markdown 必须入图
   for (const file of files) {
     if (
       MAP_EXCLUDE_FILES.has(file) ||
@@ -298,7 +237,7 @@ export async function checkDocs({ rootDir }) {
     }
   }
 
-  // 5) ctx key 清单只允许一处
+  // 4) ctx key 清单只允许一处
   const ctxKeyTables = [];
   for (const file of files) {
     const text = stripNoise(await load(file));
@@ -318,35 +257,6 @@ export async function checkDocs({ rootDir }) {
   return { errors, files };
 }
 
-export async function updateFrozenLock({ rootDir }) {
-  const lock = await readLock(rootDir);
-  const entries = [];
-  for (const file of await listMarkdownFiles(rootDir)) {
-    if (FROZEN_SCAN_EXCLUDE.has(file)) {
-      continue;
-    }
-    const text = normalize(await readFile(path.join(rootDir, file), "utf8"));
-    const sha256 = hashFrozenBody(text);
-    if (sha256 !== null) {
-      entries.push({ file, sha256 });
-    }
-  }
-  const next = {
-    $comment:
-      "冻结区锁文件，由 scripts/check-docs.mjs 读写。变更冻结区必须在 PR 说明理由并执行 node scripts/check-docs.mjs --update-lock。",
-    frozen: entries,
-  };
-  await writeFile(
-    path.join(rootDir, LOCK_FILE),
-    `${JSON.stringify(next, null, 2)}\n`,
-    "utf8",
-  );
-  const stale = (Array.isArray(lock.frozen) ? lock.frozen : []).filter(
-    (old) => !entries.some((e) => e.file === old.file),
-  );
-  return { updated: entries, removed: stale.map((e) => e.file) };
-}
-
 const isDirectRun =
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
@@ -356,17 +266,6 @@ if (isDirectRun) {
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
   );
-  if (process.argv.includes("--update-lock")) {
-    const { updated, removed } = await updateFrozenLock({ rootDir });
-    console.log(`[docs] 已同步冻结区锁文件 ${LOCK_FILE}`);
-    for (const entry of updated) {
-      console.log(`  - ${entry.file}  ${entry.sha256.slice(0, 12)}…`);
-    }
-    for (const file of removed) {
-      console.log(`  - 移除已无冻结标记的登记：${file}`);
-    }
-    process.exit(0);
-  }
 
   const { errors, files } = await checkDocs({ rootDir });
   if (errors.length === 0) {

@@ -331,9 +331,7 @@ describe("语音设置页", () => {
   /** 相邻两段同一状态并成一个标签（原来是「想 不可用 · 说 不可用」——同一句话写两遍） */
   it("三段读数同行：相邻同状态合并成「想/说 不可用」", async () => {
     await mount();
-    expect(
-      await screen.findByText("听 首字 2.7s · 想/说 不可用"),
-    ).toBeTruthy();
+    expect(await screen.findByText("听 首字 2.7s · 想/说 不可用")).toBeTruthy();
   });
 
   /** 实测读数不合并：两段偶尔量到同样数字时，并起来会读成一段（「听/说 0.50×」） */

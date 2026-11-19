@@ -134,19 +134,21 @@ describe("ensureDesignCanvasEntry", () => {
   });
 
   test("所有画布文件都缺失时新建一个再返回", async () => {
-    mocks.json.mockResolvedValueOnce({
-      canvases: [
-        { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
-      ],
-    }).mockResolvedValueOnce({
-      canvas: {
-        id: primaryId,
-        name: "未命名画布",
-        projectId,
-        revision,
-        content: { elements: [], appState: {}, files: {} },
-      },
-    });
+    mocks.json
+      .mockResolvedValueOnce({
+        canvases: [
+          { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
+        ],
+      })
+      .mockResolvedValueOnce({
+        canvas: {
+          id: primaryId,
+          name: "未命名画布",
+          projectId,
+          revision,
+          content: { elements: [], appState: {}, files: {} },
+        },
+      });
     await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
       { documentId: primaryId, title: "未命名画布" },
     );
@@ -200,9 +202,9 @@ describe("Design 旧引用缺失的清理信号", () => {
     });
     const resolved = await ensureDesignCanvasEntry(projectId, secondId);
     expect(resolved.documentId).toBe(primaryId);
-    expect(
-      designCanvasReferenceReplaced(secondId, resolved.documentId),
-    ).toBe(true);
+    expect(designCanvasReferenceReplaced(secondId, resolved.documentId)).toBe(
+      true,
+    );
   });
 
   test("旧引用仍可加载时不提示", async () => {
@@ -214,9 +216,9 @@ describe("Design 旧引用缺失的清理信号", () => {
     });
     const resolved = await ensureDesignCanvasEntry(projectId, secondId);
     expect(resolved.documentId).toBe(secondId);
-    expect(
-      designCanvasReferenceReplaced(secondId, resolved.documentId),
-    ).toBe(false);
+    expect(designCanvasReferenceReplaced(secondId, resolved.documentId)).toBe(
+      false,
+    );
   });
 
   test("首进 Design 没有旧引用时不提示", () => {

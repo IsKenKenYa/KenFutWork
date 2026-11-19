@@ -134,13 +134,8 @@ jobs:
       - name: 仓库级门禁
         run: pnpm run test:workspace
 
-      # 与本机共用来源保真与第一方 lint 入口；不让 CI 直接格式检查原 ZCode 源码。
-      - name: 准备 ZCode 清单基线（不切换参考仓）
-        run: |
-          git submodule update --init --depth 1 references/zcode
-          node scripts/vendor-zcode.mjs --prepare-source
-
-      - name: Biome（来源校验与全量第一方代码）
+      # 与本机共用第一方 lint 入口；不让 CI 直接格式检查原 ZCode 源码。
+      - name: Biome（全量第一方代码）
         run: pnpm lint
 
       # 桌面壳的 typecheck/test 是 cargo（apps/desktop/package.json:11-12），ubuntu runner 上

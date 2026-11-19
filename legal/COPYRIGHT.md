@@ -15,7 +15,7 @@ KenFutWork 社区版（本仓库及其构建产物）按 GNU General Public Lice
 ## 3. 项目前身与主要上游
 
 - **Loomic**：本项目早期以 Loomic 名义开发，部分基础代码源自 Loomic。Loomic 以 MIT 许可发布，Copyright (c) 2026 Xinmin Zeng；全文见 [`licenses/loomic-MIT.txt`](../licenses/loomic-MIT.txt)。社区版与商业版均保留该版权与许可声明。
-- **ZCode**：Code 模式 UI 移植自 ZCode 3.14.3（Apache-2.0，版权人 Z.AI Co., Ltd，待核）。保留上游 `LICENSE`、`NOTICE.md` 与移植来源清单。
+- **ZCode**：Code 模式 UI 移植自 ZCode 3.14.3（Apache-2.0，版权人 Z.AI Co., Ltd，待核）。保留上游 `LICENSE`、`NOTICE.md` 与 `THIRD-PARTY-NOTICES.md`。
 - **futureFlow**：flow 子系统上游，MIT，Copyright (c) 2026 future73807。保留版权与许可。
 - **其他第三方**：逐项见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
 

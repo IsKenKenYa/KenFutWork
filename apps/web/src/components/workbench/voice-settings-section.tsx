@@ -438,9 +438,7 @@ function listenMetric(report: VoiceDiagnoseReport): string {
     return report.listen.state === "unavailable" ? "不可用" : "未实测";
   }
   const load = report.listen.listen?.modelLoadMs;
-  return load === undefined
-    ? "可用"
-    : `首字 ${(load / 1000).toFixed(1)}s`;
+  return load === undefined ? "可用" : `首字 ${(load / 1000).toFixed(1)}s`;
 }
 
 function thinkMetric(report: VoiceDiagnoseReport): string {

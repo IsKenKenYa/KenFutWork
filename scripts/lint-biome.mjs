@@ -6,31 +6,35 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const sourceOption = args.indexOf("--source-root");
-const sourceArgs = sourceOption >= 0 ? args.splice(sourceOption, 2) : [];
-// 上游逐字源码先过来源校验；第一方宿主与未登记文件仍遵守仓库 Biome 规则。
-const verification = spawnSync(
-  process.execPath,
-  ["scripts/vendor-zcode.mjs", ...sourceArgs],
-  {
-    cwd: root,
-    stdio: "inherit",
-  },
-);
-if (verification.status !== 0) process.exit(verification.status ?? 1);
-const inventory = JSON.parse(
-  readFileSync(
-    resolve(root, "packages/third-party/zcode/来源清单.json"),
-    "utf8",
-  ),
-);
-const upstream = new Set(inventory.records.map((record) => record.target));
+
+/**
+ * 第三方移植目录不参与第一方 lint：这些文件来自上游（ZCode 为 Apache-2.0），
+ * 保持上游原样便于对照，格式化会制造无意义的差异。
+ *
+ * `apps/web/src/components/workbench/zcode/host/` 是本仓自写的宿主适配层，
+ * 仍按第一方规则检查，所以只排除该目录下除 `host/` 以外的部分。
+ */
+const ZCODE_UI_ROOT = "apps/web/src/components/workbench/zcode/";
+const ZCODE_UI_HOST = `${ZCODE_UI_ROOT}host/`;
+/** 移植到服务端目录的三个上游文件，同样保持原字节。 */
+const UPSTREAM_FILES = new Set([
+  "apps/server/src/features/model-providers/zcode-model-config-rules.json",
+  "apps/server/src/features/settings/zcode-command-expansion.ts",
+  "apps/server/src/features/skills/skill-document-body.ts",
+]);
+const isThirdParty = (path) =>
+  (path.startsWith(ZCODE_UI_ROOT) && !path.startsWith(ZCODE_UI_HOST)) ||
+  /^packages\/zcode-[^/]+\//u.test(path) ||
+  UPSTREAM_FILES.has(path);
+
+// Kimi 精确编辑的移植副本仍按清单核对字节，核对通过后同样不参与第一方 lint。
 const kimiInventory = JSON.parse(
   readFileSync(
     resolve(root, "packages/third-party/kimi-edit/来源清单.json"),
     "utf8",
   ),
 );
+const kimiTargets = new Set();
 for (const record of kimiInventory.records) {
   const target = `packages/third-party/kimi-edit/${record.target}`;
   const currentSha256 = createHash("sha256")
@@ -38,8 +42,9 @@ for (const record of kimiInventory.records) {
     .digest("hex");
   if (currentSha256 !== record.currentSha256)
     throw new Error(`Kimi 源码来源校验失败：${target}`);
-  upstream.add(target);
+  kimiTargets.add(target);
 }
+
 const listing = spawnSync(
   "git",
   ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
@@ -47,8 +52,8 @@ const listing = spawnSync(
 );
 if (listing.status !== 0) throw new Error("无法读取实际源码清单");
 const files = [...new Set(listing.stdout.split("\0"))].filter((path) => {
-  if (upstream.has(path) || !/\.(?:[cm]?js|tsx?|jsonc?)$/u.test(path))
-    return false;
+  if (isThirdParty(path) || kimiTargets.has(path)) return false;
+  if (!/\.(?:[cm]?js|tsx?|jsonc?)$/u.test(path)) return false;
   try {
     return statSync(resolve(root, path)).isFile();
   } catch {

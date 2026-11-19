@@ -13,8 +13,8 @@
 | 上游 | [zai-org/ZCode](https://github.com/zai-org/ZCode) 3.14.3，固定提交 `29628c9acdb81b703bbd4080c207a0e7ce5e276e` |
 | 版权人 | Z.AI Co., Ltd（待核；上游 LICENSE/NOTICE 无 Copyright 行） |
 | 许可 | Apache License 2.0 |
-| 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（由 `scripts/vendor-zcode.mjs` 装配，`package.json` 声明 `license: "Apache-2.0"`） |
-| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](../NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
+| 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（`package.json` 声明 `license: "Apache-2.0"`） |
+| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](../NOTICE.md) 声明移植范围 |
 | 商标 | Apache-2.0 第 3 条不授予商标权；ZCode、Z.ai、GLM 归各自权利人，见 [`EULA.md`](EULA.md) §6 |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装
@@ -23,7 +23,7 @@
 
 - **35 个源自 [vercel/ai-elements](https://github.com/vercel/ai-elements)**（`packages/elements/src/*`）：文件头带 `Derived from vercel/ai-elements … Copyright 2023 Vercel, Inc. Licensed under Apache-2.0. Modified by ZCode` 声明。头注释里「See THIRD-PARTY-NOTICES.md in the repository root」指的是 **ZCode 上游仓库的根**，即移植目录内那份；本文件的 A1 行是仓库层索引。
 - **11 个是 ZCode 第一方代码**（`canvas.tsx`、`chat-loading.tsx`、`diagram-preview-dialog.tsx`、`image-preview-dialog.tsx`、`image-thumbnail-gallery.tsx`、`markdown-blockquote.tsx`、`markdown-image.tsx`、`markdown-list.tsx`、`markdown-table.tsx`、`mermaid-block.tsx`、`streamdown-controls.ts`）：上游无 Vercel 声明，故无文件头。**它们的许可与版权按 A1 的 ZCode Apache-2.0 处理**，通过上游 `LICENSE`/`NOTICE.md` 目录级文本履行义务。
-- **为什么不给这 11 个补文件头**：移植文件与上游逐字节一致是可核对的溯源机制（清单里的 `copiedSha256`），改一个字节就报漂移。Apache-2.0 第 4 条要求保留的是上游版权声明与许可/NOTICE 文本，上游这些文件本就没有头注释，目录级文本已满足义务，不值得为形式破坏溯源。
+- **为什么不给这 11 个补文件头**：移植文件与上游逐字节一致便于对照，改一个字节就产生无意义的差异。Apache-2.0 第 4 条要求保留的是上游版权声明与许可/NOTICE 文本，上游这些文件本就没有头注释，目录级文本已满足义务。
 
 ### A3. Material Icon Theme 文件类型图标集（MIT）
 
@@ -42,7 +42,7 @@
 | 上游 | [shadcn/ui](https://ui.shadcn.com) 注册表模板，风格 `base-nova`（配置见 `apps/web/components.json`） |
 | 许可 | MIT |
 | 落点 | `apps/web/src/components/ui/`（9 个文件：`avatar`/`button`/`dialog`/`dropdown-menu`/`input`/`label`/`select`/`separator`/`skeleton`），以及 ZCode 移植树内的 `components/ui/`（45 个文件，归属随 A1） |
-| 义务履行 | 这 9 个文件是我们自己按注册表约定编写的封装（**不在** `ZCode源码清单.json` 的 3029 条记录内），本轮为每个文件补一行来源注释头；运行时依赖的许可由 B 段 Base UI 条目承接 |
+| 义务履行 | 这 9 个文件是我们自己按注册表约定编写的封装（**不在** ZCode 移植目录内），本轮为每个文件补一行来源注释头；运行时依赖的许可由 B 段 Base UI 条目承接 |
 | 说明 | shadcn 模板本身是可直接复制的 MIT 代码片段，改写与封装不改变其 attribution 要求 |
 
 ### A5. 图标库 lucide-react（ISC）

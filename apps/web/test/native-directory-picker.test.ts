@@ -114,9 +114,7 @@ describe("createServerDirectoryPicker", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(createServerDirectoryPicker()()).resolves.toBe(
-      "D:/work/demo",
-    );
+    await expect(createServerDirectoryPicker()()).resolves.toBe("D:/work/demo");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
       "/api/system/pick-directory",

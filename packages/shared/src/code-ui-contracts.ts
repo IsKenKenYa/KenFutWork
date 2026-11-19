@@ -8,6 +8,7 @@ import {
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import { executionModeSchema } from "./capability-contracts.js";
 import {
   codeProjectEditorDeleteArgsSchema,
   codeProjectEditorReadDirectorySchema,
@@ -34,7 +35,6 @@ import {
   codeTaskUnreadArgsSchema,
 } from "./code-task-organization.js";
 import { codeTaskProjectMoveArgsSchema } from "./code-task-project-contracts.js";
-import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";

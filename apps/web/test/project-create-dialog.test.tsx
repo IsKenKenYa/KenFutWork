@@ -5,17 +5,17 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { TID_PROJECT_ADD } from "../../../packages/zcode-shared/dist/index.js";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
-import { SharedProjectNavigationProvider } from "../src/components/workbench/zcode/host/SharedProjectNavigation";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { Root } from "@zui/Root";
 import { TabStoreProvider } from "@zui/store/TabStoreProvider";
 import { afterEach, expect, it, vi } from "vitest";
+import { TID_PROJECT_ADD } from "../../../packages/zcode-shared/dist/index.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import { SharedProjectNavigationProvider } from "../src/components/workbench/zcode/host/SharedProjectNavigation";
 import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
 import {
   installCodeRootBrowser,

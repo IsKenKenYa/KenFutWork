@@ -1,9 +1,12 @@
 import type { ManagementTarget } from "@kenfutwork/shared";
 import { cleanup } from "@testing-library/react";
 import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation.js";
-import { createTabStore, type SettingsOpenTarget } from "@zui/store/tabStore.js";
+import {
+  createTabStore,
+  type SettingsOpenTarget,
+} from "@zui/store/tabStore.js";
 import { afterEach, expect, it } from "vitest";
-import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
+import type { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
 
 afterEach(() => {

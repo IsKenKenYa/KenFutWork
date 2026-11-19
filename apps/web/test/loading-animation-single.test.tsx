@@ -83,12 +83,11 @@ describe("全站唯一加载动画", () => {
   });
 
   it("暗色旋转弧取白，不用品牌色（黑底上品牌浅岚几乎看不见）", () => {
-    for (const rel of [
-      DEFINING["web 加载屏"],
-      DEFINING["zcode 启动屏"],
-    ]) {
+    for (const rel of [DEFINING["web 加载屏"], DEFINING["zcode 启动屏"]]) {
       const text = source(rel);
-      expect(text, `${rel} 暗色旋转弧应为纯白`).toContain("dark:border-t-white");
+      expect(text, `${rel} 暗色旋转弧应为纯白`).toContain(
+        "dark:border-t-white",
+      );
       expect(text, `${rel} 暗色旋转弧不得用品牌色`).not.toContain(
         "dark:border-t-brand",
       );
