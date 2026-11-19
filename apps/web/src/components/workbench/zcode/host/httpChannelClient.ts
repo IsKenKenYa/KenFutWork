@@ -495,6 +495,43 @@ export class CodeHttpChannelClient implements IChannelClient {
     return pending;
   }
 
+  /** 读取分组组织结构（服务端 task-groups.read，走已初始化的 code-ui 连接）。 */
+  async readTaskGroups(): Promise<unknown> {
+    const payload = await this.request<{ result?: unknown }>(
+      "/api/code-ui/rpc",
+      {
+        connectionId: this.connectionId,
+        service: "task-groups",
+        method: "read",
+        args: [],
+      },
+    );
+    return payload.result;
+  }
+
+  /** 新建分组（服务端 task-groups.save，creationId 由调用方生成保证幂等）。 */
+  async createTaskGroup(input: {
+    title: string;
+    expectedRevision: number;
+  }): Promise<unknown> {
+    const payload = await this.request<{ result?: unknown }>(
+      "/api/code-ui/rpc",
+      {
+        connectionId: this.connectionId,
+        service: "task-groups",
+        method: "save",
+        args: [
+          {
+            creationId: crypto.randomUUID(),
+            expectedRevision: input.expectedRevision,
+            title: input.title,
+          },
+        ],
+      },
+    );
+    return payload.result;
+  }
+
   async readCuaSnapshot(uri: string, signal: AbortSignal): Promise<Blob> {
     if (
       !/^\/api\/computer-use\/snapshots\?taskId=[0-9a-f-]{36}&digest=[0-9a-f]{64}$/u.test(

@@ -1,6 +1,7 @@
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { ComposerContextProvider } from "@zui/v4/composer/ComposerContext.js";
+import { TaskGroupPortProvider } from "./TaskGroupPort.js";
 import { CanvasDocumentView } from "./CanvasDocumentView.js";
 import { ConversationWorkContextHeader } from "./ConversationWorkContextHeader.js";
 import { conversationWorkContext } from "./conversationWorkContext.js";
@@ -188,7 +189,13 @@ function CodeHost({
                   <ComposerContextProvider
                     renderer={ConversationWorkContextHeader}
                   >
-                    <CodeDirectoryRecoveryProvider client={client}>
+                    <TaskGroupPortProvider
+                      port={{
+                        read: () => client.readTaskGroups(),
+                        create: (input) => client.createTaskGroup(input),
+                      }}
+                    >
+                      <CodeDirectoryRecoveryProvider client={client}>
                       <Root
                         services={services}
                         platform={platform}
@@ -220,6 +227,7 @@ function CodeHost({
                         }
                       />
                     </CodeDirectoryRecoveryProvider>
+                    </TaskGroupPortProvider>
                   </ComposerContextProvider>
                 </ToolCallRendererProvider>
               </DocumentPaneRendererProvider>
