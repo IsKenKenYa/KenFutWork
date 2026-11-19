@@ -53,7 +53,7 @@
     "sherpa-onnx-node": "^1.13.8",
     "tar": "^7.5.22",
     "undici": "^8.12.3",
-    "zod": "^4.6.7"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@kenfutwork/config": "workspace:*",
