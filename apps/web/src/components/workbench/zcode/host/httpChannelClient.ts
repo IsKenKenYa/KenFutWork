@@ -514,22 +514,76 @@ export class CodeHttpChannelClient implements IChannelClient {
     title: string;
     expectedRevision: number;
   }): Promise<unknown> {
+    return this.saveTaskGroup({
+      creationId: crypto.randomUUID(),
+      expectedRevision: input.expectedRevision,
+      title: input.title,
+    });
+  }
+
+  /** 修改分组名称/颜色（服务端 task-groups.save，带观察修订）。 */
+  async updateTaskGroup(input: {
+    id: string;
+    expectedRevision: number;
+    title?: string;
+    color?: string;
+  }): Promise<unknown> {
+    return this.saveTaskGroup({
+      id: input.id,
+      expectedRevision: input.expectedRevision,
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.color === undefined ? {} : { color: input.color }),
+    });
+  }
+
+  private async saveTaskGroup(input: Record<string, unknown>): Promise<unknown> {
     const payload = await this.request<{ result?: unknown }>(
       "/api/code-ui/rpc",
       {
         connectionId: this.connectionId,
         service: "task-groups",
         method: "save",
-        args: [
-          {
-            creationId: crypto.randomUUID(),
-            expectedRevision: input.expectedRevision,
-            title: input.title,
-          },
-        ],
+        args: [input],
       },
     );
     return payload.result;
+  }
+
+  /** 删除分组；服务端把成员按原顺序放回根层，不删除任何 Task。 */
+  async ungroupTaskGroup(input: {
+    id: string;
+    expectedRevision: number;
+  }): Promise<void> {
+    await this.request("/api/code-ui/rpc", {
+      connectionId: this.connectionId,
+      service: "task-groups",
+      method: "ungroup",
+      args: [{ id: input.id, expectedRevision: input.expectedRevision }],
+    });
+  }
+
+  /** 移动分组或任务（根层排序 / 移入移出分组），按锚点定位。 */
+  async moveTaskGroupNode(input: {
+    node: Record<string, unknown>;
+    sourceGroupId: string | null;
+    groupId: string | null;
+    expectedRevision: number;
+    anchor?: { node: Record<string, unknown>; side: "before" | "after" };
+  }): Promise<void> {
+    await this.request("/api/code-ui/rpc", {
+      connectionId: this.connectionId,
+      service: "task-groups",
+      method: "move",
+      args: [
+        {
+          node: input.node,
+          sourceGroupId: input.sourceGroupId,
+          groupId: input.groupId,
+          expectedRevision: input.expectedRevision,
+          ...(input.anchor ? { anchor: input.anchor } : {}),
+        },
+      ],
+    });
   }
 
   async readCuaSnapshot(uri: string, signal: AbortSignal): Promise<Blob> {

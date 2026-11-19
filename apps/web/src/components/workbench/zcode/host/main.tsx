@@ -1,7 +1,6 @@
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { ComposerContextProvider } from "@zui/v4/composer/ComposerContext.js";
-import { TaskGroupPortProvider } from "./TaskGroupPort.js";
 import { CanvasDocumentView } from "./CanvasDocumentView.js";
 import { ConversationWorkContextHeader } from "./ConversationWorkContextHeader.js";
 import { conversationWorkContext } from "./conversationWorkContext.js";
@@ -68,6 +67,7 @@ import { requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
 import { dismissStartupOverlay } from "./startupOverlay.js";
 import { setSurfaceApiBase } from "./surfaceApi.js";
+import { TaskGroupPortProvider } from "./TaskGroupPort.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
@@ -193,40 +193,43 @@ function CodeHost({
                       port={{
                         read: () => client.readTaskGroups(),
                         create: (input) => client.createTaskGroup(input),
+                        update: (input) => client.updateTaskGroup(input),
+                        remove: (input) => client.ungroupTaskGroup(input),
+                        move: (input) => client.moveTaskGroupNode(input),
                       }}
                     >
                       <CodeDirectoryRecoveryProvider client={client}>
-                      <Root
-                        services={services}
-                        platform={platform}
-                        isMacDesktop={Boolean(desktopChrome)}
-                        directoryServices={client.directoryServices()}
-                        onWorkspaceContextChange={onWorkspaceContextChange}
-                        initialUserInfo={user}
-                        {...(workspace
-                          ? { initialWorkspaceAbsPath: workspace.path }
-                          : {})}
-                        {...(workspaceIdentity
-                          ? { initialWorkspaceIdentity: workspaceIdentity }
-                          : {})}
-                        workbenchGroupClientMode={clientMode}
-                        onInterfaceModeChange={(mode) => {
-                          // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
-                          if (mode === "office")
-                            workbenchNavigation?.open("design");
-                        }}
-                        preferDirectoryBrowser={false}
-                        restoreSession
-                        allowRemoteWorkspace={false}
-                        // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
-                        // 不再依赖桌面主进程 BrowserView。
-                        supportsEmbeddedBrowser={true}
-                        assistantCodeCommentCardsEnabled
-                        initialWorkspaceLoadingFallback={
-                          <RootStartupLoading label="打开 Code 工作目录" />
-                        }
-                      />
-                    </CodeDirectoryRecoveryProvider>
+                        <Root
+                          services={services}
+                          platform={platform}
+                          isMacDesktop={Boolean(desktopChrome)}
+                          directoryServices={client.directoryServices()}
+                          onWorkspaceContextChange={onWorkspaceContextChange}
+                          initialUserInfo={user}
+                          {...(workspace
+                            ? { initialWorkspaceAbsPath: workspace.path }
+                            : {})}
+                          {...(workspaceIdentity
+                            ? { initialWorkspaceIdentity: workspaceIdentity }
+                            : {})}
+                          workbenchGroupClientMode={clientMode}
+                          onInterfaceModeChange={(mode) => {
+                            // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
+                            if (mode === "office")
+                              workbenchNavigation?.open("design");
+                          }}
+                          preferDirectoryBrowser={false}
+                          restoreSession
+                          allowRemoteWorkspace={false}
+                          // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
+                          // 不再依赖桌面主进程 BrowserView。
+                          supportsEmbeddedBrowser={true}
+                          assistantCodeCommentCardsEnabled
+                          initialWorkspaceLoadingFallback={
+                            <RootStartupLoading label="打开 Code 工作目录" />
+                          }
+                        />
+                      </CodeDirectoryRecoveryProvider>
                     </TaskGroupPortProvider>
                   </ComposerContextProvider>
                 </ToolCallRendererProvider>

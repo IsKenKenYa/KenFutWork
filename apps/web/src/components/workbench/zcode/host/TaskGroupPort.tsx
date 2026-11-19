@@ -11,6 +11,23 @@ export interface TaskGroupPort {
   read(): Promise<unknown>;
   /** 新建分组；返回服务端回执。 */
   create(input: { title: string; expectedRevision: number }): Promise<unknown>;
+  /** 改名或换色（稀疏字段，未传的保持原值）。 */
+  update(input: {
+    id: string;
+    expectedRevision: number;
+    title?: string;
+    color?: string;
+  }): Promise<unknown>;
+  /** 删除分组：成员按原顺序回到根层，不删除任何 Task。 */
+  remove(input: { id: string; expectedRevision: number }): Promise<void>;
+  /** 移动分组或任务：根层排序与移入移出分组共用。 */
+  move(input: {
+    node: Record<string, unknown>;
+    sourceGroupId: string | null;
+    groupId: string | null;
+    expectedRevision: number;
+    anchor?: { node: Record<string, unknown>; side: "before" | "after" };
+  }): Promise<void>;
 }
 
 const TaskGroupContext = createContext<TaskGroupPort | null>(null);
