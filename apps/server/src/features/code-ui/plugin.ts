@@ -72,6 +72,7 @@ export function createCodeUiPlugin(): PluginDefinition {
       "threads",
       "agentRuns",
       "agentRunMetadata",
+      "agentModes",
       "checkpoints",
       "executionScopes",
       "taskWork",
@@ -169,6 +170,7 @@ export function createCodeUiPlugin(): PluginDefinition {
           threads: ctx.get("threads"),
           agentRuns: ctx.get("agentRuns"),
           agentRunMetadata: ctx.get("agentRunMetadata"),
+          agentModes: ctx.get("agentModes"),
           checkpoints: ctx.get("checkpoints"),
           env: ctx.env,
         });

@@ -1,4 +1,5 @@
 import type {
+  ExecutionMode,
   zcodeUiProtocol as protocol,
   SandboxMode,
 } from "@kenfutwork/shared";
@@ -9,6 +10,8 @@ import type { ModelInvocationSnapshot } from "../../providers/types.js";
 export interface CodeAdmittedInput {
   intent: protocol.ConversationInputIntent;
   runId: string;
+  /** 接纳时冻结的执行方式；run 启动按它注入引导与工具策略。 */
+  executionMode?: ExecutionMode;
   modelInvocation: ModelInvocationSnapshot;
   frozenContributions?: ToolContributionSnapshot;
   /** 本次用户输入待消费的物理权限选择；历史重试不得重新签发。 */

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  type ExecutionMode,
   zcodeUiProtocol as protocol,
   type SandboxMode,
 } from "@kenfutwork/shared";
@@ -53,6 +54,8 @@ interface CodeInputPreparation {
   attachments: protocol.AttachmentRef[];
   selection: NonNullable<protocol.SessionConfigState["modelSelection"]>;
   execution: ReturnType<typeof resolveExecutionState>;
+  /** 本次输入冻结的执行方式（自主/计划/对话/目标/创造）。 */
+  executionMode?: ExecutionMode;
   workContext: protocol.ConversationWorkContext;
   modelInvocation: ModelInvocationSnapshot;
   frozenContributions?: ToolContributionSnapshot;
@@ -118,6 +121,7 @@ export function prepareCodeInputRecord(
       admittedAt: Date.now(),
     },
     runId: input.runId,
+    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
     modelInvocation: input.modelInvocation,
     ...(input.frozenContributions
       ? { frozenContributions: structuredClone(input.frozenContributions) }

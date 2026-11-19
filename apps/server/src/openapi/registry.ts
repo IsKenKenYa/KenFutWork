@@ -89,6 +89,7 @@ import {
   designReviewDeleteResponseSchema,
   designReviewListResponseSchema,
   directoryPickerStatusSchema,
+  executionModeSchema,
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
@@ -1598,6 +1599,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "搜索代码索引",
     description:
       "在索引内即时搜索并返回命中与构建时间。索引开关未开返回 409 index_disabled，无索引返回 409 index_not_built，索引过大返回 413 index_too_large。",
+  },
+  // ---- execution-modes.ts（执行模式）----
+  {
+    method: "get",
+    path: "/api/execution-modes",
+    tag: "execution-modes",
+    auth: "local",
+    successStatus: 200,
+    summary: "列出执行模式",
+    description: "返回五档执行模式词汇表，形如 { modes: [...] }。",
+  },
+  {
+    method: "get",
+    path: "/api/execution-modes/:threadId",
+    tag: "execution-modes",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: executionModeSchema,
+    summary: "查询线程激活模式",
+    description:
+      "返回线程当前激活的执行模式；缓存未命中时回读持久化值。历史 loop 模式返回 409 并要求重新选择。",
+  },
+  {
+    method: "put",
+    path: "/api/execution-modes/:threadId",
+    tag: "execution-modes",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: z.object({
+      mode: executionModeSchema.describe("要激活的执行模式"),
+    }),
+    summary: "切换线程执行模式",
+    description:
+      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法或选择已停用的 loop 返回 400。",
   },
   // ---- flow-host.ts（flow 集成宿主缝；credentials/billing/events 用共享密钥而非用户令牌）----
   {

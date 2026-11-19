@@ -37,6 +37,7 @@ type ExecutionStart = {
   runId: string;
   commandId: string;
   modelSelection?: NonNullable<Config["modelSelection"]>;
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   mode?: string | undefined;
   planEnabled?: boolean | undefined;
   workContext?: protocol.ConversationWorkContext | undefined;
@@ -73,6 +74,10 @@ export type CodeUiCompletedTurnView = Pick<
 
 export interface CodeUiConversationState {
   runApprovalCeilings?: Array<[string, CodeApprovalMode]>;
+  /** Run 冻结的执行方式；旧状态没有该表时按输入记录或默认 agent 处理。 */
+  runExecutionModes?: Array<
+    [string, import("@kenfutwork/shared").ExecutionMode]
+  >;
   initialWorkContext?: protocol.ConversationWorkContext;
   runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
   runContributions?: Array<[string, ToolContributionSnapshot]>;
@@ -407,6 +412,7 @@ export function createCodeUiConversation(input: {
     structuredClone(input.state?.runContributions ?? []),
   );
   const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
+  const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
   const runOutcomes = new Map(input.state?.runOutcomes ?? []);
   const hostShutdownRuns = new Set(input.state?.hostShutdownRuns ?? []);
   const stopRequestedRuns = [...(input.state?.stopRequestedRuns ?? [])];
@@ -490,6 +496,8 @@ export function createCodeUiConversation(input: {
       mode: turn.mode ?? root.config.mode,
     }).mode;
     runApprovalCeilings.set(turn.runId, mode === "plan" ? "build" : mode);
+    if (turn.executionMode)
+      runExecutionModes.set(turn.runId, turn.executionMode);
     runWorkContexts.set(
       turn.runId,
       freezeWorkContext(turn.workContext ?? initialWorkContext),
@@ -576,6 +584,7 @@ export function createCodeUiConversation(input: {
         runWorkContexts: [...runWorkContexts],
         runContributions: [...runContributions],
         runApprovalCeilings: [...runApprovalCeilings],
+        runExecutionModes: [...runExecutionModes],
         runOutcomes: [...runOutcomes],
         ...(hostShutdownRuns.size
           ? { hostShutdownRuns: [...hostShutdownRuns] }
@@ -845,6 +854,13 @@ export function createCodeUiConversation(input: {
           runApprovalCeilings: [...runApprovalCeilings].filter(
             ([id]) => id === event.runId,
           ),
+          ...(runExecutionModes.has(event.runId)
+            ? {
+                runExecutionModes: [...runExecutionModes].filter(
+                  ([id]) => id === event.runId,
+                ),
+              }
+            : {}),
           runOutcomes: [...runOutcomes].filter(([id]) => id === event.runId),
           hostShutdownRuns: [...hostShutdownRuns].filter(
             (id) => id === event.runId,
@@ -876,6 +892,7 @@ export function createCodeUiConversation(input: {
           text: child.meta.title ?? "子任务",
           workContext,
           frozenContributions,
+          executionMode: runExecutionModes.get(event.runId),
         });
       host.recordEvent(event);
       const state = host.exportState();
@@ -885,6 +902,8 @@ export function createCodeUiConversation(input: {
         runContributions.set(id, contribution);
       for (const [id, ceiling] of state.runApprovalCeilings ?? [])
         runApprovalCeilings.set(id, ceiling);
+      for (const [id, mode] of state.runExecutionModes ?? [])
+        runExecutionModes.set(id, mode);
       for (const [id, outcome] of state.runOutcomes ?? [])
         runOutcomes.set(id, outcome);
       for (const id of state.hostShutdownRuns ?? []) hostShutdownRuns.add(id);
@@ -1007,6 +1026,7 @@ export function createCodeUiConversation(input: {
         runId: record.runId,
         commandId: record.intent.sourceCommandId,
         modelSelection: record.intent.modelSelection!,
+        executionMode: record.executionMode,
         mode: record.intent.mode,
         planEnabled: record.intent.planEnabled,
         workContext: freezeWorkContext(record.intent.workContext),
@@ -1044,6 +1064,7 @@ export function createCodeUiConversation(input: {
       text: string;
       attachments?: protocol.AttachmentRef[];
       clientId?: string;
+      executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
       mode?: string | undefined;
       planEnabled?: boolean | undefined;
       workContext?: protocol.ConversationWorkContext | undefined;

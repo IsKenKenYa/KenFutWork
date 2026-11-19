@@ -1,4 +1,7 @@
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  isAutomationExecutionMode,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AgentContextBranchService } from "../../agent/context-history.js";
 import type {
@@ -24,6 +27,10 @@ import type {
   PreStepPayload,
 } from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
+import {
+  evaluateToolPolicy,
+  policyForMode,
+} from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { runPluginHooks } from "../plugins/plugin-hooks.js";
 import { createProjectRepository } from "../projects/repository.js";
@@ -76,6 +83,7 @@ export function createAgentRunsPlugin(
       "localInstance",
       "taskWork",
       "plugins",
+      "agentModes",
     ],
     apply(ctx) {
       let runtime: ReturnType<typeof createAgentRunService> | undefined;
@@ -121,17 +129,41 @@ export function createAgentRunsPlugin(
         const checkpoints = ctx.tryGet("checkpoints");
         // 原生工具不经过注册表，非Task调用在此执行对应场景的权限检查。
         const permissions = ctx.tryGet("permissions");
+        // 执行方式硬约束：solo/plan 的只读收窄与 agent 的禁改 App 由 agent-modes 提供
+        const agentModes = d.get("agentModes");
+        // 注册表按名取工具：桥接工具（MCP/插件）的属主 access 声明从这里带进模式判定
+        const toolRegistry = ctx.get("tools");
         const toolGateFor = (
           threadId: string,
           scoped = false,
           goalId?: string,
-        ): ToolGate | undefined => {
-          if (!permissions || scoped) return undefined;
-          return (toolName) => {
+          executionMode?: import("@kenfutwork/shared").ExecutionMode,
+        ): ToolGate => {
+          // Task 规划由可退出的 planEnabled 持有；策略快照只强制模式硬约束。
+          const policy = executionMode
+            ? policyForMode(
+                scoped && executionMode === "plan" ? "agent" : executionMode,
+              )
+            : agentModes.resolveToolPolicy(threadId);
+          const scenario =
+            goalId ||
+            isAutomationExecutionMode(
+              executionMode ?? agentModes.getMode(threadId),
+            )
+              ? ("automation" as const)
+              : ("interactive" as const);
+          return (toolName, detail) => {
+            const access = toolRegistry.get(toolName)?.access;
+            const modeVerdict = evaluateToolPolicy(policy, toolName, {
+              ...detail,
+              ...(access ? { toolAccess: access } : {}),
+            });
+            if (!modeVerdict.allowed) return modeVerdict;
+            if (!permissions || scoped) return modeVerdict;
             const decision = permissions.evaluate({
               toolName,
               threadId,
-              scenario: goalId ? "automation" : "interactive",
+              scenario,
             });
             return decision.decision === "deny"
               ? {

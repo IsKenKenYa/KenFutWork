@@ -580,6 +580,9 @@ export class ToolRegistryImpl implements ToolRegistry {
       observedStarted = true;
       const decision = await this.events.emitWaterfall("tool-pre-execute", {
         ...(execCtx.goalId ? { goalId: execCtx.goalId } : {}),
+        ...(execCtx.executionMode
+          ? { executionMode: execCtx.executionMode }
+          : {}),
         args: normalized,
         ...(invocation ? { permissionInvocation: invocation } : {}),
         decision: "allow",
