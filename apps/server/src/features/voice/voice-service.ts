@@ -54,7 +54,6 @@ import {
   buildReport,
   collectHardware,
   listenSegment,
-  realtimeMultiple,
   speakSegment,
   thinkSegment,
 } from "./diagnose.js";
@@ -391,7 +390,7 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
           /**
            * 规划 §5：未下载只给**标着「预估」**的值；下载并实测后换成实测值。
            * 文案口径（用户口径 2026-09-27）：**只给数字**，不写句子——界面负责排版，
-           * 解释留在文档里。首次调用含模型载入，故实测值后面跟一个「首载」，别让人
+           * 解释留在文档里。首次调用含模型载入，故实测值后面跟一个「首字」，别让人
            * 以为第一次也这么快。
            *
            * 「想」段单独一套口径：它的量纲是 tok/s（不是 ASR 的 RTF 倍数），未下载时给
@@ -405,12 +404,12 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             : {
                 performanceNote:
                   ready && measured.rtfMedian !== undefined
-                    ? `实测 ${realtimeMultiple(measured.rtfMedian)}${
+                    ? `实测${
                         measured.modelLoadMs === undefined
                           ? ""
-                          : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
+                          : ` 首字 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
                       }`
-                    : "预估 比实时快 1.4–10 倍",
+                    : "预估可用",
               }),
           license: model.license,
         });
