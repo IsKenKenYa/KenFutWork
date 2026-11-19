@@ -135,6 +135,17 @@ export type {
   ZCodeTaskListSortBy,
   ZCodeTaskListWorkspaceScope,
   ZCodeTaskReadyOutcome,
+  ZCodeGroupedTaskRef,
+  ZCodeGroupedTaskView,
+  ZCodeGroupedTaskViewNode,
+  ZCodeGroupedTaskViewOrderInput,
+  ZCodeGroupedTaskViewQuery,
+  ZCodeGroupedTaskViewStructure,
+  ZCodeGroupedTaskViewStructureMember,
+  ZCodeGroupedTaskViewStructureTopOrder,
+  ZCodeGroupedTaskViewTopLevelNodeRef,
+  ZCodeTaskGroup,
+  ZCodeTaskGroupColor,
 } from "./session/zcodeTaskService.js";
 export type { ZCodeTaskListItem } from "./session/zcodeTaskListTypes.js";
 
