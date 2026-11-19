@@ -168,7 +168,7 @@ export function ChatContextUsage({
         </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-hover">
           <div
-            className="h-full rounded-l-full bg-foreground/70"
+            className="h-full rounded-l-full bg-sky-500"
             style={{ width: `${view.percent ?? 0}%` }}
           />
         </div>
@@ -181,7 +181,7 @@ export function ChatContextUsage({
           </div>
           <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-hover">
             <div
-              className="h-full rounded-full bg-foreground/70"
+              className="h-full rounded-full bg-sky-500"
               style={{ width: `${view.cacheHitPercent ?? 0}%` }}
             />
           </div>
@@ -222,8 +222,9 @@ function ContextRing({ percent }: { percent: number | null }) {
           r={radius}
           fill="none"
           strokeWidth={stroke}
+          strokeLinecap="round"
           strokeDasharray={`${circumference * usedRatio} ${circumference}`}
-          className="stroke-muted-foreground"
+          className="stroke-sky-500"
         />
       ) : null}
     </svg>

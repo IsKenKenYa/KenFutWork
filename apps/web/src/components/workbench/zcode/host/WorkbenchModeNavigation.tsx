@@ -209,6 +209,8 @@ export function HostSidebarRail({
       >
         <PanelLeftOpen className="h-4 w-4" />
       </button>
+      {/* 两条短线用同一个 token（foreground 20%），颜色随主题走：
+          此前这条没有轨道底承托，收起后与深色轨道叠在一起读起来像黑色实线。 */}
       <div className="my-1 w-5 shrink-0 border-t border-foreground/20" />
       {navigation ? (
         <div className="shrink-0">
@@ -221,8 +223,7 @@ export function HostSidebarRail({
       ) : null}
       {actions ? (
         <>
-          {/* 与上面那条分界线同款（w-5 居中短线）；此前这条铺满 48px 轨道宽，
-              两条线一长一短，视觉上像两个不同层级的分隔。 */}
+          {/* 与上面那条分界线同款（w-5 居中短线），两条线颜色与长度一致。 */}
           <div className="my-1 w-5 shrink-0 border-t border-foreground/20" />
           <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-1">
             {actions}

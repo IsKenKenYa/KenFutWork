@@ -17,6 +17,7 @@ import {
 import {
   getThemeOptionLabel,
   SettingsRow,
+  SettingsSubheading,
   ThemePreviewCard,
   ThemeSelect,
 } from "@zui/settings/SettingsPageParts.js";
@@ -102,16 +103,9 @@ export function AppearanceSectionContent({
   return (
     <>
       <div className="min-w-0 space-y-3">
-        <div>
-          <h3 className="text-ui-lg font-semibold text-foreground">
-            {intl.formatMessage({ id: "settings.appearance.interfaceTitle" })}
-          </h3>
-          <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-            {intl.formatMessage({
-              id: "settings.appearance.interfaceDescription",
-            })}
-          </p>
-        </div>
+        <SettingsSubheading>
+          {intl.formatMessage({ id: "settings.appearance.interfaceTitle" })}
+        </SettingsSubheading>
         <Card className="border border-border bg-card py-0 shadow-none">
           <CardContent className="space-y-0 px-0">
             <SettingsRow
@@ -167,16 +161,9 @@ export function AppearanceSectionContent({
 
       <div className="space-y-6">
         <div className="min-w-0 space-y-3">
-          <div>
-            <h3 className="text-ui-lg font-semibold text-foreground">
-              {intl.formatMessage({ id: "settings.appearance.codeTitle" })}
-            </h3>
-            <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-              {intl.formatMessage({
-                id: "settings.appearance.codeDescription",
-              })}
-            </p>
-          </div>
+          <SettingsSubheading>
+            {intl.formatMessage({ id: "settings.appearance.codeTitle" })}
+          </SettingsSubheading>
           <Card className="border border-border bg-card py-0 shadow-none [&_[data-slot=select-trigger]]:w-full">
             <CardContent className="space-y-0 px-0">
               <SettingsRow
@@ -258,14 +245,9 @@ export function AppearanceSectionContent({
         </div>
 
         <div className="min-w-0 space-y-4">
-          <div>
-            <h3 className="text-ui-lg font-semibold text-foreground">
-              {intl.formatMessage({ id: "settings.previewSectionTitle" })}
-            </h3>
-            <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-              {intl.formatMessage({ id: "settings.previewDescription" })}
-            </p>
-          </div>
+          <SettingsSubheading>
+            {intl.formatMessage({ id: "settings.previewSectionTitle" })}
+          </SettingsSubheading>
           <div className="grid gap-4 sm:grid-cols-2">
             <ThemePreviewCard
               mode="light"

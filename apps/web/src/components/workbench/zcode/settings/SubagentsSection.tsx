@@ -1752,6 +1752,14 @@ export function SubagentsSection({
   const hasSearchResultEmpty = Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
+      {agentsInstructionFilePath ? (
+        <AgentsInstructionRow
+          filePath={agentsInstructionFilePath}
+          {...(canEditDefaultInstructions
+            ? { onEdit: () => setEditingInstructions(true) }
+            : {})}
+        />
+      ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1777,14 +1785,6 @@ export function SubagentsSection({
           })}
         />
       </div>
-      {agentsInstructionFilePath ? (
-        <AgentsInstructionRow
-          filePath={agentsInstructionFilePath}
-          {...(canEditDefaultInstructions
-            ? { onEdit: () => setEditingInstructions(true) }
-            : {})}
-        />
-      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
