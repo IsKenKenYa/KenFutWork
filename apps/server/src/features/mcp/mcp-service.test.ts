@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
@@ -471,8 +472,11 @@ describe("启动连接的健壮性（曾被 unhandled rejection 带走进程）"
 });
 
 describe("MCP 掉线自动重启", () => {
-  const fixture = new URL("./fixtures/mcp-restart-server.mjs", import.meta.url)
-    .pathname;
+  // 必须走 `fileURLToPath`：`URL.pathname` 在 Windows 上是 `/D:/Desktop/...`，
+  // 直接喂给 spawn 会拼成 `D:\D:\Desktop\...`（字面量盘符前缀重复）而 ENOENT。
+  const fixture = fileURLToPath(
+    new URL("./fixtures/mcp-restart-server.mjs", import.meta.url),
+  );
   const temporary: string[] = [];
 
   afterEach(async () => {
