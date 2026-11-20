@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -10,7 +11,7 @@ import {
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -575,9 +576,25 @@ test("CJS 发布宿主不解析源码 URL，发布 helper 带固定依赖真实�
   const resourceRoot = join(fixture, "published");
   const helperPath = join(resourceRoot, "process-helper", "task-helper.mjs");
   const moduleDirectory = fileURLToPath(new URL(".", import.meta.url));
+  // 发布态 helper 与 broker 同目录（`runtime-paths` 的 packaged 分支只认这条路径）。
+  // broker 是 Rust 构建产物：本机没编译过就跳过（不去伪造一个可执行文件）。
+  const broker = join(
+    moduleDirectory,
+    "native",
+    "target",
+    "release",
+    "kenfutwork-process-broker.exe",
+  );
+  if (!existsSync(broker)) {
+    console.warn(
+      `[process-sandbox] 跳过发布态用例：本机未构建 ${basename(broker)}（先 cargo build --release）`,
+    );
+    return;
+  }
   await promisify(execFile)(process.execPath, [
     join(moduleDirectory, "build-helper.mjs"),
     join(resourceRoot, "process-helper"),
+    broker,
   ]);
   const { build } = await import("esbuild");
   const resolverPath = join(fixture, "runtime-paths.cjs");
