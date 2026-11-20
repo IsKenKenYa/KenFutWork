@@ -165,7 +165,7 @@ export function PermissionTierChip() {
   );
 }
 
-/** 设置页「权限」分区（T7）：四档横排 + 自定义规则 + 工具审批。 */
+/** 设置页「权限」分区：档位、规则与审批三块，控件与全站一致。 */
 export function PermissionTierSection() {
   const { tier, save } = usePermissionTier();
   const [automationTier, setAutomationTier] = useState<PermissionTier | null>(
@@ -203,45 +203,35 @@ export function PermissionTierSection() {
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>常规任务</SettingsSubheading>
-        <SettingsGroupCard>
-          <SettingsRow
-            label="默认档"
-            description="改文件 / 跑命令前先问我"
-            control={
-              <TierPicker
-                label="常规任务档位"
-                name="permission-tier"
-                current={tier ?? "default"}
-                saving={busy || tier === null}
-                onPick={(next) => {
-                  setBusy(true);
-                  void save(next).finally(() => setBusy(false));
-                }}
-              />
-            }
-          />
-        </SettingsGroupCard>
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>自动化任务</SettingsSubheading>
-        <SettingsGroupCard>
-          <SettingsRow
-            label="自动化任务档"
-            description="无人值守轮次使用的档位"
-            control={
-              <TierPicker
-                label="自动化任务档位"
-                name="automation-permission-tier"
-                current={automationTier ?? "default"}
-                saving={automationTier === null}
-                onPick={(next) => void saveAutomation(next)}
-              />
-            }
-          />
-        </SettingsGroupCard>
-      </section>
+      <SettingsGroupCard>
+        <SettingsRow
+          label="常规任务"
+          description="改文件 / 跑命令前先问我"
+          control={
+            <PermissionTierSelect
+              ariaLabel="常规任务档位"
+              value={tier}
+              busy={busy || tier === null}
+              onChange={(next) => {
+                setBusy(true);
+                void save(next).finally(() => setBusy(false));
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          label="自动化任务"
+          description="无人值守轮次使用的档位"
+          control={
+            <PermissionTierSelect
+              ariaLabel="自动化任务档位"
+              value={automationTier}
+              busy={automationTier === null}
+              onChange={(next) => void saveAutomation(next)}
+            />
+          }
+        />
+      </SettingsGroupCard>
       <CustomRulesSection active={tier === "custom"} />
       <ModelDefaultsSection approvalOnly />
       <ToolApprovalSection />
@@ -249,74 +239,35 @@ export function PermissionTierSection() {
   );
 }
 
-/** 四档横排（用户口径「能左右就别上下」），选中档的含义在下面给一行小字。 */
-/** 权限档选择：与设置页其他分区同一形状（SettingsRow + 右控件），不再自造卡片。 */
-function TierPicker({
-  label,
-  name,
-  current,
-  saving,
-  onPick,
+/** 设置页的档位选择：与全站 Select 一致的单一控件，不再并排四个胶囊。 */
+function PermissionTierSelect({
+  ariaLabel,
+  value,
+  busy,
+  onChange,
 }: {
-  label: string;
-  name: string;
-  current: PermissionTier;
-  saving: boolean;
-  onPick: (value: PermissionTier) => void;
+  ariaLabel: string;
+  value: PermissionTier | null;
+  busy: boolean;
+  onChange: (next: PermissionTier) => void;
 }) {
   return (
-    <fieldset aria-label={label} className="min-w-0">
-      <TierRadioRow
-        name={name}
-        current={current}
-        saving={saving}
-        onPick={onPick}
-      />
-    </fieldset>
-  );
-}
-
-function TierRadioRow({
-  name,
-  current,
-  saving,
-  onPick,
-}: {
-  name: string;
-  current: PermissionTier;
-  saving: boolean;
-  onPick: (value: PermissionTier) => void;
-}) {
-  const selected = TIERS.find((entry) => entry.value === current);
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {TIERS.map((entry) => (
-        <label
-          key={entry.value}
-          className={cn(
-            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-ui-base transition-colors hover:bg-surface-hover",
-            current === entry.value &&
-              "border-foreground/30 bg-surface text-foreground",
-          )}
-        >
-          <input
-            type="radio"
-            name={name}
-            value={entry.value}
-            checked={current === entry.value}
-            onChange={() => onPick(entry.value)}
-            disabled={saving}
-            className="size-3.5 shrink-0 accent-foreground"
-          />
-          {entry.label}
-        </label>
-      ))}
-      {selected ? (
-        <span className="text-ui-sm text-foreground-subtle">
-          {selected.hint}
-        </span>
-      ) : null}
-    </div>
+    <Select
+      value={value ?? ""}
+      onValueChange={(next) => onChange(next as PermissionTier)}
+      disabled={busy}
+    >
+      <SelectTrigger size="lg" aria-label={ariaLabel} className="w-56">
+        <SelectValue placeholder="读取中" />
+      </SelectTrigger>
+      <SelectContent>
+        {TIERS.map((entry) => (
+          <SelectItem key={entry.value} value={entry.value}>
+            {entry.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -493,7 +444,7 @@ function ToolApprovalSection() {
 
   return (
     <section className="min-w-0 space-y-3">
-      <SettingsSubheading>工具审批</SettingsSubheading>
+      <SettingsSubheading>手动放行工具</SettingsSubheading>
       <SettingsGroupCard>
         <div className="space-y-3 p-3">
           <div className="flex flex-wrap items-center gap-2">
