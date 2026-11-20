@@ -619,24 +619,55 @@ function AiSafetySection() {
  * 界面因此只做**事实披露**：隔离生效在哪里、网络白名单从哪来。
  */
 function SandboxSecuritySection() {
+  const [sandboxEnabled, setSandboxEnabled] = useState(true);
   const [bundledRuntimes, setBundledRuntimes] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    surfaceJson<{ policy?: { bundledRuntimes?: { enabled?: boolean } } }>(
-      "/api/permissions/tier",
-    )
+    surfaceJson<{
+      policy?: {
+        bundledRuntimes?: { enabled?: boolean };
+        sandbox?: { enabled?: boolean };
+      };
+    }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
         setBundledRuntimes(view.policy?.bundledRuntimes?.enabled !== false);
+        setSandboxEnabled(view.policy?.sandbox?.enabled !== false);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
+
+  /** 沙箱安全总开关：读回策略再合并提交（与内置运行时同一手法）。 */
+  const saveSandbox = async (enabled: boolean) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = sandboxEnabled;
+    setSandboxEnabled(enabled);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: { ...(view.policy ?? {}), sandbox: { enabled } },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setSandboxEnabled(previous);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /**
    * 只改内置运行时一项：读回当前策略再合并提交。
@@ -675,7 +706,14 @@ function SandboxSecuritySection() {
         label="执行隔离"
         description="命令在进程沙箱内运行"
         control={
-          <span className="text-ui-sm text-foreground-subtle">始终开启</span>
+          <input
+            type="checkbox"
+            aria-label="沙箱安全"
+            checked={sandboxEnabled}
+            disabled={saving}
+            onChange={(event) => void saveSandbox(event.target.checked)}
+            className="size-4"
+          />
         }
       />
       <SettingsRow

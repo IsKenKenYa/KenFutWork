@@ -338,6 +338,24 @@ function publishOnce(operation: () => Promise<void>): () => Promise<void> {
   return () => (publication ??= operation());
 }
 
+/**
+ * 执行模式 → 沙箱模式（沙箱安全总开关的判定本体）。
+ *
+ * `yolo`（完全访问档）平时拿 `danger-full-access`。设置里关掉沙箱安全后，即便选了
+ * yolo 也只给 `workspace-write`：文件仍限 Task 授权目录、网络仍走域名白名单。
+ *
+ * 抽成纯函数便于单测——真正要证的是「关掉开关后拿不到 danger-full-access 这条路径」，
+ * 而那需要完整的 code-ui 装配才能跑到。
+ */
+export function resolveSandboxMode(input: {
+  mode: string;
+  fallback: CodeExecutionScope["sandboxMode"];
+  sandboxEnabled: boolean;
+}): CodeExecutionScope["sandboxMode"] {
+  if (input.mode !== "yolo") return input.fallback;
+  return input.sandboxEnabled ? "danger-full-access" : "workspace-write";
+}
+
 export function codeUiCommandFingerprint(
   envelope: protocol.CommandEnvelope,
   goalControl?: CodeGoalControl,
@@ -1705,6 +1723,25 @@ export class CodeUiService {
   private assertConnectionHostOpen() {
     if (this.closing)
       throw new CodeUiRepositoryError("not_found", "Code通知宿主已关闭。");
+  }
+
+  /**
+   * 执行模式 → 沙箱模式（沙箱安全总开关在这里生效）。
+   *
+   * 平时 `yolo` 拿 `danger-full-access`（不隔离）。设置里关掉沙箱安全后，
+   * 即便选了 yolo 也只给 `workspace-write`：文件仍限 Task 授权目录、网络仍走
+   * 域名白名单。用户可以在「权限」里把档位拉到最高，同时仍要求命令留在沙箱内。
+   */
+  private sandboxModeFor(
+    mode: string,
+    fallback: CodeExecutionScope["sandboxMode"],
+  ): CodeExecutionScope["sandboxMode"] {
+    return resolveSandboxMode({
+      mode,
+      fallback,
+      sandboxEnabled:
+        this.deps.permissions?.getSettings().policy.sandbox.enabled !== false,
+    });
   }
 
   private async closeResources(
@@ -3352,8 +3389,7 @@ export class CodeUiService {
         // 规划别名只收窄应用策略，不撤销或扩大用户已经授权的物理工作域。
         if (mode === "plan") return;
         await this.deps.executionScopes.updateTask(user, loaded.root.id, {
-          sandboxMode:
-            mode === "yolo" ? "danger-full-access" : "workspace-write",
+          sandboxMode: this.sandboxModeFor(mode, "workspace-write"),
         });
       },
       (root) => {
@@ -5685,8 +5721,7 @@ export class CodeUiService {
         generation: 1,
         rootDirectory,
         additionalDirectories,
-        sandboxMode:
-          execution.mode === "yolo" ? "danger-full-access" : "workspace-write",
+        sandboxMode: this.sandboxModeFor(execution.mode, "workspace-write"),
       } satisfies CodeExecutionScope,
       createdByClientId: user.accessClientId,
       threadId: this.deps.threads.createThreadId(),

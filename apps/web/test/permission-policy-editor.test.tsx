@@ -37,14 +37,21 @@ type RuleAction = "allow" | "ask" | "deny";
 type PolicyDraft = {
   rules: Array<{ pattern: string; action: RuleAction }>;
   disabledTools: string[];
-  pathRules: Array<{ path: string; action: RuleAction }>;
+  pathRules: Array<{
+    path: string;
+    operation: "read" | "write" | "delete";
+    action: RuleAction;
+  }>;
   commandRules: Array<{ prefix: string; action: RuleAction }>;
   domainRules: Array<{ domain: string; action: RuleAction }>;
   deleteProtection: { enabled: boolean; batchThreshold: number };
   sensitiveProtection: { enabled: boolean; patterns: string[] };
 };
-/** 服务端读回的完整策略：比提交形状多内置运行时开关。 */
-type FetchedPolicy = PolicyDraft & { bundledRuntimes: { enabled: boolean } };
+/** 服务端读回的完整策略：比提交形状多内置运行时与沙箱总开关。 */
+type FetchedPolicy = PolicyDraft & {
+  bundledRuntimes: { enabled: boolean };
+  sandbox: { enabled: boolean };
+};
 type PolicySettings = {
   tier: string;
   automationTier: string;
@@ -68,10 +75,11 @@ const DEFAULT_DATA_SAFETY = {
   sensitiveProtection: { enabled: true, patterns: [] },
 };
 
-/** 服务端读回时的完整策略：比规则卡片多一个内置运行时开关。 */
+/** 服务端读回时的完整策略：比规则卡片多内置运行时与沙箱总开关。 */
 const FETCHED_POLICY_DEFAULTS = {
   ...DEFAULT_DATA_SAFETY,
   bundledRuntimes: { enabled: true },
+  sandbox: { enabled: true },
 };
 
 const EMPTY_SETTINGS: PolicySettings = {
@@ -284,6 +292,7 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       deleteProtection: { enabled: true, batchThreshold: 20 },
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
       bundledRuntimes: { enabled: true },
+      sandbox: { enabled: true },
     },
   });
 

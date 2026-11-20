@@ -293,6 +293,20 @@ export const permissionPolicySchema = z.object({
   autoBackup: z
     .object({ enabled: z.boolean().default(true) })
     .default({ enabled: true }),
+  /**
+   * 沙箱安全总开关（WorkBuddy「沙箱安全」）。
+   *
+   * 打开（缺省）：命令在进程沙箱内执行，文件访问限 Task 授权目录，网络走域名白名单。
+   * 关闭：任务不再能进入 `danger-full-access`（「完全访问」档的 yolo 被降级成
+   * `workspace-write`）——文件访问仍限授权目录，网络仍走白名单。
+   *
+   * 为什么不是「关掉=不隔离」：真正的「不隔离」就是 `danger-full-access`，
+   * 而它已经由权限档位（完全访问）控制。这里管控的是「档位能不能拿到那个模式」，
+   * 因为有些用户希望档位拉到最高、但仍然不让命令跑出沙箱边界。
+   */
+  sandbox: z
+    .object({ enabled: z.boolean().default(true) })
+    .default({ enabled: true }),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -307,6 +321,7 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   bundledRuntimes: { enabled: true },
   aiSafety: { injectionGuard: false },
   autoBackup: { enabled: true },
+  sandbox: { enabled: true },
 };
 /**
  * 内置的敏感数据格式（与 WorkBuddy「敏感保护」同口径：票据、密码这类东西不该被 AI 发出去）。
