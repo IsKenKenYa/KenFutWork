@@ -1,3 +1,4 @@
+import { EMPTY_PERMISSION_POLICY } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
@@ -31,6 +32,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         automationTier: "default",
         rules: { allow: ["write_file"], deny: ["mcp__*"] },
         policy: {
+          ...EMPTY_PERMISSION_POLICY,
           rules: [{ pattern: "mcp__*", action: "deny" }],
           disabledTools: ["shell_*"],
         },
@@ -46,6 +48,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         automationTier: "default",
         rules: { allow: ["write_file"], deny: ["mcp__*"] },
         policy: {
+          ...EMPTY_PERMISSION_POLICY,
           rules: [{ pattern: "mcp__*", action: "deny" }],
           disabledTools: ["shell_*"],
         },

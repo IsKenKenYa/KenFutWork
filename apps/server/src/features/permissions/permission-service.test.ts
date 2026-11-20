@@ -1,5 +1,8 @@
+import {
+  EMPTY_PERMISSION_POLICY,
+  type PermissionPolicy,
+} from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-
 import {
   createPermissionService,
   isDangerousCall,
@@ -56,7 +59,7 @@ describe("permissions 缝（DEC-4）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       approvedForever: ["execute", "mcp__py__run"],
       browserControlEnabled: false,
       browserAutoScreenshot: false,
@@ -183,7 +186,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
         allow: ["write_file", "mcp__py-helper__echo"],
         deny: ["mcp__py-helper__add"],
       },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -209,7 +212,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "custom",
       automationTier: "default",
       rules: { allow: [], deny: ["mcp__*"] },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -233,7 +236,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "full-access",
       automationTier: "default",
       rules: { allow: [], deny: [] },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -255,7 +258,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "auto-approve",
       rules: { allow: [], deny: [] },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -278,7 +281,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
-      policy: { rules: [], disabledTools: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -299,20 +302,23 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
 
 describe("工具策略：三态规则与禁用清单", () => {
   const withPolicy = (
-    policy: { rules: Array<{ pattern: string; action: "allow" | "ask" | "deny" }>; disabledTools: string[] },
+    policy: Partial<PermissionPolicy>,
     tier: "default" | "full-access" = "default",
   ) => {
     const svc = createPermissionService();
     svc.applySettings({
       ...DEFAULT_PERMISSION_SETTINGS,
       tier,
-      policy,
+      policy: { ...EMPTY_PERMISSION_POLICY, ...policy },
     });
     return svc;
   };
 
   it("禁用清单是硬拒绝：完全访问档也拦，且不给审批机会", () => {
-    const svc = withPolicy({ rules: [], disabledTools: ["shell_*"] }, "full-access");
+    const svc = withPolicy(
+      { rules: [], disabledTools: ["shell_*"] },
+      "full-access",
+    );
     const decision = svc.evaluate({ toolName: "shell_exec" });
     expect(decision.decision).toBe("deny");
     expect(decision.blocked).toBe(true);
@@ -370,5 +376,82 @@ describe("工具策略：三态规则与禁用清单", () => {
     expect(svc.checkToolPolicy("execute")?.blocked).toBe(true);
     expect(svc.checkToolPolicy("shell_exec")?.blocked).toBe(true);
     expect(svc.checkToolPolicy("read_file")).toBeUndefined();
+  });
+
+  it("路径规则按前缀判：规则目录及其下层命中，同前缀的邻居目录不命中", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo/app", action: "deny" }],
+    });
+    const write = (filePath: string) =>
+      svc.evaluate({ toolName: "write_file", args: { file_path: filePath } });
+
+    expect(write("/repo/app").blocked).toBe(true);
+    expect(write("/repo/app/src/index.ts").blocked).toBe(true);
+    // `/repo/app-old` 与 `/repo/app` 是邻居，前缀相同但不是同一棵树
+    expect(write("/repo/app-old/x.ts").blocked).toBeUndefined();
+    // 规则外的路径不受影响，回落档位（default 档写文件需审批）
+    const outside = write("/repo/other/x.ts");
+    expect(outside.decision).toBe("deny");
+    expect(outside.blocked).toBeUndefined();
+  });
+
+  it("路径规则两种分隔符与小写都认（Windows 路径大小写不敏感）", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "C:\\Users\\me\\secrets", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { path: "c:/users/ME/secrets/token.txt" },
+      }).blocked,
+    ).toBe(true);
+  });
+
+  it("命令规则按前缀判；未带命令参数的工具不受命令规则影响", () => {
+    const svc = withPolicy({
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /data" } })
+        .blocked,
+    ).toBe(true);
+    // 同前缀但更短/更长都不该命中
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -r x" } })
+        .blocked,
+    ).toBeUndefined();
+    // 写文件没有 command 字段 → 命令规则不参与判定
+    expect(
+      svc.evaluate({ toolName: "write_file", args: { file_path: "a.txt" } })
+        .blocked,
+    ).toBeUndefined();
+  });
+
+  it("路径/命令的 allow 规则可越过档位，但硬拒绝仍然优先", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo/app", action: "allow" }],
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "/repo/app/x.ts" },
+      }).decision,
+    ).toBe("allow");
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /" } })
+        .blocked,
+    ).toBe(true);
+  });
+
+  it("工具规则先于路径/命令规则命中", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "execute", action: "allow" }],
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /" } })
+        .decision,
+    ).toBe("allow");
   });
 });

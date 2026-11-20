@@ -105,22 +105,53 @@ export const permissionDisabledToolsSchema = z
   .default([]);
 
 /**
- * 工具策略：三态规则表 + 禁用清单。
+ * 路径规则（参考 WorkBuddy 的「文件安全」）：按路径前缀配三态动作。
  *
- * 判定顺序（与 WorkBuddy 一致，且拒绝优先）：
- * 1. 命中禁用清单 → `deny`（硬拒绝，无审批）；
- * 2. 三态规则按**表内顺序**取第一条命中 → 该动作；
- * 3. 都没命中 → 回落档位判定（与改造前完全一致）。
+ * 只按**前缀**匹配，不做通配符：路径通配（`**`、`?`）会让人误判覆盖面，
+ * 前端也难解释「这条规则到底管到哪些文件」。前缀匹配的口径是「这个目录/文件及其下层」。
+ */
+export const permissionPathRuleSchema = z
+  .object({
+    path: z.string().min(1).max(4096),
+    action: permissionRuleActionSchema,
+  })
+  .strict();
+export type PermissionPathRule = z.infer<typeof permissionPathRuleSchema>;
+
+/**
+ * 命令规则：按命令**前缀**配三态动作（与 WorkBuddy 的「命令安全」同口径）。
+ * 匹配的是执行命令的规范化首段，例如 `rm ` / `git push`。
+ */
+export const permissionCommandRuleSchema = z
+  .object({
+    prefix: z.string().min(1).max(500),
+    action: permissionRuleActionSchema,
+  })
+  .strict();
+export type PermissionCommandRule = z.infer<typeof permissionCommandRuleSchema>;
+
+/**
+ * 工具策略：三态规则表 + 禁用清单 + 路径/命令规则。
+ *
+ * 判定顺序（拒绝优先，全部在档位之前）：
+ * 1. 命中禁用清单 → 硬拒绝；
+ * 2. 工具三态规则按表内顺序取第一条命中；
+ * 3. 文件/命令规则按表内顺序取第一条命中（前缀匹配）；
+ * 4. 都没命中 → 回落档位判定（与改造前完全一致）。
  */
 export const permissionPolicySchema = z.object({
   rules: z.array(permissionPolicyRuleSchema).max(500).default([]),
   disabledTools: permissionDisabledToolsSchema,
+  pathRules: z.array(permissionPathRuleSchema).max(500).default([]),
+  commandRules: z.array(permissionCommandRuleSchema).max(500).default([]),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
 export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   rules: [],
   disabledTools: [],
+  pathRules: [],
+  commandRules: [],
 };
 
 /** 规则是否命中工具名（精确或「前缀 *」）。 */

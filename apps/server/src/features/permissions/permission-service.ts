@@ -2,6 +2,7 @@ import {
   anyPermissionRuleMatches,
   EMPTY_PERMISSION_POLICY,
   matchesPermissionRule,
+  type PermissionRuleAction,
   type PermissionRules,
   type PermissionScenario,
   type PermissionTier,
@@ -46,6 +47,84 @@ export const DANGEROUS_TOOL_PATTERNS = [
 
 export function isDangerousTool(toolName: string): boolean {
   return DANGEROUS_TOOL_PATTERNS.some((pattern) => pattern.test(toolName));
+}
+
+/** 从工具参数里取被操作的路径（不同工具用 `file_path` 或 `path`）。 */
+export function pathArgument(
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!args) return null;
+  for (const key of ["file_path", "path", "target_path"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/** 从工具参数里取要执行的命令（命令类工具用 `command` 或 `cmd`）。 */
+export function commandArgument(
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!args) return null;
+  for (const key of ["command", "cmd"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * 路径前缀判定：规则路径是「该目录/文件及其下层」。
+ *
+ * 分隔符两种都认（Windows 与 POSIX），且必须落在分隔符边界上——
+ * 否则 `/data/app-old` 会被 `/data/app` 误伤。比较前统一转小写：
+ * Windows 路径大小写不敏感，规则写 `C:\Users` 而工具传 `c:\users` 必须命中。
+ */
+export function withinPathPrefix(
+  targetPath: string,
+  rulePath: string,
+): boolean {
+  const normalize = (value: string) =>
+    value.replace(/\\/gu, "/").replace(/\/+$/u, "").toLowerCase();
+  const target = normalize(targetPath);
+  const rule = normalize(rulePath);
+  if (!rule) return false;
+  if (target === rule) return true;
+  return target.startsWith(`${rule}/`);
+}
+
+/**
+ * 三态表判定：按表内顺序取第一条命中。
+ *
+ * 抽成泛型是为了工具规则、路径规则、命令规则共用同一套「首个命中生效」语义，
+ * 避免三处各写一遍循环而判定顺序漂移。
+ */
+function triStateDecision<T extends { action: PermissionRuleAction }>(
+  table: readonly T[],
+  subject: string,
+  matches: (rule: T) => boolean,
+): PermissionDecision | undefined {
+  for (const rule of table) {
+    if (!matches(rule)) continue;
+    if (rule.action === "allow") return { decision: "allow" };
+    if (rule.action === "deny") {
+      return {
+        decision: "deny",
+        blocked: true,
+        reason: `${subject} 命中「拒绝」规则`,
+      };
+    }
+    // ask：交给审批，不给记忆（每次都要人点）
+    return {
+      decision: "deny",
+      reason: `${subject} 命中「询问」规则，需你确认`,
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -112,6 +191,8 @@ export interface PermissionService extends CodeApprovalService {
     scenario?: PermissionScenario;
     /** 属主声明的执行效果（内核随 tool-pre-execute 事件带来）；缺省按名字判。 */
     access?: "read" | "write" | "execute" | undefined;
+    /** 工具参数：路径/命令规则据此取被操作的路径与命令。 */
+    args?: Record<string, unknown> | undefined;
   }): PermissionDecision;
   /**
    * 只检查工具策略（禁用清单 + 三态规则），不看档位。
@@ -120,7 +201,10 @@ export interface PermissionService extends CodeApprovalService {
    * 不进入人工审批；命中「询问」返回 `deny`（无 `blocked`），照常弹审批。
    * 返回 `undefined` 表示策略未命中，调用方继续走 Task 策略。
    */
-  checkToolPolicy(toolName: string): PermissionDecision | undefined;
+  checkToolPolicy(
+    toolName: string,
+    args?: Record<string, unknown>,
+  ): PermissionDecision | undefined;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
   listApprovedForever(): string[];
@@ -148,13 +232,15 @@ export function createPermissionService(
   };
 
   /**
-   * 工具策略判定（禁用清单 → 三态规则）。命中即返回，未命中返回 undefined。
+   * 工具策略判定（禁用清单 → 工具三态规则 → 路径/命令规则）。
+   * 命中即返回，未命中返回 undefined。
    *
    * `evaluate`（工具门）与 `checkToolPolicy`（审批入口）共用这一份，
    * 保证「禁用/拒绝」在两条路径上语义一致：都是硬拒绝，不给审批机会。
    */
   const policyDecisionFor = (
     toolName: string,
+    args?: Record<string, unknown>,
   ): PermissionDecision | undefined => {
     const policy = settings.policy ?? EMPTY_PERMISSION_POLICY;
     if (anyPermissionRuleMatches(policy.disabledTools, toolName)) {
@@ -164,29 +250,37 @@ export function createPermissionService(
         reason: `工具 ${toolName} 已在「设置 → 权限 → 工具管控」里被禁用`,
       };
     }
-    for (const rule of policy.rules) {
-      if (!matchesPermissionRule(rule.pattern, toolName)) continue;
-      if (rule.action === "allow") return { decision: "allow" };
-      if (rule.action === "deny") {
-        return {
-          decision: "deny",
-          blocked: true,
-          reason: `工具 ${toolName} 命中「拒绝」规则 ${rule.pattern}`,
-        };
-      }
-      // ask：交给审批（不给记忆，每次都要人点）
-      return {
-        decision: "deny",
-        reason: `工具 ${toolName} 命中「询问」规则 ${rule.pattern}，需你确认`,
-      };
+    const toolDecision = triStateDecision(policy.rules, toolName, (rule) =>
+      matchesPermissionRule(rule.pattern, toolName),
+    );
+    if (toolDecision) return toolDecision;
+
+    // 路径与命令规则只在参数里真的带了对应字段时才判：没带就不该命中。
+    const targetPath = pathArgument(args);
+    if (targetPath) {
+      const pathDecision = triStateDecision(
+        policy.pathRules,
+        targetPath,
+        (rule) => withinPathPrefix(targetPath, rule.path),
+      );
+      if (pathDecision) return pathDecision;
+    }
+    const command = commandArgument(args);
+    if (command) {
+      const commandDecision = triStateDecision(
+        policy.commandRules,
+        command,
+        (rule) => command.startsWith(rule.prefix),
+      );
+      if (commandDecision) return commandDecision;
     }
     return undefined;
   };
 
   const service: PermissionService = {
     ...createCodeApprovalService(options),
-    checkToolPolicy(toolName) {
-      return policyDecisionFor(toolName);
+    checkToolPolicy(toolName, args) {
+      return policyDecisionFor(toolName, args);
     },
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;
@@ -208,12 +302,12 @@ export function createPermissionService(
       for (const toolName of next.approvedForever)
         foreverApproved.add(toolName);
     },
-    evaluate({ toolName, threadId, scenario = "interactive", access }) {
+    evaluate({ toolName, threadId, scenario = "interactive", access, args }) {
       const tier = tierFor(threadId, scenario);
       // 工具策略优先于档位：禁用清单是硬拒绝（完全访问档也拦），
       // 三态规则按表内顺序取第一条命中。这两项是 WorkBuddy 安全中心的口径，
       // 与档位正交——「完全访问」放开的是审批，不该放开用户明确禁用的工具。
-      const policyDecision = policyDecisionFor(toolName);
+      const policyDecision = policyDecisionFor(toolName, args);
       if (policyDecision) return policyDecision;
       if (tier === "full-access") {
         return { decision: "allow" };

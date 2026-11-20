@@ -30,9 +30,9 @@ export function createPermissionsPlugin(_deps: {
       // Code 在此等待真实人审；所有 waterfall 消费方放行后才由 kernel claim。
       ctx.on("tool-pre-execute", async (payload, next) => {
         if (payload.decision === "deny") return next(payload);
-        // 工具策略（禁用清单 / 三态「拒绝」）先于一切：命中即硬拒绝，不弹审批。
-        // 「询问」规则返回不带 blocked 的 deny，走下面的审批链路。
-        const policy = service.checkToolPolicy(payload.toolName);
+        // 工具策略（禁用清单 / 三态「拒绝」/ 路径与命令规则）先于一切：
+        // 命中禁用或「拒绝」即硬拒绝，不给审批机会；命中「允许」直接放行。
+        const policy = service.checkToolPolicy(payload.toolName, payload.args);
         if (policy?.blocked) {
           return next({
             ...payload,
@@ -40,17 +40,21 @@ export function createPermissionsPlugin(_deps: {
             denyReason: policy.reason,
           });
         }
-        const decision =
-          policy ??
-          (payload.permissionInvocation
-            ? await service.admit(payload.permissionInvocation)
-            : service.evaluate({
-                toolName: payload.toolName,
-                scenario: payload.goalId ? "automation" : "interactive",
-                ...(payload.threadId ? { threadId: payload.threadId } : {}),
-                // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
-                ...(payload.access ? { access: payload.access } : {}),
-              }));
+        if (policy?.decision === "allow") {
+          return next({ ...payload, decision: "allow" });
+        }
+        // 「询问」落在这里：继续走审批链路，让人来点（策略本身不替人做决定）。
+        const decision = payload.permissionInvocation
+          ? await service.admit(payload.permissionInvocation)
+          : service.evaluate({
+              toolName: payload.toolName,
+              scenario: payload.goalId ? "automation" : "interactive",
+              ...(payload.threadId ? { threadId: payload.threadId } : {}),
+              // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
+              ...(payload.access ? { access: payload.access } : {}),
+              // 路径/命令规则要按这次实际操作的路径与命令判。
+              args: payload.args,
+            });
         return next({
           ...payload,
           ...(decision.decision === "deny"

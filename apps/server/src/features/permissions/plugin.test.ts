@@ -186,4 +186,81 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
     await app.close();
     await kernel.dispose();
   });
+
+  it("策略「拒绝」硬拦、「询问」交给人审、「允许」越过档位", async () => {
+    const { app, kernel, tools } = assembly();
+    const loaded = await registerBundleTools(tools);
+    const permissions = kernel.get("permissions");
+    tools.register({
+      name: "strategy_allowed",
+      description: "策略显式放行的工具",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async () => "allowed",
+    });
+    permissions.applySettings({
+      ...permissions.getSettings(),
+      tier: "default",
+      policy: {
+        ...permissions.getSettings().policy,
+        rules: [
+          { pattern: "device_read", action: "deny" },
+          { pattern: "device_write", action: "ask" },
+          { pattern: "strategy_allowed", action: "allow" },
+        ],
+      },
+    });
+
+    try {
+      // 「拒绝」= 硬拦：理由是策略命中，不是「危险操作需审批」。
+      await expect(tools.execute("device_read", {})).rejects.toThrow(/拒绝/);
+      // 「询问」不能被当成硬拦：理由要让人去确认，而不是说工具已被禁用。
+      await expect(tools.execute("device_write", {})).rejects.toThrow(/询问/);
+      // 「允许」在默认档下也放行（策略先于档位）。
+      await expect(tools.execute("strategy_allowed", {})).resolves.toBe(
+        "allowed",
+      );
+      // 未命中策略的工具照旧按档位判。
+      await expect(tools.execute("device_undeclared", {})).rejects.toThrow(
+        /危险操作/,
+      );
+    } finally {
+      loaded.dispose();
+      await app.close();
+      await kernel.dispose();
+    }
+  });
+
+  it("策略路径规则按这次调用的实参判定（前缀命中即拦）", async () => {
+    const { app, kernel, tools } = assembly();
+    const permissions = kernel.get("permissions");
+    tools.register({
+      name: "file_writer",
+      description: "写文件",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async (args: Record<string, unknown>) =>
+        `wrote ${args.file_path}`,
+    });
+    permissions.applySettings({
+      ...permissions.getSettings(),
+      tier: "full-access",
+      policy: {
+        ...permissions.getSettings().policy,
+        pathRules: [{ path: "/protected", action: "deny" }],
+      },
+    });
+
+    try {
+      await expect(
+        tools.execute("file_writer", { file_path: "/protected/secret.txt" }),
+      ).rejects.toThrow(/拒绝/);
+      await expect(
+        tools.execute("file_writer", { file_path: "/open/readme.txt" }),
+      ).resolves.toBe("wrote /open/readme.txt");
+    } finally {
+      await app.close();
+      await kernel.dispose();
+    }
+  });
 });

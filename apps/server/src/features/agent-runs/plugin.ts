@@ -152,7 +152,7 @@ export function createAgentRunsPlugin(
             )
               ? ("automation" as const)
               : ("interactive" as const);
-          return (toolName, detail) => {
+          return (toolName, detail, args) => {
             const access = toolRegistry.get(toolName)?.access;
             const modeVerdict = evaluateToolPolicy(policy, toolName, {
               ...detail,
@@ -164,6 +164,7 @@ export function createAgentRunsPlugin(
               toolName,
               threadId,
               scenario,
+              ...(args ? { args } : {}),
             });
             return decision.decision === "deny"
               ? {

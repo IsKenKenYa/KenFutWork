@@ -109,6 +109,8 @@ export type ToolGate = (
   toolName: string,
   /** 子代理派发时提供目标定义的只读属性。 */
   detail?: { subagentReadOnly?: boolean },
+  /** 本次调用的实参：路径/命令规则据此取被操作的路径与命令。 */
+  args?: Record<string, unknown>,
 ) => { allowed: true } | { allowed: false; reason: string };
 
 /**
@@ -133,7 +135,11 @@ export function createToolGateMiddleware(
   return {
     name: "kenfutwork-tool-gate",
     wrapToolCall: async (request, handler) => {
-      const verdict = gate(request.toolCall.name);
+      const args =
+        request.toolCall.args && typeof request.toolCall.args === "object"
+          ? (request.toolCall.args as Record<string, unknown>)
+          : undefined;
+      const verdict = gate(request.toolCall.name, undefined, args);
       if (verdict.allowed) {
         hooks?.onAllowed?.(request.toolCall.name);
         return handler(request);
@@ -142,9 +148,7 @@ export function createToolGateMiddleware(
         toolCallId: request.toolCall.id ?? request.toolCall.name,
         toolName: request.toolCall.name,
         reason: verdict.reason,
-        ...(request.toolCall.args && typeof request.toolCall.args === "object"
-          ? { input: request.toolCall.args as Record<string, unknown> }
-          : {}),
+        ...(args ? { input: args } : {}),
       });
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
