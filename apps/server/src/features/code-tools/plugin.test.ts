@@ -72,6 +72,7 @@ it("profiles mount core file tools by actual Task scope and readonly roles recei
       "Write",
       "Edit",
       "ApplyPatch",
+      "delete_path",
       "preview_file",
       "diff_files",
     ]);
@@ -116,6 +117,7 @@ it("profiles mount core file tools by actual Task scope and readonly roles recei
       "Write",
       "Edit",
       "ApplyPatch",
+      "delete_path",
       "preview_file",
       "diff_files",
       "project_search",

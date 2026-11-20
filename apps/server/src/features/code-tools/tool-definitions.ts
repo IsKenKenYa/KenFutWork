@@ -11,6 +11,7 @@ import { fileDiffDisplay, fileDiffsDisplay } from "./file-display.js";
 import type { FileModelCapabilities } from "./file-types.js";
 import { loadCodeDirectoryInstructions } from "./project-instructions.js";
 import {
+  deleteSchema,
   diffSchema,
   editSchema,
   globSchema,
@@ -24,6 +25,13 @@ import {
 export interface CodeFileToolsDeps {
   backend: ScopedBackend;
   modelCapabilities: FileModelCapabilities;
+  /**
+   * 删除保护里的「先移到回收站」（设置 → 权限 → 数据安全）。
+   *
+   * 由插件按当前策略在解析工具时传入：`true` 时 `delete_path` 把文件移到
+   * `.kenfutwork-trash/<时间戳>/`，`false` 时按系统删除。
+   */
+  trashFirst?: boolean;
 }
 const mediaExtensions = new Set([
   ".png",
@@ -54,7 +62,11 @@ function tool(
     name,
     scope: "code",
     exposure: "core",
-    access: ["Write", "Edit", "ApplyPatch"].includes(name) ? "write" : "read",
+    // `delete_path` 与 Write/Edit/ApplyPatch 同属写类：只读角色必须被过滤掉，
+    // 工具门也要按写类走审批（漏了它 = 只读会话能删文件）。
+    access: ["Write", "Edit", "ApplyPatch", "delete_path"].includes(name)
+      ? "write"
+      : "read",
     approvalReviewKind: approvalReviewKinds[name],
     description,
     parameters: z.toJSONSchema(schema),
@@ -385,6 +397,46 @@ function createPatch(deps: CodeFileToolsDeps): ToolDefinition {
   );
 }
 
+/**
+ * 删除一个文件。
+ *
+ * 是否先移到回收站由**删除保护策略**决定（`deps.trashFirst`），模型不能选：
+ * 用户在设置里开启「删除前先移到回收站」后，这个工具会把文件移到
+ * `.kenfutwork-trash/<时间戳>/<相对路径>`，返回回收站位置；关闭时按系统删除。
+ *
+ * 走 `backend` 的作用域能力：只读角色会被 `resolveWrite` 拒绝，路径越界同理。
+ */
+function createDelete(deps: CodeFileToolsDeps): ToolDefinition {
+  const moveToTrash = deps.backend.moveToTrash.bind(deps.backend);
+  return tool(
+    "delete_path",
+    deleteSchema,
+    "Delete one authorized file. When the user has enabled trash protection the file is moved into the workspace trash directory and the tool reports where it went; otherwise it is removed.",
+    async (args, context) => {
+      const input = deleteSchema.parse(args);
+      if (deps.trashFirst) {
+        const { trashedPath } = await moveToTrash({
+          path: input.file_path,
+          ...(context.signal ? { signal: context.signal } : {}),
+        });
+        return `已移到回收站：${trashedPath}`;
+      }
+      const result = await deps.backend.applyPatch({
+        patchText: `*** Begin Patch\n*** Delete File: ${input.file_path}\n*** End Patch`,
+        signal: context.signal,
+        ...(context.toolCallId ? { operationId: context.toolCallId } : {}),
+      });
+      if (result.failures.length > 0)
+        throw new Error(
+          result.failures
+            .map((failure) => `${failure.filePath}：${failure.error}`)
+            .join("；"),
+        );
+      return `已删除 ${input.file_path}`;
+    },
+  );
+}
+
 function createPreview(deps: CodeFileToolsDeps): ToolDefinition {
   return tool(
     "preview_file",
@@ -450,6 +502,7 @@ export function createCodeFileTools(deps: CodeFileToolsDeps): ToolDefinition[] {
     createWrite(deps),
     createEdit(deps),
     createPatch(deps),
+    createDelete(deps),
     createPreview(deps),
     createDiff(deps),
   ];

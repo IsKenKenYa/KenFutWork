@@ -1,4 +1,5 @@
 import { unlink } from "node:fs/promises";
+import { basename, isAbsolute, join, relative } from "node:path";
 import { structuredPatch } from "diff";
 import {
   applyChunks,
@@ -17,6 +18,21 @@ import type {
   PatchResult,
   WriteFileInput,
 } from "./file-types.js";
+
+/**
+ * 回收站目录名（删除保护的「先移到回收站」）。
+ *
+ * 放在 Task 授权根下、与源文件同一个授权范围内：`resolveWrite` 的边界校验照样生效，
+ * 不需要为它单独开一条写权限。
+ */
+const TRASH_DIRECTORY_NAME = ".kenfutwork-trash";
+
+/** 目标是否在根目录内；在则返回相对路径，越界返回 null。 */
+function relativeInside(root: string, target: string): string | null {
+  const relativePath = relative(root, target);
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) return null;
+  return relativePath;
+}
 
 class FileMutations {
   constructor(
@@ -362,6 +378,57 @@ class FileMutations {
       () => this.editFileOnce(input),
     );
   }
+  /**
+   * 把文件移进项目的回收站目录（删除保护的「先移到回收站」）。
+   *
+   * 回收站位置固定在 Task 授权根下的 `.kenfutwork-trash/<时间戳>/<原相对路径>`：
+   * 它与源文件同在一个授权目录内，因此 `resolveWrite` 的边界校验照样生效；
+   * 移过去之后原路径不再存在，用户在文件树里也看不到它（不需要额外的忽略逻辑）。
+   *
+   * 与 `applyPatch` 的 move 分支同一套动作：先发布目标、再 unlink 源，
+   * 中途失败保留源文件而不是删掉它。
+   */
+  async moveToTrash(input: {
+    path: string;
+    signal?: AbortSignal;
+  }): Promise<{ trashedPath: string }> {
+    const source = await this.controller.resolveWrite(input.path, input.signal);
+    const scope = this.controller.scope.describe();
+    // 相对授权根的路径：`resolveWrite` 已返回绝对路径，这里按根裁剪。
+    const relative =
+      relativeInside(scope.rootDirectory, source) ?? basename(source);
+    const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+    const trashedPath = join(
+      scope.rootDirectory,
+      TRASH_DIRECTORY_NAME,
+      stamp,
+      relative,
+    );
+    return this.controller.withLocks(
+      [source, trashedPath],
+      async () => {
+        const before = await this.controller.load(source, input.signal);
+        if (!before) throw new Error(`要删除的文件不存在：${input.path}`);
+        const target = await this.controller.resolveWrite(
+          trashedPath,
+          input.signal,
+        );
+        if (await this.controller.load(target, input.signal))
+          throw new Error("回收站里已有同名文件，请稍后重试");
+        await this.controller.publish(target, before.text);
+        try {
+          input.signal?.throwIfAborted();
+          await unlink(source);
+        } catch (error) {
+          // 源文件删不掉：目标已写入，把目标撤掉再报错，避免两份副本都留着却报成功。
+          await unlink(target).catch(() => {});
+          throw error;
+        }
+        return { trashedPath: target };
+      },
+      input.signal,
+    );
+  }
   applyPatch(input: PatchInput): Promise<PatchResult> {
     if (Buffer.byteLength(input.patchText) > this.limits.codePatchMaxBytes)
       return Promise.reject(new Error("补丁超过字节上限"));
@@ -387,5 +454,8 @@ export function createFileMutations(
     writeFile: (input: WriteFileInput) => mutations.writeFile(input),
     editFile: (input: EditFileInput) => mutations.editFile(input),
     applyPatch: (input: PatchInput) => mutations.applyPatch(input),
+    /** 删除保护的「先移到回收站」：移到 Task 授权根下的 `.kenfutwork-trash/<时间戳>/`。 */
+    moveToTrash: (input: { path: string; signal?: AbortSignal }) =>
+      mutations.moveToTrash(input),
   };
 }

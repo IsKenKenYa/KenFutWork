@@ -56,6 +56,7 @@ it("core file tools consume one scoped backend and preserve ZCode canonical outp
     "Write",
     "Edit",
     "ApplyPatch",
+    "delete_path",
     "preview_file",
     "diff_files",
   ]);
@@ -176,6 +177,7 @@ it("every file producer propagates the actual execution cancellation signal", as
           "*** Begin Patch\n*** Add File: new.txt\n+unsafe\n*** End Patch",
       },
     ],
+    ["delete_path", { file_path: "cancel.txt" }],
     ["diff_files", { beforePath: "cancel.txt", afterPath: "cancel.txt" }],
   ];
   for (const [name, args] of cases) {
