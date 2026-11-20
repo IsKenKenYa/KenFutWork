@@ -279,17 +279,21 @@ export const permissionPolicySchema = z.object({
     .object({ enabled: z.boolean().default(true) })
     .default({ enabled: true }),
   /**
-   * AI 安全防护（WorkBuddy「AI 安全防护」）：默认关闭，与 WorkBuddy 一致。
+   * AI 安全防护（WorkBuddy「AI 安全防护」）。
    *
-   * `injectionGuard`：工具返回内容里出现「覆盖先前指令」「索取凭据」这类句式时，
-   * 在结果末尾追加属主声明，提示模型那是外部内容而非用户要求。只追加标注、
-   * 不改写原文——模型要看到原文才能判断，用户也要能复盘。
+   * - `injectionGuard`：工具返回内容里出现「覆盖先前指令」「索取凭据」这类句式时，
+   *   在结果末尾追加属主声明，提示模型那是外部内容而非用户要求。默认关（与 WorkBuddy 一致）。
+   * - `approvalReview`：**模型行为智能审查 + AI 智能审批**。开启时，属主声明了
+   *   `approvalReviewKind` 的高风险操作在进入人工审批之前，先交给「审批模型」审一次：
+   *   判定为常规且有界 → 自动放行；可疑 / 越权 / 超出用户请求 → 交回人工（附风险说明）。
+   *   未配置审批模型时一律回落到人工。默认开（这是改造前就有的行为）。
    */
   aiSafety: z
     .object({
       injectionGuard: z.boolean().default(false),
+      approvalReview: z.boolean().default(true),
     })
-    .default({ injectionGuard: false }),
+    .default({ injectionGuard: false, approvalReview: true }),
   /**
    * 自动备份（WorkBuddy「自动备份」）：每轮对话修改文件之前先留一份影子快照。
    *
@@ -330,7 +334,7 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   },
   sensitiveProtection: { enabled: true, patterns: [] },
   bundledRuntimes: { enabled: true },
-  aiSafety: { injectionGuard: false },
+  aiSafety: { injectionGuard: false, approvalReview: true },
   autoBackup: { enabled: true },
   sandbox: { enabled: true },
 };

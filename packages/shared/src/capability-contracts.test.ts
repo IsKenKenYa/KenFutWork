@@ -188,6 +188,11 @@ describe("敏感数据检测", () => {
     });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
     expect(parsed.bundledRuntimes).toEqual({ enabled: true });
+    // 审批模型审查是改造前就有的行为：旧数据必须继续视为开启
+    expect(parsed.aiSafety).toEqual({
+      injectionGuard: false,
+      approvalReview: true,
+    });
   });
 });
 

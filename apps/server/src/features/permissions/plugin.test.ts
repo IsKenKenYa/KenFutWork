@@ -9,7 +9,8 @@ import { createConsumerLocalAccessService } from "../local-access/test-consumer-
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { loadCompatPlugin } from "../plugins/compat-context.js";
-import { createPermissionsPlugin } from "./plugin.js";
+import { approvalReviewEnabled, createPermissionsPlugin } from "./plugin.js";
+import { DEFAULT_PERMISSION_SETTINGS } from "./tier-store.js";
 
 /**
  * 权限闸门的**整链**回归：compat bundle 声明 `access` → 内核 `tool-pre-execute` 事件带
@@ -35,13 +36,16 @@ const fakeUser: LocalActor = {
 };
 
 /** 真实内核与权限策略；外部边界不启用模型审查。 */
-function assembly() {
+function assembly(options: { onReview?: () => void } = {}) {
   const app = Fastify({ logger: false });
   const kernel = composePlugins(testEnv, [createPermissionsPlugin({})], {
     app,
     overrides: {
       approvalReview: {
-        review: async () => "manual",
+        review: async () => {
+          options.onReview?.();
+          return "manual";
+        },
         invalidate() {},
         close() {},
       },
@@ -262,5 +266,27 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
       await app.close();
       await kernel.dispose();
     }
+  });
+
+  it("AI 安全防护：审批模型审查的开关判定（缺省视为开启，旧数据不退化）", () => {
+    // 改造前就有审批模型审查；字段缺席/旧数据必须继续视为开启
+    expect(
+      approvalReviewEnabled({
+        ...DEFAULT_PERMISSION_SETTINGS,
+        policy: {
+          ...DEFAULT_PERMISSION_SETTINGS.policy,
+          aiSafety: { injectionGuard: false, approvalReview: true },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      approvalReviewEnabled({
+        ...DEFAULT_PERMISSION_SETTINGS,
+        policy: {
+          ...DEFAULT_PERMISSION_SETTINGS.policy,
+          aiSafety: { injectionGuard: false, approvalReview: false },
+        },
+      }),
+    ).toBe(false);
   });
 });

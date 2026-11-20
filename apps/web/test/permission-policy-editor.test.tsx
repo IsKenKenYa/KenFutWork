@@ -55,6 +55,7 @@ type PolicyDraft = {
 type FetchedPolicy = PolicyDraft & {
   bundledRuntimes: { enabled: boolean };
   sandbox: { enabled: boolean };
+  aiSafety: { injectionGuard: boolean; approvalReview: boolean };
 };
 type PolicySettings = {
   tier: string;
@@ -88,6 +89,7 @@ const FETCHED_POLICY_DEFAULTS = {
   ...DEFAULT_DATA_SAFETY,
   bundledRuntimes: { enabled: true },
   sandbox: { enabled: true },
+  aiSafety: { injectionGuard: false, approvalReview: true },
 };
 
 const EMPTY_SETTINGS: PolicySettings = {
@@ -305,6 +307,7 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
+      aiSafety: { injectionGuard: false, approvalReview: true },
     },
   });
 

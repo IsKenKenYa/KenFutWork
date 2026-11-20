@@ -1,10 +1,12 @@
 import { registerPermissionRoutes } from "../../http/permissions.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
+import type { ApprovalReviewer } from "./approval-types.js";
 import { createPermissionAuditStore } from "./audit-store.js";
 import {
   createPermissionService,
   type PermissionService,
 } from "./permission-service.js";
+import type { PermissionSettings } from "./tier-store.js";
 import { createPermissionSettingsStore } from "./tier-store.js";
 
 /**
@@ -15,6 +17,15 @@ import { createPermissionSettingsStore } from "./tier-store.js";
  *   `service.admit`，否则按工具名与属主声明的效果调用 `service.evaluate`。
  * - DeepAgents 原生工具不经过此事件，由 agent-runs 的工具权限检查控制。
  */
+/**
+ * AI 安全防护的「审批模型审查」是否开启。
+ *
+ * 缺省（字段缺席、旧数据）视为开启——这是改造前就有的行为，不能让升级把它关掉。
+ */
+export function approvalReviewEnabled(settings: PermissionSettings): boolean {
+  return settings.policy.aiSafety.approvalReview !== false;
+}
+
 export function createPermissionsPlugin(_deps: {
   events?: KernelEvents;
 }): PluginDefinition {
@@ -22,10 +33,19 @@ export function createPermissionsPlugin(_deps: {
     name: "permissions",
     inject: ["localAccess", "persistence", "approvalReview"],
     apply(ctx) {
-      const service: PermissionService = createPermissionService({
-        review: (input, signal) =>
-          ctx.get("approvalReview").review(input, signal),
-      });
+      /**
+       * AI 安全防护（模型行为智能审查 + AI 智能审批）的裁决点。
+       *
+       * 开关打开时交给审批模型（`approvalReview`）：常规且有界的自动放行，可疑的
+       * 交回人工。关掉后一律返回 `manual`——不经模型，人自己看。
+       */
+      const reviewIfEnabled: ApprovalReviewer = (input, signal) =>
+        approvalReviewEnabled(service.getSettings())
+          ? ctx.get("approvalReview").review(input, signal)
+          : Promise.resolve("manual");
+      // 先声明再赋值：上面的闭包要读 `service` 自己的设置（惰性调用，赋值已完成）。
+      let service: PermissionService;
+      service = createPermissionService({ review: reviewIfEnabled });
       ctx.register("permissions", () => service);
 
       // Code 在此等待真实人审；所有 waterfall 消费方放行后才由 kernel claim。

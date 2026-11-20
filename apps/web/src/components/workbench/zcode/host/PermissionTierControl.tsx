@@ -525,26 +525,34 @@ function AutoBackupSection() {
 }
 
 /**
- * AI 安全防护：工具返回内容里的注入指令（WorkBuddy 同名分组的第一项）。
+ * AI 安全防护：三项里落地了两项。
  *
- * 默认关闭，与 WorkBuddy 一致：开启后工具返回内容里出现「覆盖先前指令」「索取凭据」
- * 这类句式时，会在结果末尾追加属主声明，提示模型那是外部内容而非用户要求。
- * 其余两项（模型行为智能审查、AI 智能审批）需要独立的判定链路与模型调用，
- * 本仓库没有对应实现，因此不列出——不做只写着「即将上线」的空开关。
+ * - **工具内容注入防护**（默认关，与 WorkBuddy 一致）：工具返回内容里出现
+ *   「覆盖先前指令」「索取凭据」这类句式时，在结果末尾追加属主声明。
+ * - **审批模型审查**（默认开，改造前就有的行为）：属主声明了操作类型的工具在进入
+ *   人工审批之前，先交给审批模型审一次——常规且有界的自动放行，可疑或越权的交回
+ *   人工并附风险说明；未配置审批模型时一律回落到人工。
+ *
+ * 「模型行为智能审查」与「AI 智能审批」在 WorkBuddy 里是两项，本仓库由同一条
+ * 审阅链路承担（`features/permissions/approval-review-service`），所以合成一个开关。
  */
 function AiSafetySection() {
-  const [enabled, setEnabled] = useState(false);
+  const [injectionGuard, setInjectionGuard] = useState(false);
+  const [approvalReview, setApprovalReview] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    surfaceJson<{ policy?: { aiSafety?: { injectionGuard?: boolean } } }>(
-      "/api/permissions/tier",
-    )
+    surfaceJson<{
+      policy?: {
+        aiSafety?: { injectionGuard?: boolean; approvalReview?: boolean };
+      };
+    }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
-        setEnabled(view.policy?.aiSafety?.injectionGuard === true);
+        setInjectionGuard(view.policy?.aiSafety?.injectionGuard === true);
+        setApprovalReview(view.policy?.aiSafety?.approvalReview !== false);
       })
       .catch(() => {});
     return () => {
@@ -552,12 +560,19 @@ function AiSafetySection() {
     };
   }, []);
 
-  /** 只改注入防护一项：读回当前策略再合并提交（与内置运行时开关同一手法）。 */
-  const save = async (next: boolean) => {
+  /**
+   * 改一项、另一项原样带上：PUT 收的是整个 policy，`aiSafety` 是整体替换，
+   * 少传一个字段就会被服务端缺省值冲掉。
+   */
+  const save = async (next: {
+    injectionGuard: boolean;
+    approvalReview: boolean;
+  }) => {
     setSaving(true);
     setMessage(null);
-    const previous = enabled;
-    setEnabled(next);
+    const previous = { injectionGuard, approvalReview };
+    setInjectionGuard(next.injectionGuard);
+    setApprovalReview(next.approvalReview);
     try {
       const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
         "/api/permissions/tier",
@@ -566,15 +581,13 @@ function AiSafetySection() {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          policy: {
-            ...(view.policy ?? {}),
-            aiSafety: { injectionGuard: next },
-          },
+          policy: { ...(view.policy ?? {}), aiSafety: next },
         }),
       });
       setMessage("已保存");
     } catch (error) {
-      setEnabled(previous);
+      setInjectionGuard(previous.injectionGuard);
+      setApprovalReview(previous.approvalReview);
       setMessage(readableError(error));
     } finally {
       setSaving(false);
@@ -590,9 +603,33 @@ function AiSafetySection() {
           <input
             type="checkbox"
             aria-label="工具内容注入防护"
-            checked={enabled}
+            checked={injectionGuard}
             disabled={saving}
-            onChange={(event) => void save(event.target.checked)}
+            onChange={(event) =>
+              void save({
+                injectionGuard: event.target.checked,
+                approvalReview,
+              })
+            }
+            className="size-4"
+          />
+        }
+      />
+      <SettingsRow
+        label="审批模型审查"
+        description="高风险操作先自动审一遍"
+        control={
+          <input
+            type="checkbox"
+            aria-label="审批模型审查"
+            checked={approvalReview}
+            disabled={saving}
+            onChange={(event) =>
+              void save({
+                injectionGuard,
+                approvalReview: event.target.checked,
+              })
+            }
             className="size-4"
           />
         }
