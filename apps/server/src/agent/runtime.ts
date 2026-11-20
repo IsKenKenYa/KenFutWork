@@ -595,6 +595,13 @@ type CreateAgentRuntimeOptions = {
     executionMode?: ExecutionMode,
   ) => ToolGate | undefined;
   /**
+   * 工具返回内容注入防护（AI 安全防护）是否开启。
+   *
+   * 由 agent-runs 插件接权限策略（`policy.aiSafety.injectionGuard`）。缺省不传 =
+   * 关闭，与改造前一致（不声明开关就等于没有这条防护）。
+   */
+  toolContentGuardFor?: () => boolean;
+  /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
    * runtime 只负责在正确时机调用（beforeTurn 在流启动前、afterTurn 在收尾 finally，
    * 成功/失败/取消都走到）并兜住异常——hook 失败绝不影响 run 终态与收尾流程。
@@ -2582,6 +2589,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             contextBudget,
             // 旧工具结果折叠：只改请求副本，最近若干条保留原文；阈值与条数来自治理设置。
             toolResultPrune: governanceToolResultPrune,
+            // 工具返回内容注入防护（AI 安全防护）；未接线时缺省关闭。
+            ...(options.toolContentGuardFor?.()
+              ? { toolContentGuard: true }
+              : {}),
             ...(toolResultOffloadBinding
               ? { toolResultOffload: toolResultOffloadBinding }
               : {}),

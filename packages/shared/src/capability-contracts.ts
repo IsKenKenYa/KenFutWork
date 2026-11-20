@@ -250,6 +250,18 @@ export const permissionPolicySchema = z.object({
   bundledRuntimes: z
     .object({ enabled: z.boolean().default(true) })
     .default({ enabled: true }),
+  /**
+   * AI 安全防护（WorkBuddy「AI 安全防护」）：默认关闭，与 WorkBuddy 一致。
+   *
+   * `injectionGuard`：工具返回内容里出现「覆盖先前指令」「索取凭据」这类句式时，
+   * 在结果末尾追加属主声明，提示模型那是外部内容而非用户要求。只追加标注、
+   * 不改写原文——模型要看到原文才能判断，用户也要能复盘。
+   */
+  aiSafety: z
+    .object({
+      injectionGuard: z.boolean().default(false),
+    })
+    .default({ injectionGuard: false }),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -262,6 +274,7 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   deleteProtection: { enabled: false, batchThreshold: 50 },
   sensitiveProtection: { enabled: true, patterns: [] },
   bundledRuntimes: { enabled: true },
+  aiSafety: { injectionGuard: false },
 };
 /**
  * 内置的敏感数据格式（与 WorkBuddy「敏感保护」同口径：票据、密码这类东西不该被 AI 发出去）。

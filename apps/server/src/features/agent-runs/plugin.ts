@@ -177,6 +177,10 @@ export function createAgentRunsPlugin(
           };
         };
         runtime = createAgentRunService({
+          // AI 安全防护（工具返回内容注入防护）：运行期读策略，开关改了下一轮即生效。
+          toolContentGuardFor: () =>
+            ctx.tryGet("permissions")?.getSettings().policy.aiSafety
+              .injectionGuard ?? false,
           codeProjectContextLoader: (scope, limits, signal) =>
             ctx
               .get("capabilities")
