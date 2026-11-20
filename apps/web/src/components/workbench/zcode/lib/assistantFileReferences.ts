@@ -79,6 +79,10 @@ const DELIMITED_FILE_PATH_RE =
 const FILE_PATH_RE =
   /(?:^|[\s("'`“”‘’,.;:!?，。！？；：、])((?:(?:\.{1,2}[\\/]|[a-zA-Z]:[\\/]|\/|[\p{L}\p{N}\p{M}\p{S}_.@()-]+[\\/])[\p{L}\p{N}\p{M}\p{S}_.@() -]+?(?:[\\/][\p{L}\p{N}\p{M}\p{S}_.@() -]+?)*|[\p{L}\p{N}\p{M}\p{S}_.@()-]+)\.(?:md|html?|docx|xlsx|pptx|pdf|mp4|mov|webm|m4v|mp3|wav|m4a|ogg|opus|flac|weba)(?::\d+(?::\d+)?)?)(?=$|[\s)"'`“”‘’,.;:!?，。！？；：、])/giu;
 
+export function stripAssistantUrlTrailingPunctuation(value: string): string {
+  return value.replace(/(?<![*_`.,;:!?，。！？；：、])[*_`.,;:!?，。！？；：、]+$/u, "");
+}
+
 export function cleanAssistantFilePathCandidate(candidate: string): string {
   return candidate
     .trim()
@@ -198,7 +202,7 @@ export function extractAssistantFileReferences(
   }
 
   for (const match of content.matchAll(FILE_URL_RE)) {
-    const raw = (match[0] ?? "").replace(/(?:[*_`]+|[.,;:!?，。！？；：、]+)+$/g, "");
+    const raw = stripAssistantUrlTrailingPunctuation(match[0] ?? "");
     const path = parseAssistantFileUrlPath(raw);
     const definition = path ? getAssistantPreviewFileTypeDefinition(path) : null;
     const start = match.index ?? 0;
