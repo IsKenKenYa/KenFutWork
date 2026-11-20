@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import {
   createScopedBackend,
@@ -34,7 +34,12 @@ async function fixture() {
     }),
     resolvePath: async (path) => {
       const result = resolve(rootDirectory, path);
-      if (!result.startsWith(`${rootDirectory}/`) && result !== rootDirectory)
+      // 用 `sep` 而不是写死 `/`：Windows 上路径分隔符是 `\`，
+      // 写死 `/` 会让每个合法路径都被判成「目录未授权」。
+      if (
+        !result.startsWith(`${rootDirectory}${sep}`) &&
+        result !== rootDirectory
+      )
         throw new Error("目录未授权");
       return result;
     },
