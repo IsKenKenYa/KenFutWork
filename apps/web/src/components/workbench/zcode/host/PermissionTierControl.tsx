@@ -537,20 +537,20 @@ function AutoBackupSection() {
 }
 
 /**
- * AI 安全防护：三项里落地了两项。
+ * AI 安全防护：三项里落地了两项，整组默认关闭（与 WorkBuddy 一致）。
  *
- * - **工具内容注入防护**（默认关，与 WorkBuddy 一致）：工具返回内容里出现
- *   「覆盖先前指令」「索取凭据」这类句式时，在结果末尾追加属主声明。
- * - **审批模型审查**（默认开，改造前就有的行为）：属主声明了操作类型的工具在进入
- *   人工审批之前，先交给审批模型审一次——常规且有界的自动放行，可疑或越权的交回
- *   人工并附风险说明；未配置审批模型时一律回落到人工。
+ * - **工具内容注入防护**：工具返回内容里出现「覆盖先前指令」「索取凭据」这类句式时，
+ *   在结果末尾追加属主声明，提示模型那是外部内容。
+ * - **审批模型审查**：属主声明了操作类型的工具在进入人工审批之前，先交给审批模型审一次
+ *   ——常规且有界的自动放行，可疑或越权的交回人工并附风险说明；未配置审批模型时
+ *   一律回落到人工。关掉后审批一律走人工。
  *
  * 「模型行为智能审查」与「AI 智能审批」在 WorkBuddy 里是两项，本仓库由同一条
  * 审阅链路承担（`features/permissions/approval-review-service`），所以合成一个开关。
  */
 function AiSafetySection() {
   const [injectionGuard, setInjectionGuard] = useState(false);
-  const [approvalReview, setApprovalReview] = useState(true);
+  const [approvalReview, setApprovalReview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -564,7 +564,7 @@ function AiSafetySection() {
       .then((view) => {
         if (cancelled) return;
         setInjectionGuard(view.policy?.aiSafety?.injectionGuard === true);
-        setApprovalReview(view.policy?.aiSafety?.approvalReview !== false);
+        setApprovalReview(view.policy?.aiSafety?.approvalReview === true);
       })
       .catch(() => {});
     return () => {

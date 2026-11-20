@@ -188,10 +188,10 @@ describe("敏感数据检测", () => {
     });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
     expect(parsed.bundledRuntimes).toEqual({ enabled: true });
-    // 审批模型审查是改造前就有的行为：旧数据必须继续视为开启
+    // AI 安全防护整组默认关闭（与 WorkBuddy 同口径）：旧数据字段缺席时补成 false
     expect(parsed.aiSafety).toEqual({
       injectionGuard: false,
-      approvalReview: true,
+      approvalReview: false,
     });
   });
 });

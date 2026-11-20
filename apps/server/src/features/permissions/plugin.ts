@@ -20,10 +20,11 @@ import { createPermissionSettingsStore } from "./tier-store.js";
 /**
  * AI 安全防护的「审批模型审查」是否开启。
  *
- * 缺省（字段缺席、旧数据）视为开启——这是改造前就有的行为，不能让升级把它关掉。
+ * 与 WorkBuddy 同口径：**整组默认关闭**。旧数据里字段缺席时 `permissionPolicySchema`
+ * 的缺省值补成 `false`，行为与「未开启」一致，需要自动审阅的用户在权限页显式打开。
  */
 export function approvalReviewEnabled(settings: PermissionSettings): boolean {
-  return settings.policy.aiSafety.approvalReview !== false;
+  return settings.policy.aiSafety.approvalReview === true;
 }
 
 export function createPermissionsPlugin(_deps: {

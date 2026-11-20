@@ -411,7 +411,7 @@ export function loadServerEnv(
     port:
       overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
-    ...resolveTlsOptions(overrides, source),
+    ...resolveTlsOptions(overrides, source, deployment),
     version: overrides.version ?? readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.KENFUTWORK_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
@@ -633,12 +633,19 @@ function parsePort(rawPort: string | undefined) {
 /**
  * TLS 证书与私钥（自托管 / 局域网部署的传输加密）。
  *
- * 两项**必须成对**：只配一项是配置错误，启动期报错而不是静默退回明文——
- * 用户以为开了 HTTPS 而实际是 http，比直接报错危险得多。
+ * 「默认开启」在这里表达为 **fail loud**：
+ * - 两项都配 → 启用 HTTPS；
+ * - 只配一项 → 启动期报错（用户以为开了 HTTPS 而实际是 http，比启动失败危险）；
+ * - **自托管 / 云端形态一项都没配 → 启动期报错**，要求显式配置或显式声明
+ *   `KENFUTWORK_TLS_DISABLED=1` 走明文（例如 TLS 由外层反向代理终结）；
+ * - 本机形态（桌面 / 回环开发）不要求：通信不出本机。
+ *
+ * 不自动生成自签证书：局域网客户机上浏览器会直接拒绝，那种「开了」比明文更难排查。
  */
 function resolveTlsOptions(
   overrides: { tlsCertificatePath?: string; tlsKeyPath?: string },
   source: Record<string, string | undefined>,
+  deployment: "local" | "self-hosted" | "cloud",
 ): { tlsCertificatePath?: string; tlsKeyPath?: string } {
   const certificatePath = normalizeOptionalString(
     overrides.tlsCertificatePath ?? source.KENFUTWORK_TLS_CERT_PATH,
@@ -650,8 +657,15 @@ function resolveTlsOptions(
     throw new Error(
       "TLS 需要同时配置 KENFUTWORK_TLS_CERT_PATH 与 KENFUTWORK_TLS_KEY_PATH（只配一项无法启动 HTTPS）。",
     );
-  if (!certificatePath || !keyPath) return {};
-  return { tlsCertificatePath: certificatePath, tlsKeyPath: keyPath };
+  if (certificatePath && keyPath)
+    return { tlsCertificatePath: certificatePath, tlsKeyPath: keyPath };
+  // 本机形态不要求加密；自托管/云端默认要求，除非显式声明由外层终结。
+  if (deployment === "local") return {};
+  if (parseBooleanFlag(source.KENFUTWORK_TLS_DISABLED) === true) return {};
+  throw new Error(
+    `${deployment === "self-hosted" ? "自托管" : "云端"}部署默认要求传输加密：请配置 KENFUTWORK_TLS_CERT_PATH 与 KENFUTWORK_TLS_KEY_PATH；` +
+      "若 TLS 由外层反向代理终结，显式设置 KENFUTWORK_TLS_DISABLED=1。",
+  );
 }
 
 /** 布尔开关：`1`/`true`/`yes`/`on` 为真，其余视为未设置（fail loud 落在使用处）。 */

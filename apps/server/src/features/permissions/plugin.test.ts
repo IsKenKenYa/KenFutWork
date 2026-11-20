@@ -268,8 +268,9 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
     }
   });
 
-  it("AI 安全防护：审批模型审查的开关判定（缺省视为开启，旧数据不退化）", () => {
-    // 改造前就有审批模型审查；字段缺席/旧数据必须继续视为开启
+  it("AI 安全防护：审批模型审查默认关闭，显式打开才生效", () => {
+    // 与 WorkBuddy 同口径：整组默认关闭
+    expect(approvalReviewEnabled(DEFAULT_PERMISSION_SETTINGS)).toBe(false);
     expect(
       approvalReviewEnabled({
         ...DEFAULT_PERMISSION_SETTINGS,
