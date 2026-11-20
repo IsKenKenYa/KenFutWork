@@ -611,3 +611,169 @@ describe("审计中心：判定流水", () => {
     expect(records).toHaveLength(0);
   });
 });
+
+/** 数据安全：删除保护与敏感保护（参考 WorkBuddy 的「数据安全」）。 */
+describe("数据安全：删除保护", () => {
+  const withPolicy = (
+    deleteProtection: { enabled: boolean; batchThreshold?: number },
+    tier: "default" | "full-access" = "full-access",
+  ) => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        deleteProtection: {
+          enabled: deleteProtection.enabled,
+          batchThreshold: deleteProtection.batchThreshold ?? 50,
+        },
+      },
+    });
+    return svc;
+  };
+
+  it("关闭时不干预：完全访问档下删除直接放行", () => {
+    const svc = withPolicy({ enabled: false });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf build" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("开启后单目标删除要审批（完全访问档也拦），理由说明保护已开", () => {
+    const svc = withPolicy({ enabled: true });
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm build/out.log" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.source).toBe("delete-protection");
+    // 不是硬拒绝：用户可以在审批里放行
+    expect(decision.blocked).toBeUndefined();
+    expect(decision.reason).toMatch(/删除保护/);
+  });
+
+  it("达到批量阈值时理由说明批量，与单目标区分开", () => {
+    const svc = withPolicy({ enabled: true, batchThreshold: 3 });
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm a.txt b.txt c.txt" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.reason).toMatch(/批量删除阈值 3/);
+  });
+
+  it("识别常见删除命令；非删除命令不误拦", () => {
+    const svc = withPolicy({ enabled: true });
+    for (const command of [
+      "del old.txt",
+      "rd /s build",
+      "Remove-Item -Recurse node_modules",
+      "rmdir empty",
+    ]) {
+      expect(
+        svc.evaluate({ toolName: "execute", args: { command } }).source,
+        command,
+      ).toBe("delete-protection");
+    }
+    for (const command of ["ls -la", "git status", "npm run build"]) {
+      // 未命中删除保护 → 落到档位判定（完全访问档 source=tier）
+      expect(
+        svc.evaluate({ toolName: "execute", args: { command } }).source,
+        command,
+      ).not.toBe("delete-protection");
+    }
+  });
+});
+
+describe("数据安全：敏感保护", () => {
+  const withPolicy = (tier: "default" | "full-access" = "full-access") => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy: { ...EMPTY_PERMISSION_POLICY },
+    });
+    return svc;
+  };
+
+  it("参数里出现令牌格式即硬拒绝，理由指出类型且不回显令牌", () => {
+    const svc = withPolicy();
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: {
+        command:
+          "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456'",
+      },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBe(true);
+    expect(decision.source).toBe("sensitive-data");
+    expect(decision.reason).toMatch(/Bearer 凭据/);
+    // 理由里不能出现令牌本身
+    expect(decision.reason).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
+  });
+
+  it("常见令牌格式都能识别；普通文本不误报", () => {
+    const svc = withPolicy();
+    const cases: Array<[string, RegExp]> = [
+      ["sk-abcdefghijklmnopqrstuvwx", /OpenAI 密钥/u],
+      ["ghp_abcdefghijklmnopqrstuvwxyz", /GitHub 令牌/u],
+      ["AKIAIOSFODNN7EXAMPLE", /AWS 访问密钥/u],
+    ];
+    for (const [secret, label] of cases) {
+      const decision = svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "a.txt", content: secret },
+      });
+      expect(decision.source, secret).toBe("sensitive-data");
+      expect(decision.reason, secret).toMatch(label);
+    }
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "a.txt", content: "普通的文件内容，没有凭据" },
+      }).source,
+    ).not.toBe("sensitive-data");
+  });
+
+  it("关闭后不再检测", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier: "full-access",
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        sensitiveProtection: { enabled: false, patterns: [] },
+      },
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { content: "sk-abcdefghijklmnopqrstuvwx" },
+      }).decision,
+    ).toBe("allow");
+  });
+
+  it("自定义正则命中同样拒绝", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier: "full-access",
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        sensitiveProtection: {
+          enabled: true,
+          patterns: ["内部工号\\s*\\d{6}"],
+        },
+      },
+    });
+    const decision = svc.evaluate({
+      toolName: "write_file",
+      args: { content: "内部工号 123456" },
+    });
+    expect(decision.source).toBe("sensitive-data");
+    expect(decision.reason).toMatch(/自定义规则/u);
+  });
+});

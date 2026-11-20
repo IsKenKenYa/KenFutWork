@@ -163,6 +163,8 @@ export const permissionDecisionSourceSchema = z.enum([
   "approval-memory",
   "tier",
   "approval",
+  "delete-protection",
+  "sensitive-data",
 ]);
 export type PermissionDecisionSource = z.infer<
   typeof permissionDecisionSourceSchema
@@ -203,6 +205,41 @@ export const permissionPolicySchema = z.object({
   pathRules: z.array(permissionPathRuleSchema).max(500).default([]),
   commandRules: z.array(permissionCommandRuleSchema).max(500).default([]),
   domainRules: z.array(permissionDomainRuleSchema).max(500).default([]),
+  /**
+   * 删除保护与批量删除审批（WorkBuddy「数据安全」）。
+   *
+   * 本仓库没有独立的删除文件工具——删除发生在 `execute` 的命令字符串里。
+   * 因此判定方式是**识别命令里的删除指令**并按目标数量计：
+   * - `enabled` 关（缺省）：不额外干预，删除只走档位与命令规则；
+   * - `enabled` 开 + 单目标删除：仍需审批（默认档本来就拦，这里保证「完全访问」下也拦）；
+   * - 一批删除达到 `batchThreshold` 即需审批。
+   *
+   * 不做「优先移到回收站」：那要做跨平台回收站实现（Windows 回收站 API / Linux
+   * trash 规范），本仓库没有这个能力，做成开关只会是假开关。
+   */
+  deleteProtection: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** 一批删除的目标数达到该值即需审批（默认 50，与 WorkBuddy 一致）。 */
+      batchThreshold: z.number().int().min(1).max(10_000).default(50),
+    })
+    .default({ enabled: false, batchThreshold: 50 }),
+  /**
+   * 敏感保护（WorkBuddy「数据安全」）：默认开。
+   *
+   * 拦截的是「AI 把凭据发出去」这一类事故：工具参数里出现明显的令牌格式
+   * （`sk-…`、GitHub `ghp_…`、AWS `AKIA…`、Bearer 头）时，这次调用不进审批，
+   * 直接拒绝并指出命中的类型——审批也无法挽回已经泄漏的凭据。
+   *
+   * `patterns` 是用户自定义的正则**源码字符串**（服务端编译时校验，编译失败即拒绝保存），
+   * 命中后同样按敏感数据拒绝。
+   */
+  sensitiveProtection: z
+    .object({
+      enabled: z.boolean().default(true),
+      patterns: z.array(z.string().min(1).max(500)).max(50).default([]),
+    })
+    .default({ enabled: true, patterns: [] }),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -212,7 +249,111 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   pathRules: [],
   commandRules: [],
   domainRules: [],
+  deleteProtection: { enabled: false, batchThreshold: 50 },
+  sensitiveProtection: { enabled: true, patterns: [] },
 };
+/**
+ * 内置的敏感数据格式（与 WorkBuddy「敏感保护」同口径：票据、密码这类东西不该被 AI 发出去）。
+ *
+ * 只认**有明确前缀/结构**的令牌：宽松匹配会把普通文本里的长串也报出来，
+ * 那种高误报的保护等于没有。`label` 直接进拒绝理由，让用户知道命中的是哪一类。
+ */
+export const SENSITIVE_DATA_PATTERNS: ReadonlyArray<{
+  label: string;
+  pattern: RegExp;
+}> = [
+  { label: "OpenAI 密钥", pattern: /\bsk-[A-Za-z0-9_-]{16,}\b/u },
+  { label: "GitHub 令牌", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/u },
+  { label: "AWS 访问密钥", pattern: /\bAKIA[0-9A-Z]{16}\b/u },
+  { label: "Google API 密钥", pattern: /\bAIza[0-9A-Za-z_-]{35}\b/u },
+  { label: "Slack 令牌", pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/u },
+  { label: "私钥文件", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
+  {
+    label: "Bearer 凭据",
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{20,}=*/u,
+  },
+];
+
+/**
+ * 在一段文本里找敏感数据：返回命中的类型名（命中自定义规则时返回「自定义规则」）。
+ *
+ * 自定义正则由用户提供，编译失败视为不匹配（保存时会被拦下，这里只做兜底）。
+ */
+export function findSensitiveData(
+  text: string,
+  customPatterns: readonly string[] = [],
+): string | null {
+  if (!text) return null;
+  for (const { label, pattern } of SENSITIVE_DATA_PATTERNS) {
+    if (pattern.test(text)) return label;
+  }
+  for (const source of customPatterns) {
+    try {
+      if (new RegExp(source, "u").test(text)) return "自定义规则";
+    } catch {
+      // 编译失败的自定义规则不参与匹配（保存期已拦下）
+    }
+  }
+  return null;
+}
+
+/**
+ * 命令里的删除指令识别（删除保护与批量删除审批的判据）。
+ *
+ * 只认常见的删除命令与它们的目标数，**不做 shell 语法解析**——真正的解析要完整
+ * shell 词法与变量展开，那是另一个量级的工作，而且删错一次就无法回滚。这里的口径是
+ * 「保守识别：能看出是删除就按删除处理」：
+ * - `rm` / `rmdir` / `del` / `erase` / `rd` / `Remove-Item` / `ri`；
+ * - 目标数按空白分词后去掉选项（`-` / `--` / `/` 开头）计。
+ *
+ * 返回值只用于「是否要保护」与「一批删几个」，不用于执行任何东西。
+ */
+export interface DeleteCommandMatch {
+  /** 命令里出现的删除指令名（`rm`、`del`…）。 */
+  command: string;
+  /** 识别到的目标数（`rm -rf a b c` = 3）。 */
+  targets: number;
+}
+
+const DELETE_COMMANDS = new Set([
+  "rm",
+  "rmdir",
+  "del",
+  "erase",
+  "rd",
+  "remove-item",
+  "ri",
+]);
+
+/** 分词时把管道/重定向拆开：`rm x | cat` 的目标只有 `x`。 */
+const SHELL_SEPARATORS = /[|;&<>]+/u;
+
+export function detectDeleteCommand(
+  commandLine: string,
+): DeleteCommandMatch | null {
+  const normalized = commandLine.trim();
+  if (!normalized) return null;
+  for (const segment of normalized.split(SHELL_SEPARATORS)) {
+    const words = segment
+      .trim()
+      .split(/\s+/u)
+      .filter((word) => word.length > 0);
+    if (words.length === 0) continue;
+    // Windows 的 `del` / `rd` 常带前缀（`cmd /c del x`），逐个词找删除指令。
+    // 引号形式（`grep "rm"`）同样识别：这里的口径是「保守拦截」，宁可多点一次审批。
+    const normalizeWord = (word: string) =>
+      word.toLowerCase().replace(/^["']|["']$/gu, "");
+    const index = words.findIndex((word) =>
+      DELETE_COMMANDS.has(normalizeWord(word)),
+    );
+    if (index === -1) continue;
+    const targets = words
+      .slice(index + 1)
+      .filter((word) => !word.startsWith("-") && !word.startsWith("/")).length;
+    return { command: normalizeWord(words[index] ?? ""), targets };
+  }
+  return null;
+}
 
 /** 域名规则是否命中：`*.example.com` 只吃子域，`example.com` 吃本身与全部子域。 */
 export function matchesPermissionDomain(

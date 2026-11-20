@@ -1,10 +1,13 @@
 import {
   anyPermissionRuleMatches,
+  detectDeleteCommand,
   EMPTY_PERMISSION_POLICY,
+  findSensitiveData,
   matchesPermissionDomain,
   matchesPermissionRule,
   type PermissionDecisionSource,
   type PermissionDomainRule,
+  type PermissionPolicy,
   type PermissionRuleAction,
   type PermissionRules,
   type PermissionScenario,
@@ -92,6 +95,32 @@ export function urlArgument(
     }
   }
   return null;
+}
+
+/**
+ * 把工具参数的字符串值拼成一段文本供敏感数据检测。
+ *
+ * 只取字符串（含嵌套对象/数组里的），数值与布尔没有意义；对象键也拼进来，
+ * 因为 `{"apiKey":"sk-…"}` 这种键名本身也可能带出判断线索（前缀匹配已足够，键名只是补充）。
+ */
+function collectTextArguments(
+  args: Record<string, unknown>,
+  depth = 0,
+): string {
+  if (depth > 4) return "";
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === "string") {
+      parts.push(value);
+    } else if (value && typeof value === "object") {
+      parts.push(
+        collectTextArguments(value as Record<string, unknown>, depth + 1),
+      );
+    }
+    // 键名单独计入：`Authorization` 这类键配 `Bearer …` 值是常见组合
+    if (typeof value === "string" && value.length > 0) parts.push(key);
+  }
+  return parts.filter((part) => part.length > 0).join("\n");
 }
 
 /**
@@ -359,7 +388,67 @@ export function createPermissionService(
       const domainDecision = domainDecisionFor(target, policy.domainRules);
       if (domainDecision) return domainDecision;
     }
+    // 删除保护（数据安全）：本仓库的删除发生在命令里，因此判在命令参数上。
+    const deleteDecision = deleteProtectionFor(args, policy);
+    if (deleteDecision) return deleteDecision;
+    // 敏感保护（数据安全）：参数里出现令牌格式即拒绝——审批也救不回已泄漏的凭据。
+    const sensitiveDecision = sensitiveProtectionFor(toolName, args, policy);
+    if (sensitiveDecision) return sensitiveDecision;
     return undefined;
+  };
+
+  /**
+   * 敏感保护：工具参数里出现令牌/凭据格式时**硬拒绝**（不给审批机会）。
+   *
+   * 为什么不是「问一下」：凭据一旦进了模型输出或远端请求就已经泄漏，人工点「允许」
+   * 不解决任何问题；正确做法是让模型换个做法（用环境变量、读配置而不是贴令牌）。
+   * 理由里只说**命中的类型**，不回显令牌本身。
+   */
+  const sensitiveProtectionFor = (
+    toolName: string,
+    args: Record<string, unknown> | undefined,
+    policy: PermissionPolicy,
+  ): PermissionDecision | undefined => {
+    if (!policy.sensitiveProtection.enabled || !args) return undefined;
+    const text = collectTextArguments(args);
+    if (!text) return undefined;
+    const hit = findSensitiveData(text, policy.sensitiveProtection.patterns);
+    if (!hit) return undefined;
+    return {
+      decision: "deny",
+      blocked: true,
+      source: "sensitive-data",
+      reason: `工具 ${toolName} 的参数里含${hit}，已按敏感保护拦下。请改用环境变量或配置文件，不要把凭据写进调用参数。`,
+    };
+  };
+
+  /**
+   * 删除保护：开启后，删除命令要么需要审批（单目标），要么因批量而需要审批。
+   *
+   * 单目标也拦的理由：删除不可撤销，而「完全访问」档把它放开了；
+   * 用户在数据安全里显式打开保护，就是表达「删除前让我看一眼」。
+   */
+  const deleteProtectionFor = (
+    args: Record<string, unknown> | undefined,
+    policy: PermissionPolicy,
+  ): PermissionDecision | undefined => {
+    if (!policy.deleteProtection.enabled) return undefined;
+    const command = commandArgument(args);
+    if (!command) return undefined;
+    const match = detectDeleteCommand(command);
+    if (!match) return undefined;
+    if (match.targets >= policy.deleteProtection.batchThreshold) {
+      return {
+        decision: "deny",
+        source: "delete-protection",
+        reason: `这次 ${match.command} 要删 ${match.targets} 个目标，达到批量删除阈值 ${policy.deleteProtection.batchThreshold}，需你确认`,
+      };
+    }
+    return {
+      decision: "deny",
+      source: "delete-protection",
+      reason: `删除保护已开启，${match.command} 删 ${match.targets} 个目标需你确认`,
+    };
   };
 
   /**

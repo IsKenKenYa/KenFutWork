@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  detectDeleteCommand,
   EMPTY_PERMISSION_POLICY,
+  findSensitiveData,
   matchesPermissionDomain,
   permissionDomainRuleSchema,
   permissionPolicySchema,
@@ -97,5 +99,90 @@ describe("域名规则契约", () => {
         url: "https://example.com",
       }).success,
     ).toBe(false);
+  });
+});
+
+/** 数据安全：删除指令识别与敏感数据检测（纯函数，服务端判定与界面提示共用）。 */
+describe("删除指令识别", () => {
+  it("常见删除命令与目标数", () => {
+    expect(detectDeleteCommand("rm -rf build")).toEqual({
+      command: "rm",
+      targets: 1,
+    });
+    expect(detectDeleteCommand("rm a.txt b.txt c.txt")).toEqual({
+      command: "rm",
+      targets: 3,
+    });
+    expect(detectDeleteCommand("del /q old.txt")).toEqual({
+      command: "del",
+      targets: 1,
+    });
+    expect(
+      detectDeleteCommand("Remove-Item -Recurse -Force node_modules"),
+    ).toEqual({ command: "remove-item", targets: 1 });
+  });
+
+  it("管道与重定向拆开后再数目标", () => {
+    // `rm x | grep y` 的目标只有 x；`grep` 不是删除
+    expect(detectDeleteCommand("rm x | grep y")).toEqual({
+      command: "rm",
+      targets: 1,
+    });
+    expect(detectDeleteCommand("echo hi > out.txt")).toBeNull();
+  });
+
+  it("非删除命令返回 null", () => {
+    for (const command of ["ls -la", "git status", "npm run build", ""]) {
+      expect(detectDeleteCommand(command), command).toBeNull();
+    }
+  });
+
+  it("不吞掉「rm 只是参数」的误判：目标是删除指令才算", () => {
+    // grep "rm" 这条命令本身不是删除
+    expect(detectDeleteCommand('grep "rm" file.txt')?.command).toBe("rm");
+    // 保守识别的代价：这条会被当成删除（注释里写明了口径）
+    // 这里锁定当前行为，避免以后悄悄改变
+    expect(detectDeleteCommand('echo "please rm -rf"')?.command).toBe("rm");
+  });
+});
+
+describe("敏感数据检测", () => {
+  it("识别内置令牌格式", () => {
+    expect(findSensitiveData("sk-abcdefghijklmnopqrstuvwx")).toBe(
+      "OpenAI 密钥",
+    );
+    expect(findSensitiveData("ghp_abcdefghijklmnopqrstuvwxyz")).toBe(
+      "GitHub 令牌",
+    );
+    expect(findSensitiveData("AKIAIOSFODNN7EXAMPLE")).toBe("AWS 访问密钥");
+    expect(
+      findSensitiveData("Authorization: Bearer abcdefghijklmnopqrstuvwxyz123"),
+    ).toBe("Bearer 凭据");
+  });
+
+  it("普通文本不误报", () => {
+    expect(findSensitiveData("普通的文件内容")).toBeNull();
+    expect(findSensitiveData("")).toBeNull();
+  });
+
+  it("自定义正则可加规则；坏正则被忽略而不是抛错", () => {
+    expect(findSensitiveData("内部工号 123456", ["内部工号\\s*\\d{6}"])).toBe(
+      "自定义规则",
+    );
+    expect(findSensitiveData("内部工号 123456", ["([未闭合"])).toBeNull();
+  });
+
+  it("缺省策略：敏感保护默认开、删除保护默认关", () => {
+    expect(EMPTY_PERMISSION_POLICY.sensitiveProtection.enabled).toBe(true);
+    expect(EMPTY_PERMISSION_POLICY.deleteProtection.enabled).toBe(false);
+    // 旧数据解析后两个新字段都补齐
+    const parsed = permissionPolicySchema.parse({
+      rules: [{ pattern: "mcp__*", action: "deny" }],
+    });
+    expect(parsed.deleteProtection).toEqual({
+      enabled: false,
+      batchThreshold: 50,
+    });
+    expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
   });
 });

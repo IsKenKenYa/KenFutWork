@@ -403,6 +403,14 @@ function PermissionPolicySection() {
   const [commandRules, setCommandRules] = useState<EditableRule[]>([]);
   const [domainRules, setDomainRules] = useState<EditableRule[]>([]);
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
+  const [deleteProtection, setDeleteProtection] = useState({
+    enabled: false,
+    batchThreshold: 50,
+  });
+  const [sensitiveProtection, setSensitiveProtection] = useState({
+    enabled: true,
+    patterns: [] as string[],
+  });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -415,6 +423,8 @@ function PermissionPolicySection() {
         pathRules?: Array<{ path: string; action: PolicyRule["action"] }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
         domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
+        deleteProtection?: { enabled?: boolean; batchThreshold?: number };
+        sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
       };
     }>("/api/permissions/tier")
       .then((view) => {
@@ -444,6 +454,14 @@ function PermissionPolicySection() {
             action: rule.action,
           })),
         );
+        setDeleteProtection({
+          enabled: view.policy?.deleteProtection?.enabled === true,
+          batchThreshold: view.policy?.deleteProtection?.batchThreshold ?? 50,
+        });
+        setSensitiveProtection({
+          enabled: view.policy?.sensitiveProtection?.enabled !== false,
+          patterns: view.policy?.sensitiveProtection?.patterns ?? [],
+        });
       })
       .catch(() => {});
     return () => {
@@ -483,6 +501,19 @@ function PermissionPolicySection() {
               domain: row.value,
               action: row.action,
             })),
+            deleteProtection: {
+              enabled: deleteProtection.enabled,
+              batchThreshold: Math.max(
+                1,
+                Math.round(deleteProtection.batchThreshold),
+              ),
+            },
+            sensitiveProtection: {
+              enabled: sensitiveProtection.enabled,
+              patterns: sensitiveProtection.patterns
+                .map((pattern) => pattern.trim())
+                .filter((pattern) => pattern.length > 0),
+            },
           },
         }),
       });
@@ -605,6 +636,112 @@ function PermissionPolicySection() {
             onClick={() => setDisabledTools((current) => [...current, ""])}
           >
             添加禁用项
+          </Button>
+        </div>
+        <div className="space-y-2 border-t border-border pt-4">
+          <label className="flex items-center justify-between gap-3 text-ui-base font-medium text-foreground">
+            删除保护
+            <input
+              type="checkbox"
+              aria-label="删除保护"
+              checked={deleteProtection.enabled}
+              onChange={(event) =>
+                setDeleteProtection((current) => ({
+                  ...current,
+                  enabled: event.target.checked,
+                }))
+              }
+              className="size-4"
+            />
+          </label>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-ui-sm text-foreground-subtle">
+              批量删除审批阈值
+            </span>
+            <Input
+              aria-label="批量删除审批阈值"
+              type="number"
+              min={1}
+              max={10000}
+              disabled={!deleteProtection.enabled || saving}
+              value={deleteProtection.batchThreshold}
+              onChange={(event) =>
+                setDeleteProtection((current) => ({
+                  ...current,
+                  batchThreshold: Number(event.target.value) || 1,
+                }))
+              }
+              className="w-24"
+            />
+          </div>
+        </div>
+        <div className="space-y-2 border-t border-border pt-4">
+          <label className="flex items-center justify-between gap-3 text-ui-base font-medium text-foreground">
+            敏感保护
+            <input
+              type="checkbox"
+              aria-label="敏感保护"
+              checked={sensitiveProtection.enabled}
+              onChange={(event) =>
+                setSensitiveProtection((current) => ({
+                  ...current,
+                  enabled: event.target.checked,
+                }))
+              }
+              className="size-4"
+            />
+          </label>
+          {sensitiveProtection.patterns.map((pattern, index) => (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: 自定义正则可以重复，索引是唯一稳定键。
+              key={index}
+              className="flex items-center gap-2"
+            >
+              <Input
+                aria-label="自定义敏感规则"
+                placeholder="内部工号\\s*\\d{6}"
+                disabled={!sensitiveProtection.enabled || saving}
+                value={pattern}
+                onChange={(event) =>
+                  setSensitiveProtection((current) => ({
+                    ...current,
+                    patterns: current.patterns.map((item, i) =>
+                      i === index ? event.target.value : item,
+                    ),
+                  }))
+                }
+                className="min-w-0 flex-1 font-mono text-ui-sm"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="删除这条敏感规则"
+                disabled={saving}
+                onClick={() =>
+                  setSensitiveProtection((current) => ({
+                    ...current,
+                    patterns: current.patterns.filter((_, i) => i !== index),
+                  }))
+                }
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!sensitiveProtection.enabled || saving}
+            onClick={() =>
+              setSensitiveProtection((current) => ({
+                ...current,
+                patterns: [...current.patterns, ""],
+              }))
+            }
+          >
+            添加敏感规则
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">

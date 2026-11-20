@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -42,6 +43,8 @@ type PolicySettings = {
     pathRules: Array<{ path: string; action: RuleAction }>;
     commandRules: Array<{ prefix: string; action: RuleAction }>;
     domainRules: Array<{ domain: string; action: RuleAction }>;
+    deleteProtection: { enabled: boolean; batchThreshold: number };
+    sensitiveProtection: { enabled: boolean; patterns: string[] };
   };
   browserControlEnabled: boolean;
   browserAutoScreenshot: boolean;
@@ -49,6 +52,12 @@ type PolicySettings = {
   browserDevtoolsReadEnabled: boolean;
   browserEvalEnabled: boolean;
   approvedForever: string[];
+};
+
+/** 保存时总会带上的数据安全字段（与界面缺省一致）。 */
+const DEFAULT_DATA_SAFETY = {
+  deleteProtection: { enabled: false, batchThreshold: 50 },
+  sensitiveProtection: { enabled: true, patterns: [] },
 };
 
 const EMPTY_SETTINGS: PolicySettings = {
@@ -61,6 +70,7 @@ const EMPTY_SETTINGS: PolicySettings = {
     pathRules: [],
     commandRules: [],
     domainRules: [],
+    ...DEFAULT_DATA_SAFETY,
   },
   browserControlEnabled: false,
   browserAutoScreenshot: false,
@@ -137,6 +147,7 @@ it("读回已保存的三张规则表与禁用清单", async () => {
       pathRules: [{ path: "D:\\项目\\密钥", action: "ask" }],
       commandRules: [{ prefix: "rm -rf", action: "deny" }],
       domainRules: [],
+      ...DEFAULT_DATA_SAFETY,
     },
   });
 
@@ -167,6 +178,7 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
       pathRules: [{ path: "C:\\机密", action: "ask" }],
       commandRules: [{ prefix: "git push", action: "ask" }],
       domainRules: [],
+      ...DEFAULT_DATA_SAFETY,
     },
   });
   expect(await screen.findByText("已保存")).toBeInTheDocument();
@@ -182,6 +194,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [],
+      ...DEFAULT_DATA_SAFETY,
     },
   });
 
@@ -201,6 +214,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [],
+      ...DEFAULT_DATA_SAFETY,
     },
   });
 });
@@ -215,6 +229,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [{ domain: "*.internal.example", action: "deny" }],
+      ...DEFAULT_DATA_SAFETY,
     },
   });
 
@@ -237,6 +252,57 @@ it("域名规则（网络安全）读得回、存得出", async () => {
         { domain: "*.internal.example", action: "deny" },
         { domain: "docs.example.com", action: "ask" },
       ],
+      ...DEFAULT_DATA_SAFETY,
+    },
+  });
+});
+
+it("数据安全：删除保护与敏感保护读得回、存得出", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      deleteProtection: { enabled: true, batchThreshold: 20 },
+      sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
+    },
+  });
+
+  const deleteToggle = (await screen.findByLabelText(
+    "删除保护",
+  )) as HTMLInputElement;
+  expect(deleteToggle.checked).toBe(true);
+  expect(screen.getByLabelText("批量删除审批阈值")).toHaveValue(20);
+  expect(screen.getByLabelText("自定义敏感规则")).toHaveValue(
+    "内部工号\\s*\\d{6}",
+  );
+
+  // 加一条自定义敏感规则再保存。
+  // 用 fireEvent.change 直接设值：`user.type` 会把 `[0-9]` 当键盘语法解析。
+  await user.click(screen.getByRole("button", { name: "添加敏感规则" }));
+  const patterns = screen.getAllByLabelText("自定义敏感规则");
+  fireEvent.change(patterns[1] as HTMLElement, {
+    target: { value: "token-[0-9]{8}" },
+  });
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  expect(tierPuts[0]).toEqual({
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      deleteProtection: { enabled: true, batchThreshold: 20 },
+      sensitiveProtection: {
+        enabled: true,
+        patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],
+      },
     },
   });
 });
