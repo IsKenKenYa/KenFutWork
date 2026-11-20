@@ -130,6 +130,18 @@ export function createMcpService(options: {
     remoteCall: () => Promise<unknown>,
   ) => Promise<unknown>;
   onDisconnect?: (name: string) => Promise<void>;
+  /**
+   * 网络访问裁决（设置 → 权限 → 网络安全）：HTTP 类 MCP 连接同样受域名规则管控。
+   *
+   * SDK 自己的 transport 不经 `fetchPageSnapshot`，所以必须在 `connect` 之前
+   * 单独判一次；返回拒绝即抛错，连接根本不会发起。未装配 permissions 时不传。
+   */
+  checkUrlPolicy?: (
+    url: string,
+  ) =>
+    | { decision: "allow" }
+    | { decision: "deny"; reason?: string }
+    | undefined;
 }): McpService {
   /** name → 已连接（含工具注销器）。 */
   const connections = new Map<string, Connection>();
@@ -207,6 +219,16 @@ export function createMcpService(options: {
     try {
       if (spec.kind === "http" && spec.url) {
         const url = new URL(spec.url);
+        // 网络安全：HTTP 类 MCP 连接同样受域名规则管控。SDK transport 不经
+        // fetchPageSnapshot，所以必须在 connect 之前单独判；命中拒绝即抛错，
+        // 连接根本不发起（SSE 回退路径也不会走到）。
+        const verdict = options.checkUrlPolicy?.(url.toString());
+        if (verdict?.decision === "deny") {
+          throw new Error(
+            verdict.reason ??
+              `${url.hostname} 被网络安全规则拒绝，请到「设置 → 权限 → 网络安全」调整。`,
+          );
+        }
         // 自定义请求头（如 HA 的 Authorization）在 Streamable HTTP 与 SSE 回退两条
         // 路径上都必须带——否则 401 会让整个 http 连接失败。
         const transportOptions =

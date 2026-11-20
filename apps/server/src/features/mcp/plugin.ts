@@ -89,6 +89,8 @@ export function createMcpPlugin(): PluginDefinition {
         // 可选依赖：测试装配可以没有插件内核；生产装配在 apply 之后仍可懒解析。
         pluginServers: async () =>
           ctx.tryGet("plugins")?.listMcpServers() ?? [],
+        // 网络安全：HTTP 类 MCP 连接同样受域名规则管控（运行期读，改设置后重连即生效）。
+        checkUrlPolicy: (url) => ctx.tryGet("permissions")?.checkUrlPolicy(url),
         resolveTimeoutMs: async () => {
           const actor = await ctx.get("localInstance").serviceActor();
           return (

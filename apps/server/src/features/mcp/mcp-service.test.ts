@@ -342,6 +342,62 @@ describe("MCP 运行态管理", () => {
     expect(httpStub.requests.at(-1)?.authorization).toBe("Bearer rotated");
   });
 
+  it("网络安全：域名规则拒绝时 HTTP 类 MCP 连接根本不发起", async () => {
+    const httpStub = await startHttpStub();
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const checked: string[] = [];
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store,
+      checkUrlPolicy: (url) => {
+        checked.push(url);
+        return { decision: "deny", reason: "域名被网络安全规则拒绝" };
+      },
+    });
+
+    await service.create({
+      name: "blocked-mcp",
+      kind: "http",
+      url: httpStub.url,
+      args: [],
+      env: {},
+      enabled: true,
+    });
+
+    // 请求发出之前就被拦下：桩一个请求都没收到
+    expect(httpStub.requests).toHaveLength(0);
+    expect(checked).toHaveLength(1);
+    const [status] = await service.listStatuses();
+    expect(status?.status).toBe("error");
+    expect(status?.error).toContain("网络安全");
+  });
+
+  it("网络安全：未命中域名规则的 HTTP MCP 照常连接", async () => {
+    const httpStub = await startHttpStub();
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store,
+      checkUrlPolicy: () => undefined,
+    });
+
+    await service.create({
+      name: "allowed-mcp",
+      kind: "http",
+      url: httpStub.url,
+      args: [],
+      env: {},
+      enabled: true,
+    });
+
+    // 桩收到请求（401 → 运行态错误，但连接确实发起了）
+    expect(httpStub.requests.length).toBeGreaterThan(0);
+  });
+
   it("stdio 类型不吃请求头：归一化为空对象（库里不留用不上的密钥）", async () => {
     const store = fakeStore([]);
     const { registry } = fakeRegistry();
