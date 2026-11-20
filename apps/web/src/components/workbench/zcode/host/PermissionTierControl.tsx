@@ -241,6 +241,10 @@ export function PermissionTierSection() {
         </SettingsGroupCard>
       </section>
       <section className="min-w-0 space-y-3">
+        <SettingsSubheading>沙箱安全</SettingsSubheading>
+        <SandboxSecuritySection />
+      </section>
+      <section className="min-w-0 space-y-3">
         <SettingsSubheading>规则与放行</SettingsSubheading>
         <PermissionPolicySection />
         <ToolApprovalSection />
@@ -388,6 +392,44 @@ function RuleTable({
         {addLabel}
       </Button>
     </div>
+  );
+}
+
+/**
+ * 沙箱安全：如实说明执行隔离的**实际**状态，不摆开关。
+ *
+ * 本仓库的命令执行已经跑在进程沙箱里（`features/process-sandbox`）：文件系统按 Task
+ * 授权目录白名单、只读目录单独列出、网络走 `strictAllowlist` 白名单。这些不是可选项，
+ * 所以这里不提供「开/关沙箱」——关掉它等于给 AI 完整的本机权限，那不是配置项，
+ * 是权限档位（完全访问）已经在管的事。
+ *
+ * 界面因此只做**事实披露**：隔离生效在哪里、网络白名单从哪来。
+ */
+function SandboxSecuritySection() {
+  return (
+    <SettingsGroupCard>
+      <SettingsRow
+        label="执行隔离"
+        description="命令在进程沙箱内运行"
+        control={
+          <span className="text-ui-sm text-foreground-subtle">始终开启</span>
+        }
+      />
+      <SettingsRow
+        label="文件访问"
+        description="限 Task 授权目录"
+        control={
+          <span className="text-ui-sm text-foreground-subtle">白名单</span>
+        }
+      />
+      <SettingsRow
+        label="网络访问"
+        description="按域名规则的允许项放行"
+        control={
+          <span className="text-ui-sm text-foreground-subtle">严格白名单</span>
+        }
+      />
+    </SettingsGroupCard>
   );
 }
 
