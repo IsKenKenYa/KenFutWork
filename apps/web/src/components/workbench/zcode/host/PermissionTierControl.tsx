@@ -203,38 +203,47 @@ export function PermissionTierSection() {
 
   return (
     <div className="space-y-6">
-      <SettingsGroupCard>
-        <SettingsRow
-          label="常规任务"
-          description="改文件 / 跑命令前先问我"
-          control={
-            <PermissionTierSelect
-              ariaLabel="常规任务档位"
-              value={tier}
-              busy={busy || tier === null}
-              onChange={(next) => {
-                setBusy(true);
-                void save(next).finally(() => setBusy(false));
-              }}
-            />
-          }
-        />
-        <SettingsRow
-          label="自动化任务"
-          description="无人值守轮次使用的档位"
-          control={
-            <PermissionTierSelect
-              ariaLabel="自动化任务档位"
-              value={automationTier}
-              busy={automationTier === null}
-              onChange={(next) => void saveAutomation(next)}
-            />
-          }
-        />
-      </SettingsGroupCard>
-      <CustomRulesSection active={tier === "custom"} />
-      <ModelDefaultsSection approvalOnly />
-      <ToolApprovalSection />
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>权限模式</SettingsSubheading>
+        <SettingsGroupCard>
+          <SettingsRow
+            label="常规任务"
+            description="改文件 / 跑命令前先问我"
+            control={
+              <PermissionTierSelect
+                ariaLabel="常规任务档位"
+                value={tier}
+                busy={busy || tier === null}
+                onChange={(next) => {
+                  setBusy(true);
+                  void save(next).finally(() => setBusy(false));
+                }}
+              />
+            }
+          />
+          <SettingsRow
+            label="自动化任务"
+            description="无人值守轮次使用的档位"
+            control={
+              <PermissionTierSelect
+                ariaLabel="自动化任务档位"
+                value={automationTier}
+                busy={automationTier === null}
+                onChange={(next) => void saveAutomation(next)}
+              />
+            }
+          />
+        </SettingsGroupCard>
+      </section>
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>规则与放行</SettingsSubheading>
+        <CustomRulesSection active={tier === "custom"} />
+        <ToolApprovalSection />
+      </section>
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>审批模型</SettingsSubheading>
+        <ModelDefaultsSection approvalOnly showHeading={false} />
+      </section>
     </div>
   );
 }
@@ -329,7 +338,6 @@ function CustomRulesSection({ active }: { active: boolean }) {
 
   return (
     <section className="min-w-0 space-y-3">
-      <SettingsSubheading>自定义规则</SettingsSubheading>
       <SettingsGroupCard>
         <div className="space-y-3 p-3">
           {active ? null : (
@@ -338,7 +346,7 @@ function CustomRulesSection({ active }: { active: boolean }) {
             </p>
           )}
           <div className="block text-ui-base">
-            <span>拒绝这些工具</span>
+            <span>禁止调用</span>
             <Textarea
               aria-label="拒绝规则"
               value={denyText}
@@ -349,7 +357,7 @@ function CustomRulesSection({ active }: { active: boolean }) {
             />
           </div>
           <div className="block text-ui-base">
-            <span>放行这些工具</span>
+            <span>允许调用</span>
             <Textarea
               aria-label="放行规则"
               value={allowText}
@@ -444,7 +452,6 @@ function ToolApprovalSection() {
 
   return (
     <section className="min-w-0 space-y-3">
-      <SettingsSubheading>手动放行工具</SettingsSubheading>
       <SettingsGroupCard>
         <div className="space-y-3 p-3">
           <div className="flex flex-wrap items-center gap-2">

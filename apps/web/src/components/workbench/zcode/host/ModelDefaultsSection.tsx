@@ -117,8 +117,11 @@ function useModelDefaults() {
 
 export function ModelDefaultsSection({
   approvalOnly = false,
+  showHeading = true,
 }: {
   approvalOnly?: boolean;
+  /** 调用方已有同名分组标题时传 false，避免重复标题。 */
+  showHeading?: boolean;
 } = {}) {
   const { view, defaults, error, loading, saving, save, retry } =
     useModelDefaults();
@@ -132,9 +135,11 @@ export function ModelDefaultsSection({
       aria-label={approvalOnly ? "审批" : "默认模型"}
       className="space-y-3 rounded-xl border border-border bg-card p-3"
     >
-      <SettingsSubheading>
-        {approvalOnly ? "审批" : "默认模型"}
-      </SettingsSubheading>
+      {showHeading ? (
+        <SettingsSubheading>
+          {approvalOnly ? "审批" : "默认模型"}
+        </SettingsSubheading>
+      ) : null}
       <div className="flex flex-wrap gap-x-4 gap-y-3">
         {kinds.map((kind) => {
           const policy = defaults?.[kind];
