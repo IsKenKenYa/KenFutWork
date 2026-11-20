@@ -16,6 +16,8 @@ const args = process.argv.slice(2);
  */
 const ZCODE_UI_ROOT = "apps/web/src/components/workbench/zcode/";
 const ZCODE_UI_HOST = `${ZCODE_UI_ROOT}host/`;
+/** 上下文分析面板的 vendored 上游（dsh-context），同样保持原字节。 */
+const CONTEXT_INSIGHTS_VENDOR = "packages/context-insights-ui/vendor/";
 /** 移植到服务端目录的三个上游文件，同样保持原字节。 */
 const UPSTREAM_FILES = new Set([
   "apps/server/src/features/model-providers/zcode-model-config-rules.json",
@@ -24,6 +26,7 @@ const UPSTREAM_FILES = new Set([
 ]);
 const isThirdParty = (path) =>
   (path.startsWith(ZCODE_UI_ROOT) && !path.startsWith(ZCODE_UI_HOST)) ||
+  path.startsWith(CONTEXT_INSIGHTS_VENDOR) ||
   /^packages\/zcode-[^/]+\//u.test(path) ||
   UPSTREAM_FILES.has(path);
 

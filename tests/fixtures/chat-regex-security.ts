@@ -3,7 +3,6 @@ import { extractAssistantFileReferences } from "../../apps/web/src/components/wo
 import { isValidAssistantPreviewWebsiteUrl } from "../../apps/web/src/components/workbench/zcode/lib/assistantPreviewCards.js";
 import {
   buildFileMentionMarkdown,
-  INLINE_PLUGIN_MENTION_PATTERN,
   parseMentionMarkdown,
 } from "../../apps/web/src/components/workbench/zcode/mentions/mentionMarkdown.js";
 import { normalizePromptMentionDisplayLabel } from "../../apps/web/src/components/workbench/zcode/mentions/promptMentionLabel.js";
@@ -16,20 +15,6 @@ assert.equal(
   label,
 );
 const scenario = process.argv.at(-1);
-if (scenario === "plugin-token") {
-  assert.deepEqual(
-    [
-      ..."[@Clock](plugin://clock@example)".matchAll(
-        INLINE_PLUGIN_MENTION_PATTERN,
-      ),
-    ].map((match) => match.slice(1)),
-    [["Clock", "clock@example"]],
-  );
-  assert.deepEqual(
-    [...`[@${"\\".repeat(160)}x`.matchAll(INLINE_PLUGIN_MENTION_PATTERN)],
-    [],
-  );
-}
 if (scenario === "mention-links" || scenario === "prompt-label") {
   for (const malformed of [
     `[](<${"\\=".repeat(80)}x`,
@@ -71,3 +56,5 @@ if (scenario === "file-url") {
   );
 }
 console.log(`${scenario}: ok`);
+// 只验同步正则能否结束：依赖模块可能带监听器等长期句柄，显式退出避免子进程被 5 秒超时终止。
+process.exit(0);

@@ -104,7 +104,7 @@ describe("useFlowHostEntry", () => {
     const view = render(<Harness />);
     await waitFor(() =>
       expect(view.getByTestId("entry").textContent).toBe(
-"available:Flow 运行时未就绪：未配置 Flow 网关共享密钥。",
+        "available:Flow 运行时未就绪：未配置 Flow 网关共享密钥。",
       ),
     );
   });

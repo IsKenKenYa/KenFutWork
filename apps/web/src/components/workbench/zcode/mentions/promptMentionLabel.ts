@@ -14,7 +14,7 @@ function unescapePromptMentionMarkdownText(text: string): string {
 }
 
 function extractPromptMentionMarkdownLabel(text: string): string | null {
-  const matched = /^\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)])*))\)$/.exec(
+  const matched = /^\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^\\>])*?)>|((?:\\.|[^\\)])*))\)$/.exec(
     text.trim(),
   );
   const label = matched?.[1];

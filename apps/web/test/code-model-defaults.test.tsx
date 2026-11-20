@@ -160,27 +160,11 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
   ).toContain("网关2");
 });
 
-it("权限设置只选择真实审批模型，不再展示不作用于Task的全局权限档", async () => {
-  const { calls, ids } = openDefaults(false, true);
-  const approval = await screen.findByRole("combobox", {
-    name: "帮我批准模型",
-  });
-  await waitFor(() => expect(approval).toHaveProperty("disabled", false));
-  expect(screen.getAllByRole("combobox")).toHaveLength(1);
-  expect(screen.queryByLabelText("默认档")).toBeNull();
-  expect(approval.textContent).toContain("人工审批");
-  act(() => approval.focus());
-  await userEvent.keyboard("[Space]");
-  await screen.findByRole("option", { name: "网关1 / 对话模型" });
-  await userEvent.keyboard("[Home][ArrowDown][Enter]");
-  await waitFor(() =>
-    expect(calls.at(-1)).toEqual({
-      chat: null,
-      approval: { providerId: ids[0], modelId: "chat-model" },
-      image: { mode: "auto" },
-      video: { mode: "auto" },
-    }),
-  );
+it("权限设置展示新会话默认档，不提供独立审批模型下拉框", async () => {
+  openDefaults(false, true);
+  expect(await screen.findByText("新会话默认档")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "默认档" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "帮我批准模型" })).toBeNull();
 });
 
 it("帮我批准独立选择启用对话模型，切回人工审批仍保留对话选择", async () => {
