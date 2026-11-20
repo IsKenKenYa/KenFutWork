@@ -32,18 +32,21 @@ const THIRD_PARTY_NOTICES: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /**
- * 法律文档：仓库根的属主文件（打包产物内的同址副本由 `release/legal/` 随包分发，
- * 见 `THIRD-PARTY-NOTICES.md` §G1）。只给链接与标签，不在界面里复述条款。
+ * 法律文档：`legal/` 内的属主文件（打包产物内的同址副本由 `release/legal/` 随包分发，
+ * 见 `legal/THIRD-PARTY-NOTICES.md` §G1）。只给链接与标签，不在界面里复述条款。
  */
 const LEGAL_DOCUMENTS: ReadonlyArray<readonly [string, string]> = [
   [
     "最终用户许可协议",
-    "https://github.com/IsKenKenYa/KenFutWork/blob/main/EULA.md",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/EULA.md",
   ],
-  ["隐私政策", "https://github.com/IsKenKenYa/KenFutWork/blob/main/PRIVACY.md"],
+  [
+    "隐私政策",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/PRIVACY.md",
+  ],
   [
     "第三方声明",
-    "https://github.com/IsKenKenYa/KenFutWork/blob/main/THIRD-PARTY-NOTICES.md",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/THIRD-PARTY-NOTICES.md",
   ],
 ];
 

@@ -391,7 +391,7 @@ function adviceOf(report: VoiceDiagnoseReport | null): VoiceProfileAdvice {
 /**
  * 实测不足时的红字警告（规划 §6「给红字警告 + 实测代价，用户可强制开」）。
  *
- * 只拼**数字读数**（`听 2.30× · 想 1.80s 6t/s · 建议只转文本`），不搬
+ * 只拼**数字读数**（`听 首字 1.2s · 想 1.80s 6t/s · 建议只转文本`），不搬
  * `advice.reasons` 里的整句——那是判定依据（含句子标点），界面按硬约束只写标签。
  * 未实测（pending）不算性能不足：没有读数就无从下结论，也不该吓用户。
  */
@@ -409,7 +409,7 @@ function insufficientNote(
     rtf !== undefined &&
     !gradeAsrRtf(rtf).recommended
   ) {
-    parts.push(`听 ${rtf.toFixed(2)}×`);
+    parts.push("听 偏慢");
   }
   const think = report.think.think;
   if (
@@ -438,9 +438,7 @@ function listenMetric(report: VoiceDiagnoseReport): string {
     return report.listen.state === "unavailable" ? "不可用" : "未实测";
   }
   const load = report.listen.listen?.modelLoadMs;
-  return load === undefined
-    ? `${rtf.toFixed(2)}×`
-    : `${rtf.toFixed(2)}× 首载 ${(load / 1000).toFixed(1)}s`;
+  return load === undefined ? "可用" : `首字 ${(load / 1000).toFixed(1)}s`;
 }
 
 function thinkMetric(report: VoiceDiagnoseReport): string {
@@ -457,7 +455,7 @@ function thinkMetric(report: VoiceDiagnoseReport): string {
 function speakMetric(report: VoiceDiagnoseReport): string {
   const match = report.speak.summary.match(/首包 ([\d.]+)s、实时率 ([\d.]+)/);
   if (match) {
-    return `${match[2]}× 首包 ${match[1]}s`;
+    return `首包 ${match[1]}s`;
   }
   return report.speak.state === "unavailable" ? "不可用" : "未实测";
 }
@@ -468,10 +466,10 @@ function isStateMetric(value: string): boolean {
 }
 
 /**
- * 三段读数压成一行：`听 0.07× 首载 4.4s · 想/说 不可用`。
+ * 三段读数压成一行：`听 首字 4.4s · 想/说 不可用`。
  *
  * 相邻两段读到同一**状态**时并成一个标签（「想 不可用 · 说 不可用」→「想/说 不可用」）；
- * 实测读数**不合并**——两个段偶尔量到同样的数字，并起来（「听/说 0.50×」）会读成一段。
+ * 实测读数**不合并**——两个段偶尔量到同样的数字，并起来（「听/说 0.5s」）会读成一段。
  */
 function segmentSummary(report: VoiceDiagnoseReport): string {
   const parts: Array<[string, string]> = [

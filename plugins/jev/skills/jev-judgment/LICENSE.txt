@@ -25,5 +25,5 @@ SOFTWARE.
 The SKILL.md beside this file is a port of the `jev-judgment` skill from the
 ZCode official plugin `jev-decisions` 0.1.0 (author kittimzhe, MIT declared in
 its README), which itself adapts the canonical skill shipped in
-@jkudish/jev-mcp (the MIT work above). See the repo root THIRD-PARTY-NOTICES.md
+@jkudish/jev-mcp (the MIT work above). See legal/THIRD-PARTY-NOTICES.md
 entry A6 for the full chain.

@@ -62,7 +62,7 @@ export function HostModeSidebarContent({
     <div className="flex min-h-0 flex-1 flex-col">
       {shared}
       {/* 分界线：共用按钮与各模式专属内容之间（用户口径）。 */}
-      <div className="mx-3 my-2 border-t border-foreground/20" />
+      <div className="mx-2 my-2 border-t border-foreground/20" />
       {mode === "flow" ? (
         <FlowNavSidebar />
       ) : (

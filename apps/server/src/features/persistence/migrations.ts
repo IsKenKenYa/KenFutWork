@@ -335,12 +335,12 @@ async function recordApplied(
 }
 
 /**
- * 装载完整迁移集：**供给前导**（`supabase/bootstrap/`）在前，历史迁移在后。
+ * 装载完整迁移集：**供给前导**（`docker/pg/bootstrap/`）在前，历史迁移在后。
  *
  * 前导用保留版本号 `000000000000NN`（14 位、数值上先于一切时间戳），作用是把
  * Supabase 供给的对象（`extensions`/`auth`/`storage`/`pgmq`/角色）**物化**成自管对象，
  * 使历史迁移能在空库上重放（§4.13 M2.1「剔除/物化」）。放在独立目录而非
- * `supabase/migrations/`，是为了不污染 Supabase CLI 的历史与残留统计口径。
+ * `docker/pg/migrations/`，是为了不污染 Supabase CLI 的历史与残留统计口径。
  */
 export function loadMigrationSet(dirs: {
   bootstrapDir?: string | undefined;

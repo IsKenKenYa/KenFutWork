@@ -34,9 +34,9 @@ const EXE_NAME = "KenFutWork-server.exe";
 /** 内嵌 Postgres 二进制来源（按平台可选依赖分发的 PG 17 线）。 */
 const PG_PACKAGE = "@embedded-postgres/windows-x64";
 /** 同源迁移与供给前导（桌面首启动即建全 schema）。 */
-const SUPABASE_DIR = join(ROOT, "supabase");
+const DB_DIR = join(ROOT, "docker", "pg");
 /** pgmq 兼容 shim（历史迁移 CREATE EXTENSION pgmq 需要，见 desktop/pgmq-shim.ts）。 */
-const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
+const SHIM_DIR = join(ROOT, "docker", "pg", "pg-dev-shim");
 function run(label, command, args, options = {}) {
   console.log(`[package] ${label}…`);
   const { trimLongLines = false, ...spawn } = options;
@@ -340,35 +340,27 @@ function main() {
   }
 
   // 4b) 同源迁移：桌面首启动按此建 schema（不依赖仓库目录）
-  cpSync(
-    join(SUPABASE_DIR, "migrations"),
-    join(RELEASE, "supabase", "migrations"),
-    {
-      recursive: true,
-    },
-  );
-  cpSync(
-    join(SUPABASE_DIR, "bootstrap"),
-    join(RELEASE, "supabase", "bootstrap"),
-    {
-      recursive: true,
-    },
-  );
+  cpSync(join(DB_DIR, "migrations"), join(RELEASE, "db", "migrations"), {
+    recursive: true,
+  });
+  cpSync(join(DB_DIR, "bootstrap"), join(RELEASE, "db", "bootstrap"), {
+    recursive: true,
+  });
 
-  console.log(
-    "[package] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（supabase/）+ pgmq shim",
-  );
+  console.log("[package] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（db/）+ pgmq shim");
 
-  // 4b-2) flow 引擎资源（dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
+  // 4b-2) flow 引擎资源（docker/dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
   //       （desktop/entry-root.ts → <exeDir>/dify/），打包后 `docker compose -f` 用它起
   //       无头栈；镜像不随包（首次安装按需拉取）。相对挂载路径以该目录为基准。
-  cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
+  cpSync(join(ROOT, "docker", "dify"), join(RELEASE, "dify"), {
+    recursive: true,
+  });
   console.log("[package] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
 
-  // 4b-2b) OpenDesign 伴随容器资源（open-design/：compose 文件）：服务端按资源根解析
+  // 4b-2b) OpenDesign 伴随容器资源（docker/open-design/：compose 文件）：服务端按资源根解析
   //        （desktop/entry-root.ts → <exeDir>/open-design/），装配即 up -d、退出 down
   //        （§9-3 拍板：伴随容器随主程序起停）；镜像不随包（伴随启动时按需拉取）。
-  cpSync(join(ROOT, "open-design"), join(RELEASE, "open-design"), {
+  cpSync(join(ROOT, "docker", "open-design"), join(RELEASE, "open-design"), {
     recursive: true,
   });
   console.log(
@@ -554,7 +546,7 @@ pause
 显式 KENFUTWORK_DATA_DIR 优先。首次启动需十几秒建库，之后是秒级。
 
 形态说明（无需任何外部服务，可离线使用）
-  数据库：随包内嵌 Postgres（pg/），首启动 initdb + 执行随包迁移 SQL（supabase/）
+  数据库：随包内嵌 Postgres（pg/），首启动 initdb + 执行随包迁移 SQL（db/）
   接入：免账户，只监听回环；桌面凭据在宿主读取，浏览器兑换 HttpOnly 会话 cookie
   队列：进程内（不依赖 Postgres 扩展）
   文件：本机磁盘（数据目录下的 blobs/）

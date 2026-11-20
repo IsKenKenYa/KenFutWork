@@ -1,3 +1,4 @@
+import { Button } from "@zui/components/ui/button.js";
 import {
   FileDisplayIcon,
   resolveFileDisplayDescriptor,
@@ -9,10 +10,10 @@ import {
 import { WorkspaceEditorButtonGroup } from "@zui/WorkspaceEditorButtonGroup.js";
 
 /**
- * 设置 → 智能体：项目 AGENTS.md 的编辑入口。
+ * 设置 → 智能体：注入给智能体的 AGENTS.md 编辑入口。
  *
- * Code 运行时由 `loadCodeProjectContext()` 读取项目根目录的 AGENTS.md 并注入提示；
- * 这里把同一个路径交给宿主「打开方式」按钮组，用户在已安装软件里编辑并保存。
+ * 用户作用域指向实例级默认文件（`<数据目录>/AGENTS.md`），工作区作用域指向
+ * 项目根目录的 AGENTS.md。Code 运行时读同一路径并注入提示。
  */
 export function resolveAgentsInstructionPath(workspacePath: string): string {
   const separator = workspacePath.includes("\\") ? "\\" : "/";
@@ -21,11 +22,12 @@ export function resolveAgentsInstructionPath(workspacePath: string): string {
 }
 
 export function AgentsInstructionRow({
-  workspacePath,
+  filePath,
+  onEdit,
 }: {
-  workspacePath: string;
+  filePath: string;
+  onEdit?: () => void;
 }) {
-  const filePath = resolveAgentsInstructionPath(workspacePath);
   return (
     <SettingsGroupCard>
       <SettingsRow
@@ -46,7 +48,21 @@ export function AgentsInstructionRow({
             {filePath}
           </span>
         }
-        control={<WorkspaceEditorButtonGroup workspaceAbsPath={filePath} />}
+        control={
+          <span className="flex items-center gap-2">
+            {onEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onEdit}
+              >
+                编辑
+              </Button>
+            ) : null}
+            <WorkspaceEditorButtonGroup workspaceAbsPath={filePath} />
+          </span>
+        }
       />
     </SettingsGroupCard>
   );

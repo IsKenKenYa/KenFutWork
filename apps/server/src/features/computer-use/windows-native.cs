@@ -125,10 +125,10 @@ public static class KenDesktop {
     var w=Select(pid,name,windowId);var root=AutomationElement.FromHandle(new IntPtr(w.windowId));var nodes=new List<AutomationElement>();
     return new{app=new{pid=w.pid,name=w.name,bundleId=(string)null},window=new{windowId=w.windowId,title=w.title,bounds=w.bounds},root=Describe(root,0,maxDepth,maxChildren,titleLimit,valueLimit,actionLimit,nodes),binding=w.binding};
   }
-  public static void Element(int pid,string name,long windowId,int index,string text,int maxDepth,int maxChildren,int titleLimit,int valueLimit,int actionLimit) {
+  public static void Element(int pid,string name,long windowId,int index,bool hasText,string text,int maxDepth,int maxChildren,int titleLimit,int valueLimit,int actionLimit) {
     var w=Select(pid,name,windowId);var nodes=new List<AutomationElement>();Describe(AutomationElement.FromHandle(new IntPtr(w.windowId)),0,maxDepth,maxChildren,titleLimit,valueLimit,actionLimit,nodes);
     if(index<0||index>=nodes.Count)throw new Exception("element_stale: 元素已不在当前树中");var element=nodes[index];object pattern;
-    if(text!=null){if(!element.TryGetCurrentPattern(ValuePattern.Pattern,out pattern))throw new Exception("element_unavailable: 目标不支持文本编辑");ActionSent=true;element.SetFocus();((ValuePattern)pattern).SetValue(text);return;}
+    if(hasText){if(!element.TryGetCurrentPattern(ValuePattern.Pattern,out pattern))throw new Exception("element_unavailable: 目标不支持文本编辑（"+element.Current.ControlType.ProgrammaticName+" "+element.Current.Name+"）");ActionSent=true;element.SetFocus();((ValuePattern)pattern).SetValue(text);return;}
     if(element.TryGetCurrentPattern(InvokePattern.Pattern,out pattern)){ActionSent=true;((InvokePattern)pattern).Invoke();return;}
     if(element.TryGetCurrentPattern(TogglePattern.Pattern,out pattern)){ActionSent=true;((TogglePattern)pattern).Toggle();return;}
     if(element.TryGetCurrentPattern(SelectionItemPattern.Pattern,out pattern)){ActionSent=true;((SelectionItemPattern)pattern).Select();return;}

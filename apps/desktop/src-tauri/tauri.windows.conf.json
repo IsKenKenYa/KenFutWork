@@ -9,7 +9,7 @@
       "../../../release/runtime": "app/runtime",
       "../../../release/process-helper": "app/process-helper",
       "../../../release/node_modules": "app/node_modules",
-      "../../../release/supabase": "app/supabase",
+      "../../../release/db": "app/db",
       "../../../release/legal": "app/legal",
       "../../../release/dify": "app/dify",
       "../../../release/plugins": "app/plugins"

@@ -94,12 +94,12 @@ describe("createComputerUseTools（工具面装配）", () => {
     );
   });
 
-  it("16 个工具全部 mcp__computer-use__ 前缀 + scope:code", () => {
+  it("16 个工具全部 mcp__computer-use__ 前缀 + scope:shared", () => {
     const tools = buildTools({ ok: true });
     expect(tools).toHaveLength(16);
     for (const tool of tools) {
       expect(tool.name.startsWith(CU_TOOL_PREFIX)).toBe(true);
-      expect(tool.scope).toBe("code");
+      expect(tool.scope).toBe("shared");
       expect(tool.description.length).toBeGreaterThan(10);
     }
     expect(tools.map((t) => t.name)).toEqual([

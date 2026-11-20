@@ -45,7 +45,11 @@ describe("字体列表展示", () => {
       name: "霞鹜文楷（落霞孤鹜）",
       builtin: true,
     });
-    expect(groups[0]!.userFiles).toEqual(["abc-upload.ttf", "def-full.ttf"]);
+    expect(groups[0]!.files).toEqual([
+      "bundled-LXGWWenKaiLite-Regular.ttf",
+      "abc-upload.ttf",
+      "def-full.ttf",
+    ]);
   });
 
   it("英文字体在前、中文在后，各自升序", () => {
@@ -72,12 +76,15 @@ describe("字体列表展示", () => {
     ]);
   });
 
-  it("内置家族即便有用户副本也标记为内置（列表不给删除入口）", () => {
+  it("内置家族与用户副本合并后，删除项包含全部文件", () => {
     const [group] = fontFamilies([
       font("Inter", "bundled-Inter-Regular.ttf", true),
       font("Inter", "abc-user-inter.ttf", false),
     ]);
     expect(group).toMatchObject({ name: "Inter", builtin: true });
-    expect(group!.userFiles).toEqual(["abc-user-inter.ttf"]);
+    expect(group!.files).toEqual([
+      "bundled-Inter-Regular.ttf",
+      "abc-user-inter.ttf",
+    ]);
   });
 });

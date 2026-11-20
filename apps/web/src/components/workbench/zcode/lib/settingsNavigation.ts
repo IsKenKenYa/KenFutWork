@@ -312,11 +312,21 @@ export function setPendingSettingsSectionIntent(
       {
         detail: {
           section,
-          pluginTab: options.pluginTab,
-          pluginOrigin: options.pluginOrigin,
-          pluginScopeKey: options.pluginScopeKey?.trim() || undefined,
-          usageTab: options.usageTab,
-          modelProviderId: options.modelProviderId,
+          ...(options.pluginTab !== undefined
+            ? { pluginTab: options.pluginTab }
+            : {}),
+          ...(options.pluginOrigin !== undefined
+            ? { pluginOrigin: options.pluginOrigin }
+            : {}),
+          ...(options.pluginScopeKey?.trim()
+            ? { pluginScopeKey: options.pluginScopeKey.trim() }
+            : {}),
+          ...(options.usageTab !== undefined
+            ? { usageTab: options.usageTab }
+            : {}),
+          ...(options.modelProviderId !== undefined
+            ? { modelProviderId: options.modelProviderId }
+            : {}),
         },
       },
     ),

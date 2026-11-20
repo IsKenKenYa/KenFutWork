@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { readBundleSkills } from "./package-description.js";
 import { loadBundledBundles } from "./plugin.js";
 
 /**
@@ -155,5 +156,15 @@ describe("自带插件目录解析（打包布局契约）", () => {
       ),
     ).toBe(true);
     expect(tripo?.files["mcp.json"]).toContain("developers.tripo3d.com");
+
+    // 电脑控制的技能随 bundle 安装进入技能目录；frontmatter 不合法会在解析时抛出。
+    const computerUse = byName.get("kenfutwork-computer-use");
+    expect(computerUse, "kenfutwork-computer-use").toBeTruthy();
+    expect(computerUse?.report.compatible).toBe(true);
+    const computerUseSkills = readBundleSkills(computerUse?.files ?? {});
+    expect(computerUseSkills.map((skill) => skill.name)).toContain(
+      "computer-use",
+    );
+    expect(computerUseSkills[0]?.description).toContain("原生桌面应用");
   });
 });

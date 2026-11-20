@@ -4,7 +4,7 @@
  * 分工（对齐 FORM-11 flow 范式）：
  * - `plugins/computer-use/`（市场 bundle）= 产品入口：安装态决定能力是否可用；
  * - 本插件 = 能力实现：ctx.tools 注册桌面原语与后端选择工具
- *   （scope: "code"，只在 Code 模式主 agent 可见；子代理白名单制天然隔离）。
+ *   （scope: "shared"，code/design 均可见；子代理与外部 Run 由执行校验隔离）。
  *
  * 门控在**调用时**读安装态（browser 插件同款纪律：注册期 plugins 可能未装配、
  * 且安装/卸载/停用是运行期动作）。执行器按平台异步装配；原生层未就绪时
@@ -34,6 +34,7 @@ import {
 } from "../code-ui/host-rpc-handler.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
 import { createMacosApplicationIconResolver } from "./application-icon.js";
+import { cuContextDenial } from "./context-guard.js";
 import type { ComputerUseExecutor } from "./executor.js";
 import { createUnavailableExecutor } from "./executor.js";
 import { createHelperExecutor } from "./executor-helper.js";
@@ -401,34 +402,27 @@ export function createComputerUsePlugin(options?: {
           tools.register({
             ...definition,
             async execute(args, context) {
+              const denial = cuContextDenial(context);
+              if (denial)
+                return {
+                  isError: true,
+                  content: [{ type: "text", text: denial }],
+                  structuredContent: {
+                    error: { code: "context_required", actionSent: false },
+                  },
+                };
               const actor = context.actor;
-              const work = context.taskWorkContext;
-              const scope = context.scopeHandle?.describe();
-              if (
-                !actor ||
-                !work ||
-                !work.actor ||
-                !scope ||
-                !context.runId ||
-                !context.toolCallId ||
-                work.runId !== context.runId ||
-                context.scopeHandle?.role !== "main" ||
-                actor.instanceId !== context.instanceId ||
-                actor.instanceId !== work.actor.instanceId ||
-                actor.instanceId !== scope.instanceId ||
-                work.scope.instanceId !== scope.instanceId ||
-                work.scope.taskId !== scope.taskId ||
-                work.scope.projectId !== scope.projectId
-              )
+              if (!actor) {
                 return {
                   isError: true,
                   content: [
-                    { type: "text", text: "桌面控制缺少可信实例和Task上下文" },
+                    { type: "text", text: "桌面控制缺少可信实例和Run上下文" },
                   ],
                   structuredContent: {
                     error: { code: "context_required", actionSent: false },
                   },
                 };
+              }
               const settings = await ctx
                 .get("settings")
                 .getInstanceSettings(actor, actor.instanceId);

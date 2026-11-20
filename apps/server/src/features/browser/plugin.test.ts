@@ -36,13 +36,19 @@ function browserStreamLatch() {
   return { promise, release };
 }
 
+/**
+ * 关服预算：`app.close()` 要排空全部插件与画面流。开发机上同时跑着 Next、桌面服务端
+ * 与编辑器时，3 秒会被机器负载顶穿（不是关服卡死），因此留足 10 秒仍然锁定「能关掉」。
+ */
+const BROWSER_CLOSE_BUDGET_MS = 10_000;
+
 async function withinBrowserCloseWindow(promise: Promise<unknown>) {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       promise.then(() => true),
       new Promise<boolean>((resolve) => {
-        deadline = setTimeout(() => resolve(false), 3000);
+        deadline = setTimeout(() => resolve(false), BROWSER_CLOSE_BUDGET_MS);
       }),
     ]);
   } finally {
@@ -493,7 +499,10 @@ describe("面板画面流接口", () => {
           result.done ? "closed" : "unexpected-frame",
         ),
         new Promise<string>((resolve) => {
-          deadline = setTimeout(() => resolve("shutdown-blocked"), 3000);
+          deadline = setTimeout(
+            () => resolve("shutdown-blocked"),
+            BROWSER_CLOSE_BUDGET_MS,
+          );
         }),
       ]);
       expect(closed).toBe("closed");
@@ -760,6 +769,22 @@ describe("POST /api/browser/cdp/picker（页面内元素选择器）", () => {
         payload: { action: "nope" },
       });
       expect(invalid.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("工具选择提示段", () => {
+  it("code/design 两种 preset 都注入浏览器与电脑控制的取舍规则", async () => {
+    const { app } = await buildBrowserApp({});
+    try {
+      for (const preset of ["code", "design"] as const) {
+        const prompt = await app.kernel.get("systemPrompt").compose({ preset });
+        expect(prompt, preset).toContain("browser_*");
+        expect(prompt, preset).toContain("不要改用电脑控制");
+        expect(prompt, preset).toContain("browser_snapshot");
+      }
     } finally {
       await app.close();
     }

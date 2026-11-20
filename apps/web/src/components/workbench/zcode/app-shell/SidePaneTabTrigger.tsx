@@ -8,7 +8,6 @@ import {
   BugIcon,
   FileCode2Icon,
   FileDiffIcon,
-  FolderOpenIcon,
   MapIcon,
   MessageSquareTextIcon,
   ListTreeIcon,
@@ -350,7 +349,6 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <BrowserUseTabIcon tab={tab} />;
   }
 
-  if (tab.type === "file-manager") return <FolderOpenIcon className="size-3.5" />;
   if (tab.source.type === "patch") {
     const fileDisplayTarget = getPatchFileDisplayTarget(tab.source);
     if (fileDisplayTarget) {
@@ -568,7 +566,5 @@ export function getSidePaneTabTitle(
     return tab.title?.trim() || formatMessage({ id: "browser.title" });
   }
 
-  if (tab.type === "file-manager")
-    return tab.source?.title || formatMessage({ id: "fileManager.title" });
   return tab.source.title || formatMessage({ id: "codeViewer.title" });
 }

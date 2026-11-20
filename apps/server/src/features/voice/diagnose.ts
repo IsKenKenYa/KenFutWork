@@ -71,17 +71,6 @@ async function probeGpu(): Promise<{ gpu?: string; gpuMemoryBytes?: number }> {
   }
 }
 
-/**
- * 实时率 → 人话：rtf = 处理耗时 ÷ 音频时长。rtf < 1 是比实时快，> 1 是比实时慢。
- * 直接报「0.08×」没人看得懂，报「比实时快 12.0 倍」才是一眼能读的结论。
- */
-export function realtimeMultiple(rtf: number): string {
-  if (!Number.isFinite(rtf) || rtf <= 0) return "比实时快 ∞ 倍";
-  return rtf >= 1
-    ? `比实时慢 ${rtf.toFixed(1)} 倍`
-    : `比实时快 ${(1 / rtf).toFixed(1)} 倍`;
-}
-
 /** 「听」段的结论：有实测就给读数，没有就给一句怎么拿到读数的引导。 */
 export function listenSegment(
   summary: VoiceListenSummary,
@@ -105,12 +94,12 @@ export function listenSegment(
   const rtf = summary.rtfMedian ?? 0;
   const load =
     summary.modelLoadMs === undefined
-      ? ""
-      : ` 首载 ${(summary.modelLoadMs / 1000).toFixed(1)}s`;
+      ? "已实测"
+      : `首字 ${(summary.modelLoadMs / 1000).toFixed(1)}s`;
   return {
     state: "measured",
-    // 只给数字：界面上是「比实时快 12.3 倍 首载 4.4s」，不是一句话
-    summary: `${realtimeMultiple(rtf)}${load}`,
+    // 只给数字：界面上是「首字 4.4s」，不是一句话
+    summary: load,
     listen: {
       samples: summary.samples,
       ...(summary.rtfMedian === undefined ? {} : { rtfMedian: rtf }),
@@ -168,7 +157,7 @@ export function speakSegment(
   if (measurement) {
     return {
       state: "measured",
-      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s · ${realtimeMultiple(measurement.rtf)}`,
+      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s`,
     };
   }
   return {

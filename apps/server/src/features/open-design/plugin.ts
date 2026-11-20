@@ -24,10 +24,10 @@ import { provisionOpenDesign } from "./provision.js";
 import { createOpenDesignTools } from "./tools.js";
 
 /**
- * 伴随容器 compose 资源（`open-design/`）：与 dify 同一条规则——**源码态**上溯 5 级到
- * 仓库根；**打包态**与可执行体同级（`resolveEntryRoot`）。
+ * 伴随容器 compose 资源（`docker/open-design/`）：与 dify 同一条规则——**源码态**上溯
+ * 5 级到仓库根后进入 `docker/`；**打包态**与可执行体同级（`resolveEntryRoot`）。
  */
-function resolveOpenDesignComposeFile(): string {
+export function resolveOpenDesignComposeFile(): string {
   if (isPackagedRuntime(import.meta.url)) {
     return join(
       resolveEntryRoot({
@@ -40,7 +40,7 @@ function resolveOpenDesignComposeFile(): string {
   }
   return fileURLToPath(
     new URL(
-      "../../../../../open-design/docker-compose.open-design.yml",
+      "../../../../../docker/open-design/docker-compose.open-design.yml",
       import.meta.url,
     ),
   );

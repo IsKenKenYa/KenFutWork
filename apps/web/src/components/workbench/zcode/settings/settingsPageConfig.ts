@@ -20,13 +20,11 @@ import {
   Moon,
   Package,
   Palette,
-  Archive,
   type Settings,
   Settings2,
   ShieldCheck,
   Sun,
   Terminal,
-  User,
 } from "lucide-react";
 
 export const THEME_MODES: Array<{
@@ -86,12 +84,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: AudioLines,
     titleId: "settings.voice.title",
     groupId: "basics",
-  },
-  {
-    id: "personalRules",
-    icon: User,
-    titleId: "settings.personalRules.title",
-    groupId: "agentCapabilities",
   },
   {
     id: "memory",
@@ -170,12 +162,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "usage",
     icon: BarChart3,
     titleId: "settings.usageTitle",
-    groupId: "dataAndStats",
-  },
-  {
-    id: "archives",
-    icon: Archive,
-    titleId: "archives.nav",
     groupId: "dataAndStats",
   },
   // 关于（宿主信息面板 + 检查更新入口）收在数据与统计组末尾。

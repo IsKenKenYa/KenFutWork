@@ -15,7 +15,15 @@ const version = "20261024113915";
 async function expectHistoricalMigrationBytes() {
   const files = await run(
     "git",
-    ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "supabase/migrations"],
+    [
+      "ls-tree",
+      "-r",
+      "-z",
+      "--name-only",
+      "HEAD",
+      "--",
+      "docker/pg/migrations",
+    ],
     { cwd: root },
   );
   const paths = files.stdout.split("\0").filter(Boolean);

@@ -64,7 +64,7 @@ export function resolveLocalRuntimeEnv(
   };
 }
 
-/** 迁移集目录：`KENFUTWORK_MIGRATIONS_ROOT` → `<exeDir>/supabase` → `<repoRoot>/supabase`。 */
+/** 迁移集目录：`KENFUTWORK_MIGRATIONS_ROOT` → `<exeDir>/db` → `<repoRoot>/docker/pg`。 */
 export function resolveMigrationRoots(input: {
   env: Record<string, string | undefined>;
   exists: (path: string) => boolean;
@@ -73,8 +73,8 @@ export function resolveMigrationRoots(input: {
 }): { bootstrapDir: string; migrationsDir: string } | undefined {
   const candidates = [
     input.env.KENFUTWORK_MIGRATIONS_ROOT?.trim(),
-    join(input.exeDir ?? process.cwd(), "supabase"),
-    join(input.repoRoot ?? process.cwd(), "supabase"),
+    join(input.exeDir ?? process.cwd(), "db"),
+    join(input.repoRoot ?? process.cwd(), "docker", "pg"),
   ].filter((root): root is string => Boolean(root));
 
   const root = candidates.find(
@@ -95,7 +95,7 @@ export async function prepareDesktopRuntime(options: {
   env: ServerEnv;
   /** 打包态传 exe 所在目录；开发态默认 cwd。 */
   exeDir?: string;
-  /** 开发态仓库根（定位 supabase/ 与 docker/pg-dev-shim）。 */
+  /** 开发态仓库根（定位 docker/pg 与 docker/pg/pg-dev-shim）。 */
   repoRoot?: string;
   onLog?: (message: string) => void;
   /** 覆盖环境探测（测试用）。 */
@@ -150,7 +150,7 @@ export async function prepareDesktopRuntime(options: {
     });
     if (!migrationRoots) {
       throw new Error(
-        `未找到迁移目录（应含 migrations/ 与 bootstrap/）：试过 ${join(exeDir, "supabase")} 与 ${join(repoRoot, "supabase")}；可用 KENFUTWORK_MIGRATIONS_ROOT 指定。`,
+        `未找到迁移目录（应含 migrations/ 与 bootstrap/）：试过 ${join(exeDir, "db")} 与 ${join(repoRoot, "docker", "pg")}；可用 KENFUTWORK_MIGRATIONS_ROOT 指定。`,
       );
     }
 

@@ -5,8 +5,11 @@ import {
   shouldEagerStartComputerUseHelper,
 } from "./helper-location.js";
 
+/** macOS 路径拼接依赖 POSIX 分隔符；其它平台跳过这三条，其余断言仍执行。 */
+const itDarwin = it.skipIf(process.platform !== "darwin");
+
 describe("resolveComputerUseHelperLocation", () => {
-  it("开发形态固定安装到数据目录的 cua-helper/dev", () => {
+  itDarwin("开发形态固定安装到数据目录的 cua-helper/dev", () => {
     expect(
       resolveComputerUseHelperLocation({
         env: {},
@@ -21,7 +24,7 @@ describe("resolveComputerUseHelperLocation", () => {
     });
   });
 
-  it("打包壳注入的路径优先，并按名称选择 socket 子目录", () => {
+  itDarwin("打包壳注入的路径优先，并按名称选择 socket 子目录", () => {
     expect(
       resolveComputerUseHelperLocation({
         env: {
@@ -49,7 +52,7 @@ describe("resolveComputerUseHelperLocation", () => {
     ).toBe(false);
   });
 
-  it("打包形态从服务端工作目录解析随包 Helper", () => {
+  itDarwin("打包形态从服务端工作目录解析随包 Helper", () => {
     const appPath =
       "/Applications/KenFutWork.app/Contents/Resources/app/cua-helper/KenFutWork Computer Use.app";
     expect(

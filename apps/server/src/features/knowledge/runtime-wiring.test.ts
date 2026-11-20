@@ -10,6 +10,7 @@ import type {
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "../../kernel/context.js";
+import { createAgentModesPlugin } from "../agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../agent-runs/plugin.js";
 import { createContextHistoryPlugin } from "../context-history/plugin.js";
 import { createKnowledgePlugin } from "../knowledge/plugin.js";
@@ -165,6 +166,7 @@ async function assembleKernel(
     makeEnv(),
     [
       createContextHistoryPlugin(),
+      createAgentModesPlugin(),
       createKnowledgePlugin({
         platform: "win32",
         arch: "x64",

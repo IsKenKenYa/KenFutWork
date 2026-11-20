@@ -182,8 +182,8 @@ async function seedLegacyState(
 function migrationContext(client: Client) {
   const root = fileURLToPath(new URL("../../../../../", import.meta.url));
   const files = loadMigrationSet({
-    bootstrapDir: join(root, "supabase/bootstrap"),
-    migrationsDir: join(root, "supabase/migrations"),
+    bootstrapDir: join(root, "docker/pg/bootstrap"),
+    migrationsDir: join(root, "docker/pg/migrations"),
   });
   const queryable: SqlQueryable = {
     async query<T>(text: string, values?: unknown[]) {

@@ -38,8 +38,11 @@ describe("gradeAsrRtf（听：≤0.5 优 / ≤1.0 良 / >2.0 差）", () => {
     expect(gradeAsrRtf(5).recommended).toBe(false);
   });
 
-  it("实测口径写进文案：1 倍速会说明「识别比说话更花时间」的意思", () => {
-    expect(gradeAsrRtf(0.25).summary).toContain("4.0 倍速");
+  it("实测口径写进文案：读数是实时率与结论，不再写倍速", () => {
+    const excellent = gradeAsrRtf(0.25).summary;
+    expect(excellent).toContain("实时率 0.25");
+    expect(excellent).toContain("识别很快");
+    expect(excellent).not.toContain("倍速");
     expect(gradeAsrRtf(3).summary).toContain("太慢");
   });
 

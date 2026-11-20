@@ -19,4 +19,4 @@
 
 ## 来源
 
-技能移植自 ZCode 官方插件 `jev-decisions` 0.1.0（作者 kittimzhe，MIT），其本身改编自 `@jkudish/jev-mcp` 包内官方技能（MIT，Copyright (c) 2026 Joey Kudish）。许可文本在 `skills/jev-judgment/LICENSE.txt`，归属链见根 `THIRD-PARTY-NOTICES.md` A6。
+技能移植自 ZCode 官方插件 `jev-decisions` 0.1.0（作者 kittimzhe，MIT），其本身改编自 `@jkudish/jev-mcp` 包内官方技能（MIT，Copyright (c) 2026 Joey Kudish）。许可文本在 `skills/jev-judgment/LICENSE.txt`，归属链见 `legal/THIRD-PARTY-NOTICES.md` A6。

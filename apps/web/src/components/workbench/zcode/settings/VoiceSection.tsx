@@ -4,6 +4,7 @@ import type {
   VoiceSettings,
 } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
+import { LoaderCircleIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -11,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
-import { LoaderCircleIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -240,9 +240,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                       name="voice-mode"
                       value={option.value}
                       checked={settings.mode === option.value}
-                      onChange={() =>
-                        void patch({ mode: option.value }, "mode")
-                      }
+                      onChange={() => void patch({ mode: option.value }, "mode")}
                       className="sr-only"
                     />
                     {option.label}
@@ -368,8 +366,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
               </p>
               <p>推荐模型：</p>
               {SEGMENTS.filter(
-                (segment) =>
-                  settings.mode === "loop" || segment.key === "listen",
+                (segment) => settings.mode === "loop" || segment.key === "listen",
               ).map((segment) => {
                 const pick = recommendation[segment.key];
                 const metric = segmentMetric(report, segment.key);
@@ -453,6 +450,9 @@ function candidateMeta(candidate: VoiceModelCandidate): string {
 /**
  * 每段的速度读数：实测优先，未实测才回退到候选的预估标注；
  * 在线端点没有统一读数，未实测就说「未实测」。
+ *
+ * 历史报告里「听」段带过「比实时快 X 倍 首载 Ys」、「说」段带过「· 比实时快 X 倍」；
+ * 这里按结构化字段重算/去掉旧倍速后缀，避免刷新后仍显示已废弃文案。
  */
 function segmentMetric(
   report: VoiceDiagnoseReport | null,
@@ -462,6 +462,14 @@ function segmentMetric(
   if (!result) return "未实测";
   // 不可用时 summary 就是可读原因（模型缺失 / 未选模型）：必须原样透出。
   // 曾经统一写成「未实测」，把可修的缺失伪装成「还没测」，用户点多少次重新检测都没用。
+  if (result.state !== "measured") return result.summary;
+  if (segment === "listen") {
+    const load = result.listen?.modelLoadMs;
+    return load === undefined ? "已实测" : `首字 ${(load / 1000).toFixed(1)}s`;
+  }
+  if (segment === "speak") {
+    return result.summary.replace(/\s*·?\s*比实时[快慢].*$/, "");
+  }
   return result.summary;
 }
 
@@ -486,9 +494,8 @@ export function recommendVoiceModels(
   for (const segment of ["listen", "think", "speak"] as const) {
     const pool = usable.filter((candidate) => candidate.segment === segment);
     const choice =
-      pool.find(
-        (candidate) => candidate.kind === SEGMENT_PREFERENCE[segment],
-      ) ?? pool[0];
+      pool.find((candidate) => candidate.kind === SEGMENT_PREFERENCE[segment]) ??
+      pool[0];
     if (choice) picked[segment] = choice;
   }
   return picked;

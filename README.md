@@ -41,7 +41,7 @@
 | `apps/server` | 后端（Fastify 5 + 插件内核 + LangChain/deepagents 运行时 + PGMQ worker） |
 | `packages/shared` | 跨端 zod 契约（HTTP / WS / job 事件 / 凭据 / 插件 / 技能） |
 | `packages/ui`、`packages/config` | 共享 UI 与 TS 配置 |
-| `supabase/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL，目录名沿用历史） |
+| `docker/pg/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL；发布包内为 `db/`） |
 | `plugins/` | 参考插件（`example-clock` 最小工具插件；`demo-panel` 演示四种能力） |
 | `scripts/` | 构建/打包/诊断脚本（含本地搜索代理与本地模型替身） |
 | `references/` | 外部开源参考项目（git 子模块），**只作方向参考**、不直接复制代码；上游清单与鸣谢见 §13 |
@@ -56,7 +56,7 @@
 # 依赖：Node 22+、pnpm 10、Docker（只用它起开发库）
 
 # 1) 起开发库（纯 Postgres，端口 5433，避开老 Supabase 栈）
-docker compose -f docker-compose.pg.yml up -d --build
+docker compose -f docker/pg/docker-compose.pg.yml up -d --build
 
 # 2) 配置：复制模板并按需修改（见下一节）
 cp .env.example .env.local
@@ -182,18 +182,11 @@ pnpm fetch:runtimes / pnpm package:win            # 随包运行时 / Windows �
 
 ## 8. 联网搜索（`web_search`）
 
-走 BYOK：把秘塔 Key 写进 `.env.local` 的 `KENFUTWORK_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`）。
-秘塔**按量付费、无免费额度**——实测无 Key/任意 Key 一律 `errCode 2005「API密钥无效」`，所以未配 Key 时该工具不装配，属预期不是故障。
+开箱即用，不需要任何配置：未设置搜索 Key 时，`web_search` 走本机网页通道——抓取 Bing 结果页的 RSS，返回标题、链接和摘要。不需要 Key、不需要启动代理，也不需要打开「允许 AI 控制浏览器」。
 
-**没有秘塔 Key 也能用**：起本地搜索代理（同一套契约接到真实必应），Key 填任意非空、端点指过去：
+可选：改用秘塔结构化 API。把 Key 写进 `.env.local` 的 `KENFUTWORK_SEARCH_API_KEY`（缺省端点 `https://metaso.cn/api/v1/search`）。秘塔按量付费、无免费额度，Key 无效时会返回 `errCode 2005`。
 
-```bash
-node scripts/本地搜索代理.mjs      # 监听 127.0.0.1:9099
-# .env.local：KENFUTWORK_SEARCH_API_KEY=local + KENFUTWORK_SEARCH_ENDPOINT=http://127.0.0.1:9099/search
-```
-
-代理是抓取式上游，不是稳定服务：命中无关兜底页时会被判为失败并给出可读原因（"搜索失败"≠"没搜到"）。
-验收真实端点：`node scripts/诊断联网搜索.mjs`。
+网页通道默认用 Bing；设置 `KENFUTWORK_SEARCH_ENGINE=baidu` 可切换为百度静态抓取（可能遇到验证页）。`scripts/本地搜索代理.mjs` 只用于验证结构化 API 契约或指向自定义上游，不是安装步骤；默认网页通道不需要它。
 
 ---
 
@@ -253,7 +246,7 @@ KenFutWork 站在开源社区的肩膀上，特别感谢：
   &nbsp;
 </p>
 
-**[ZCode](https://github.com/zai-org/ZCode)（Apache-2.0）** —— Code 模式的对话工作台、设置与插件市场界面直接采用 ZCode 3.14.3（提交 `29628c9a`）开源源码**全量移植**。上游版权与许可声明原样保留；逐文件来源、校验和与宿主适配偏差登记在 [`packages/third-party/zcode/来源清单.json`](packages/third-party/zcode/来源清单.json)。感谢 ZCode 提供了如此完整且高质量的 Code UI。
+**[ZCode](https://github.com/zai-org/ZCode)（Apache-2.0）** —— Code 模式的对话工作台、设置与插件市场界面直接采用 ZCode 3.14.3（提交 `29628c9a`）开源源码**全量移植**。上游版权与许可声明原样保留，移植范围与许可义务见 [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md)。感谢 ZCode 提供了如此完整且高质量的 Code UI。
 
 **[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH，MIT）** —— 服务端「**一切皆插件、没有特权核心**」插件内核架构的**理念来源**。本项目只借鉴其机制思想、结合自身实际重写实现，未复制其代码。感谢 DSH 给了本项目服务端演进的北极星。
 
@@ -305,25 +298,41 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 - **第三方品牌 logo**（`provider-icons/`、`channel-icons/` 等处的 OpenAI、Anthropic、Discord、微信等图标）：**无开源许可**，版权归各品牌权利人。仅以指示性方式使用——logo 紧邻其对应的供应商/渠道名称，用于标识功能入口，不暗示背书；未被代码引用的品牌图标（支付类等 28 个文件）已从仓库移除。
 - **商标声明**：Apache-2.0 第 3 条不授予商标权。ZCode、Z.ai、GLM 及各供应商、渠道的名称与 logo 商标归其各自权利人；本项目与上述各方无隶属或背书关系。
 
-以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。**逐项归属、义务履行位置与待核清单以根 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) 为准**，本段是摘要。
+以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。**逐项归属、义务履行位置与待核清单以 [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md) 为准**，本段是摘要。
 
 ## Contributing
 
-社区版以 GPL-3.0 发布。提交代码、文档、测试或素材前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 并签署 [CLA.md](CLA.md)。
+社区版以 GPL-3.0 发布。提交代码、文档、测试或素材前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 并签署 [CLA.md](legal/CLA.md)。
 
 - 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - 安全漏洞：[SECURITY.md](SECURITY.md)（走私报，不要公开 issue）
-- 商业版与商业许可：[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)
+- 商业版与商业许可：[COMMERCIAL-LICENSING.md](legal/COMMERCIAL-LICENSING.md)
 
 ---
 
 ## License
 
-**社区版**：GPL-3.0-only（见 [LICENSE](LICENSE)）。**商业版**：按 [商业许可](COMMERCIAL-LICENSING.md) 单独授权；商业许可不影响社区版的 GPL 权利。版权归属见 [COPYRIGHT.md](COPYRIGHT.md)。
+**社区版**：GPL-3.0-only（见 [LICENSE](LICENSE)）。**商业版**：按 [商业许可](legal/COMMERCIAL-LICENSING.md) 单独授权；商业许可不影响社区版的 GPL 权利。版权归属见 [COPYRIGHT.md](legal/COPYRIGHT.md)。
 
-所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](THIRD-PARTY-NOTICES.md)。
+所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](legal/THIRD-PARTY-NOTICES.md)。
 
-授权边界与使用声明见 [最终用户许可协议](EULA.md)（本文件不改动 GPL-3.0 授予你的权利，只处理它未覆盖的事项）；数据实际存在哪里、发给谁，见 [隐私政策](PRIVACY.md)。
+授权边界与使用声明见 [最终用户许可协议](legal/EULA.md)（本文件不改动 GPL-3.0 授予你的权利，只处理它未覆盖的事项）；数据实际存在哪里、发给谁，见 [隐私政策](legal/PRIVACY.md)。
+
+### 用户协议与法律文件（`legal/`）
+
+涉及用户权利、数据与授权的文档集中在根目录 `legal/`：
+
+| 文件 | 说明 |
+| --- | --- |
+| [`legal/EULA.md`](legal/EULA.md) | 最终用户许可协议：授权边界、商标与免责 |
+| [`legal/PRIVACY.md`](legal/PRIVACY.md) | 隐私政策：数据存放位置、外发范围与已知缺口 |
+| [`legal/CLA.md`](legal/CLA.md) | 贡献者许可协议：提交 PR 前签署 |
+| [`legal/COPYRIGHT.md`](legal/COPYRIGHT.md) | 版权归属 |
+| [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md) | 第三方组件、素材与商标归属 |
+| [`legal/GOVERNANCE.md`](legal/GOVERNANCE.md) | 治理与收益原则 |
+| [`legal/COMMERCIAL-LICENSING.md`](legal/COMMERCIAL-LICENSING.md) | 商业版与商业许可 |
+
+`LICENSE`、`NOTICE.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md` 保持在根目录，以符合 GitHub 的识别约定。
 
 ### 第三方素材（字体等）
 
@@ -334,4 +343,4 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 
 ### 本项目自有的名称与标识
 
-**KenFutWork 名称、KF 标识、应用图标与界面美术等非代码资产，归其权利人（本项目维护者／标识创作者）所有，同样不在 GPL-3.0 的授权范围内**——GPL 授的是著作权，不含商标与品牌授权。向本仓库贡献代码或素材不因此取得标识权利，后续加入的协作者亦然。再分发修改版请使用可区分的项目名并自绘或替换标识；生成方式与版本沿革登记见 [THIRD-PARTY-NOTICES.md §E2](THIRD-PARTY-NOTICES.md)，完整规则见 [最终用户许可协议 §6](EULA.md)。
+**KenFutWork 名称、KF 标识、应用图标与界面美术等非代码资产，归其权利人（本项目维护者／标识创作者）所有，同样不在 GPL-3.0 的授权范围内**——GPL 授的是著作权，不含商标与品牌授权。向本仓库贡献代码或素材不因此取得标识权利，后续加入的协作者亦然。再分发修改版请使用可区分的项目名并自绘或替换标识；生成方式与版本沿革登记见 [THIRD-PARTY-NOTICES.md §E2](legal/THIRD-PARTY-NOTICES.md)，完整规则见 [最终用户许可协议 §6](legal/EULA.md)。

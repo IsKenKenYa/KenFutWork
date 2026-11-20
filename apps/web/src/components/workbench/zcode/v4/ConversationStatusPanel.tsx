@@ -26,7 +26,6 @@ import {
   EllipsisIcon,
   FileDiffIcon,
   GoalIcon,
-  HistoryIcon,
   ListChecksIcon,
   Maximize2Icon,
   Minimize2Icon,
@@ -99,7 +98,6 @@ import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversat
 import { workflowRunOpenTarget } from "@zui/v4/conversationStatusPanelModel.js";
 // KenFutWork 宿主件（G8/Q15）：检查点多轮时间线回滚入口。
 import { CheckpointTimeline } from "@zui/host/CheckpointTimeline.js";
-import { RunHistoryEntry } from "@zui/host/RunTimelineDialog.js";
 import {
   buildConversationGoalIterationSummaries,
   getConversationGoalElapsedSeconds,
@@ -127,9 +125,6 @@ interface ConversationStatusPanelProps {
    */
   endedWorkflowRunCount?: number;
   endedSubagentCount?: number;
-  /** 宿主已为当前会话绑定 activeTaskId；运行记录入口不依赖 Git 摘要。 */
-  hasActiveTask?: boolean;
-  completedCheckpointTurnId?: string;
   rootSessionId?: string;
   parentSessionId?: string;
   /** 当前 pane 是否由手机 Web 远控壳承载。 */
@@ -455,6 +450,11 @@ function GitStatusSection({
           onRefreshGit={onRefreshGit}
           triggerLayout="status-row"
           className="w-full"
+        />
+        <CheckpointTimeline
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
+          onRestored={onRefreshGit}
         />
       </div>
     </StatusSection>
@@ -1690,14 +1690,6 @@ function StatusSummaryRow({
         {endedWorkflowRunCount}
       </span>
     </StatusSummaryMetric>
-  ) : model.runHistory ? (
-    // 只剩运行记录时（没有 Git 变更、没有 Goal/Todo/活动任务），胶囊仍要有一个可点开
-    // 面板的读数，否则外壳只留一条空壳，用户也失去运行记录的展开入口。
-    <StatusSummaryMetric
-      icon={<HistoryIcon className="size-4 text-[var(--color-foreground-subtle)]" />}
-    >
-      <span className="min-w-0 truncate">运行记录</span>
-    </StatusSummaryMetric>
   ) : null;
 
   if (!summaryMetric) {
@@ -1734,8 +1726,6 @@ function ConversationStatusPanelImpl({
   workflowRuns = EMPTY_WORKFLOW_RUNS,
   endedWorkflowRunCount = 0,
   endedSubagentCount = 0,
-  hasActiveTask = false,
-  completedCheckpointTurnId,
   rootSessionId,
   parentSessionId,
   isMobileViewport = false,
@@ -1778,7 +1768,6 @@ function ConversationStatusPanelImpl({
         backgroundWorks,
         runningSubagents,
         workflowRuns,
-        hasActiveTask,
       }),
     [
       isOfficeMode,
@@ -1787,7 +1776,6 @@ function ConversationStatusPanelImpl({
       gitSummary,
       gitWorktreeChangeSummary,
       goal,
-      hasActiveTask,
       sessionPlans,
       plan,
       runningSubagents,
@@ -1829,14 +1817,6 @@ function ConversationStatusPanelImpl({
   // 已结束目录入口过去渲染在 Agent StatusSection 之后，视觉和 DOM 都被提升成
   // 并列顶层 section。Agent 的运行态和已结束目录属于同一领域，统一由 Agent 折叠分组承载。
   const canRenderAgents = model.runningSubagentWorks.length > 0 || canRenderEndedAgents;
-  const hasPriorStatusSection =
-    canRenderGit ||
-    canRenderGoal ||
-    canRenderSessionPlans ||
-    canRenderPlan ||
-    canRenderTerminals ||
-    canRenderWorkflows ||
-    canRenderAgents;
   const handlePanelModeChange = useCallback(
     (value: string) => {
       if (value === "auto") {
@@ -2080,26 +2060,6 @@ function ConversationStatusPanelImpl({
                 onOpenSubagentSession={onOpenSubagentSession}
                 onOpenSubagentDirectory={onOpenSubagentDirectory}
               />
-            ) : null}
-            {model.runHistory ? (
-              <div
-                data-status-block="run-history"
-                className={cn(
-                  "flex min-w-0 flex-none flex-wrap items-center gap-x-1 px-2 pb-1",
-                  hasPriorStatusSection && "border-t border-[var(--color-border)] pt-2",
-                )}
-              >
-                <CheckpointTimeline
-                  workspacePath={workspacePath}
-                  workspaceIdentity={workspaceIdentity}
-                  completedTurnId={completedCheckpointTurnId}
-                  onRestored={onRefreshGit}
-                />
-                <RunHistoryEntry
-                  workspacePath={workspacePath}
-                  workspaceIdentity={workspaceIdentity}
-                />
-              </div>
             ) : null}
           </div>
         ) : null}

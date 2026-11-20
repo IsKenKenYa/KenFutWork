@@ -39,6 +39,16 @@ export const flowHostStatusResponseSchema = z.object({
   frontendUrl: z.string().nullable(),
   /** 未启用时缺什么（每条一句可读原因）；启用后为空数组。 */
   reasons: z.array(z.string()),
+  /**
+   * 托管运行时的状态（本机自动托管形态）：前端据此在启动期间重试探针，
+   * 不在「正在启动」时把入口当成坏掉。外部实例为 external。
+   */
+  runtime: z
+    .object({
+      state: z.enum(["external", "starting", "ready", "error", "stopped"]),
+      detail: z.string().max(1000).optional(),
+    })
+    .optional(),
 });
 export type FlowHostStatusResponse = z.infer<
   typeof flowHostStatusResponseSchema
@@ -350,8 +360,10 @@ export type FlowHostEngineLogsResponse = z.infer<
 export type FlowEntry =
   | {
       available: true;
-      frontendUrl: string;
-      reason: null;
+      /** 适配层就绪时的 flow 前端地址；未就绪为 null（主区报 reason 并引导去引擎页）。 */
+      frontendUrl: string | null;
+      /** 未就绪原因；已就绪为 null。 */
+      reason: string | null;
     }
   | { available: false; reason: string };
 
@@ -372,16 +384,18 @@ export function resolveFlowEntry(input: {
     return { available: false, reason: "Flow 插件已停用。" };
   if (!input.status) {
     return {
-      available: false,
-      reason: "无法读取 Flow 状态，请检查本机服务后重试。",
+      available: true,
+      frontendUrl: null,
+      reason: "无法获取 flow 宿主状态（/api/flow/host/status 不可达）。",
     };
   }
   if (!input.status.enabled || !input.status.frontendUrl) {
     return {
-      available: false,
+      available: true,
+      frontendUrl: null,
       reason: input.status.reasons.length
-        ? `宿主适配层未配齐：${input.status.reasons.join(" ")}`
-        : "宿主适配层未配齐。",
+        ? `Flow 运行时未就绪：${input.status.reasons.join(" ")}`
+        : "Flow 运行时未就绪。",
     };
   }
   return {

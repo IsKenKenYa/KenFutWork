@@ -3,7 +3,7 @@
  * Supabase 专有对象清点（去 Supabase 迁移的工作底账）。
  *
  * 用途：
- *   1. 默认模式：扫描 supabase/migrations/*.sql，输出「必须重写 / 可直接沿用」的
+ *   1. 默认模式：扫描 docker/pg/migrations/*.sql，输出「必须重写 / 可直接沿用」的
  *      对象清单与计数——《多端产品设计》§5 承诺的「差异清单」由此生成，避免手写漂移。
  *   2. --check 模式：只要有 Supabase 专有构造残留即非零退出（中性化完成后的门禁）。
  *
@@ -19,7 +19,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
+const MIGRATIONS_DIR = join(process.cwd(), "docker", "pg", "migrations");
 
 const countMatches = (text, re) => (text.match(re) ?? []).length;
 

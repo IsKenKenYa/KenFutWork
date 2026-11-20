@@ -33,7 +33,6 @@ function pageFailure(error: unknown): string {
 function readRef(context: ToolCallBlockRenderContext): string | undefined {
   const { status, raw } = context.toolCallNode.toolCall;
   if (
-    context.isPermissionPreview ||
     status !== "completed" ||
     !raw ||
     typeof raw !== "object" ||

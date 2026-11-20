@@ -16,7 +16,7 @@ interface ActiveRun {
   controller: AbortController;
 }
 
-/** 仅接收真实Agent扩展点提供的事实；HTTP路径/参数不能签发Task或复活结束的Run。 */
+/** 仅接收真实Agent扩展点提供的事实；HTTP路径/参数不能签发执行身份或复活结束的Run。 */
 export function createActiveComputerUseRuns(registry: ToolRegistry) {
   const active = new Map<string, ActiveRun>();
   const closeRun = (runId: string) => {
@@ -31,18 +31,19 @@ export function createActiveComputerUseRuns(registry: ToolRegistry) {
       !entry ||
       !execution?.actor ||
       execution.actor.instanceId !== actor.instanceId ||
-      execution.scopeHandle?.role !== "main" ||
-      execution.delegationDepth
+      (execution.scopeHandle !== undefined &&
+        execution.scopeHandle.role !== "main") ||
+      (execution.delegationDepth ?? 0) > 0
     )
       throw new ToolDeniedError(
         "computer-use",
-        "没有属于当前实例的活动主Code Run。",
+        "没有属于当前实例的活动主 Run。",
       );
     execution.signal?.throwIfAborted();
     return entry;
   };
   const extension: AgentRunExtension = {
-    preset: "code",
+    preset: "shared",
     createMiddleware(_identity, context) {
       return {
         name: "ComputerUseRunBinding",
@@ -53,9 +54,9 @@ export function createActiveComputerUseRuns(registry: ToolRegistry) {
             !execution?.runId ||
             !execution.actor ||
             !execution.signal ||
-            !execution.publishToolEvent ||
-            execution.scopeHandle?.role !== "main" ||
-            execution.delegationDepth
+            (execution.scopeHandle !== undefined &&
+              execution.scopeHandle.role !== "main") ||
+            (execution.delegationDepth ?? 0) > 0
           )
             return;
           execution.signal.throwIfAborted();
@@ -99,14 +100,15 @@ export function createActiveComputerUseRuns(registry: ToolRegistry) {
     const identity = { toolName: name, toolCallId: execution.toolCallId };
     const emit = async (payload: Record<string, unknown>) => {
       if (active.get(runId) !== entry) return;
+      // 事件出口只服务界面展示；无 Task 或出口缺省的运行跳过，工具结果仍正常返回。
       const taskId = entry.context.execution.scopeHandle?.describe().taskId;
-      if (!taskId || !entry.context.execution.publishToolEvent)
-        throw new Error("活动Run未装配持久工具事件出口");
+      const publish = entry.context.execution.publishToolEvent;
+      if (!taskId || !publish) return;
       for await (const event of projectCanonicalToolEvent(
         { ...identity, ...payload },
         { runId, sessionId: taskId, conversationId: taskId },
       ))
-        await entry.context.execution.publishToolEvent(event);
+        await publish(event);
     };
     await emit({
       phase: "started",

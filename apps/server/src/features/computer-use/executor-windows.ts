@@ -5,7 +5,7 @@
  * 受 UIPI/安全桌面限制，原语失败按 `native_failed` 返回，由模型或用户决定是否
  * 手动以管理员身份启动目标应用。
  */
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
@@ -21,92 +21,72 @@ import {
   type CuWindowRow,
 } from "./executor.js";
 import type { CuTarget, ParsedAppRef } from "./target.js";
+import { WindowsHost, type WindowsHostResponse } from "./windows-host.js";
+
+const READ_ONLY_OPERATIONS = new Set([
+  "status",
+  "apps",
+  "windows",
+  "observe",
+  "capture",
+  "geometry",
+  "displays",
+]);
 
 export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
   const defaults = AGENT_GOVERNANCE_DEFAULTS;
+  // 常驻后端：脚本以 -Serve 起动后只编译一次 C#，后续动作不再重启 PowerShell。
+  const host = new WindowsHost(() =>
+    spawn(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Sta",
+        "-File",
+        fileURLToPath(new URL("./windows-native.ps1", import.meta.url)),
+        "-Serve",
+      ],
+      { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+    ),
+  );
   const call = async <T>(
     operation: string,
     input: Record<string, unknown> = {},
     context?: CuOperationContext,
   ): Promise<T> => {
-    return await new Promise<T>((resolve, reject) => {
-      const child = execFile(
-        "powershell.exe",
-        [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-Sta",
-          "-File",
-          fileURLToPath(new URL("./windows-native.ps1", import.meta.url)),
-        ],
-        {
-          timeout: context?.timeoutMs ?? defaults.computerUseActionTimeoutMs,
-          maxBuffer: context?.maxOutputBytes ?? defaults.processMaxOutputBytes,
-          ...(context ? { signal: context.signal } : {}),
-        },
-        (error, stdout, stderr) => {
-          try {
-            const response = JSON.parse(stdout) as {
-              ok: boolean;
-              result?: T;
-              error?: string;
-              actionSent?: boolean;
-            };
-            if (!response.ok) {
-              const message = response.error ?? "Windows桌面原语失败";
-              reject(
-                Object.assign(new Error(message), {
-                  code: message.match(/^([a-z_]+):/)?.[1] ?? "native_failed",
-                  actionSent:
-                    response.actionSent ??
-                    ![
-                      "status",
-                      "apps",
-                      "windows",
-                      "observe",
-                      "capture",
-                      "geometry",
-                      "displays",
-                    ].includes(operation),
-                }),
-              );
-            } else if (error)
-              reject(
-                Object.assign(new Error(`Windows桌面进程退出：${error.code}`), {
-                  code: context?.signal.aborted ? "cancelled" : "native_failed",
-                }),
-              );
-            else resolve(response.result as T);
-          } catch {
-            reject(
-              Object.assign(
-                new Error(
-                  `Windows桌面后端无有效响应：${stderr.trim() || error?.code || "无JSON"}`,
-                ),
-                {
-                  code: context?.signal.aborted ? "cancelled" : "native_failed",
-                },
-              ),
-            );
-          }
-        },
-      );
-      child.stdin?.on("error", () => {});
-      child.stdin?.end(
-        JSON.stringify({
-          operation,
-          ...input,
-          ...(context?.binding ? { expectedBinding: context.binding } : {}),
-          limits: context?.treeLimits ?? CU_AX_DEFAULT_LIMITS,
-          delay: context?.inputDelayMs ?? defaults.computerUseInputDelayMs,
-          maxOutputBytes:
-            context?.maxOutputBytes ?? defaults.processMaxOutputBytes,
-        }),
-      );
-    });
+    const response: WindowsHostResponse = await host.call<T>(
+      {
+        operation,
+        ...input,
+        ...(context?.binding ? { expectedBinding: context.binding } : {}),
+        limits: context?.treeLimits ?? CU_AX_DEFAULT_LIMITS,
+        delay: context?.inputDelayMs ?? defaults.computerUseInputDelayMs,
+        maxOutputBytes:
+          context?.maxOutputBytes ?? defaults.processMaxOutputBytes,
+      },
+      {
+        timeoutMs: context?.timeoutMs ?? defaults.computerUseActionTimeoutMs,
+        ...(context?.signal ? { signal: context.signal } : {}),
+      },
+    );
+    if (!response.ok) {
+      const message = response.error ?? "Windows桌面原语失败";
+      throw Object.assign(new Error(message), {
+        code: message.match(/^([a-z_]+):/)?.[1] ?? "native_failed",
+        actionSent: response.actionSent ?? !READ_ONLY_OPERATIONS.has(operation),
+      });
+    }
+    return response.result as T;
   };
-  await call("status");
+  // 首次调用要现场编译 C#，并行启动或安全软件扫描可能造成一次瞬时失败；
+  // 只重试启动探针，真实桌面操作不自动重放。
+  try {
+    await call("status");
+  } catch {
+    await call("status");
+  }
   const geometry = async (
     app: ParsedAppRef,
     context?: CuOperationContext,
@@ -157,31 +137,39 @@ export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
     action: CuInputAction,
     context: CuOperationContext,
   ): Promise<CuActionResult> => {
-    await focus(app, context);
     try {
-      if (action.kind === "focus")
+      if (action.kind === "focus") {
+        await focus(app, context);
         return { actionSent: true, detail: "已激活目标窗口" };
+      }
       if (action.kind === "keys")
-        return await call("keys", { app, keys: action.keys }, context);
+        return await call(
+          "keys",
+          { app, keys: action.keys, activate: true },
+          context,
+        );
       if (action.kind === "drag") {
         const from = await point(app, action.from, context),
           to = await point(app, action.to, context);
         return await call(
           "drag",
-          { app, ...from, toX: to.x, toY: to.y },
+          { app, ...from, toX: to.x, toY: to.y, activate: true },
           context,
         );
       }
       if (action.kind === "scroll") {
-        if (action.target)
-          await call(
-            "move",
-            { app, ...(await point(app, action.target, context)) },
-            context,
-          );
+        const at = action.target
+          ? await point(app, action.target, context)
+          : {};
         return await call(
           "scroll",
-          { app, direction: action.direction, amount: action.amount },
+          {
+            app,
+            ...at,
+            direction: action.direction,
+            amount: action.amount,
+            activate: true,
+          },
           context,
         );
       }
@@ -193,6 +181,7 @@ export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
           ...(action.kind === "click"
             ? { button: action.button, count: action.count }
             : {}),
+          activate: true,
         },
         context,
       );
@@ -246,7 +235,6 @@ export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
       if (!context) throw new Error("Windows输入缺少控制上下文");
       if (target?.kind === "element")
         return call("element", { app, index: target.index, text }, context);
-      await focus(app, context);
       if (target)
         await perform(
           app,
@@ -254,7 +242,7 @@ export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
           context,
         );
       try {
-        return await call("type", { app, text }, context);
+        return await call("type", { app, text, activate: true }, context);
       } finally {
         if (context.signal.aborted)
           await call(
@@ -265,6 +253,8 @@ export async function createWindowsExecutor(): Promise<ComputerUseExecutor> {
       }
     },
     perform,
-    stop: async () => {},
+    stop: async () => {
+      await host.stop();
+    },
   };
 }

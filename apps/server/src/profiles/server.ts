@@ -3,6 +3,7 @@ import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
 import { isDesktopRuntime } from "../desktop/runtime.js";
+import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
@@ -210,6 +211,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCheckpointsPlugin(),
     createGoalsPlugin(),
     createChatPlugin(),
+    // 执行方式（自主/计划/对话/目标/创造）：线程级持久化与工具策略，
+    // 供 composer 选择器与 run 的 pre-step/tool-pre-execute 事件消费
+    createAgentModesPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
     createMediaDriversPlugin(),

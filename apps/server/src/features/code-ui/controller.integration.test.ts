@@ -210,17 +210,20 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
         );
         await repository.delete(scope.instanceId, scope.taskId);
         await host.refresh();
-        await expect(
-          host.call("listTaskList", {
-            ...both,
-            workspaceScopes: [
-              {
-                workspacePath: scope.rootDirectory,
-                workspaceIdentity: oldIdentity,
-              },
-            ],
-          }),
-        ).rejects.toMatchObject({ code: "not_found" });
+        // 已删除目录的旧作用域按空来源处理，不再让整个任务列表查询失败。
+        expect(
+          (
+            await host.call("listTaskList", {
+              ...both,
+              workspaceScopes: [
+                {
+                  workspacePath: scope.rootDirectory,
+                  workspaceIdentity: oldIdentity,
+                },
+              ],
+            })
+          )?.result,
+        ).toMatchObject({ items: [], total: 0, hasMore: false });
         expect(
           (
             await host.call("listTaskList", {
@@ -387,17 +390,20 @@ describe.skipIf(!enabled)("原任务目录公开宿主 integration", () => {
         connectionId: host.stream.ready.hello.connectionId,
       });
     try {
-      expect(
-        (
-          await controller("listTaskList", [
-            {
-              kind: "active",
-              workspaceScopes: [{ workspacePath: "/不属于本工作区" }],
-              sortBy: "updated",
-            },
-          ])
-        ).status,
-      ).toBe(404);
+      // 不在来源名单里的目录返回空列表：缺失目录是客户端状态，不是查询失败。
+      const missing = await controller("listTaskList", [
+        {
+          kind: "active",
+          workspaceScopes: [{ workspacePath: "/不属于本工作区" }],
+          sortBy: "updated",
+        },
+      ]);
+      expect(missing.status, JSON.stringify(missing.body)).toBe(200);
+      expect(missing.body.result).toMatchObject({
+        items: [],
+        total: 0,
+        hasMore: false,
+      });
       expect(
         (
           await controller("listTaskList", [

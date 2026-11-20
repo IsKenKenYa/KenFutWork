@@ -427,14 +427,6 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
   );
   // 没有明确深链时由壳恢复窗口选择，父页仅同步可用工作方式；
   // 旧「code-navigate 换壳请求」已随契约删除——迟到的该消息被 schema 拒之门外。
-  fireEvent(
-    window,
-    new MessageEvent("message", {
-      origin: window.location.origin,
-      source: frame.contentWindow,
-      data: { type: "kenfutwork:code-mounted" },
-    }),
-  );
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {
@@ -475,6 +467,40 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
   window.removeEventListener(LOCAL_ACCESS_LOST_EVENT, lost);
 });
 
+it("壳挂载后补发模式导航：加载期间落定的 Flow 入口不因监听未就位丢失", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  render(
+    <CodeWorkbenchFrame
+      availableModes={["code", "design", "flow"]}
+      mode="flow"
+    />,
+  );
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const event = (data: unknown) =>
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  const navigation = {
+    type: "kenfutwork:workbench-navigation",
+    availableModes: ["code", "design", "flow"],
+    mode: "flow",
+  };
+  event({ type: "kenfutwork:code-ready" });
+  expect(send).toHaveBeenCalledWith(navigation, window.location.origin);
+  // ready 时壳的导航监听可能尚未注册（插件卡片等启动请求仍在进行）：挂载完成后必须补发，
+  // 否则 Flow 入口只能靠刷新出现。
+  send.mockClear();
+  event({ type: "kenfutwork:code-mounted" });
+  expect(send).toHaveBeenCalledWith(navigation, window.location.origin);
+});
+
 it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与最新模式", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
   const view = render(<CodeWorkbenchFrame active={false} />);
@@ -491,7 +517,6 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
       }),
     );
   event({ type: "kenfutwork:code-ready" });
-  event({ type: "kenfutwork:code-mounted" });
   expect(send).toHaveBeenCalledWith(
     expect.objectContaining({ type: "kenfutwork:code-bootstrap" }),
     window.location.origin,
@@ -501,10 +526,7 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
     window.location.origin,
   );
   // 模式变化（父页深链解析）在隐藏期间照常推送；恢复时补活动状态，不换文档。
-  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
-  view.rerender(
-    <CodeWorkbenchFrame active mode="design" canvasId={canvasId} />,
-  );
+  view.rerender(<CodeWorkbenchFrame active mode="design" />);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
   expect(send).toHaveBeenCalledWith(
     { type: "kenfutwork:workspace-activity", active: true },
@@ -515,31 +537,12 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
       type: "kenfutwork:workbench-navigation",
       availableModes: ["code", "design"],
       mode: "design",
-      documentTarget: { resourceType: "canvas", documentId: canvasId },
     },
     window.location.origin,
   );
-  view.rerender(
-    <CodeWorkbenchFrame
-      active
-      mode="design"
-      canvasId={canvasId}
-      availableModes={["code", "design", "flow"]}
-    />,
-  );
-  expect(send).toHaveBeenCalledWith(
-    {
-      type: "kenfutwork:workbench-navigation",
-      availableModes: ["code", "design", "flow"],
-    },
-    window.location.origin,
-  );
-  expect(
-    send.mock.calls.filter(([payload]) => payload.documentTarget),
-  ).toHaveLength(1);
 });
 
-it("管理文档创建任务在壳挂载后按 id 推送一次，重复渲染不重复建草稿", async () => {
+it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染不重复建草稿", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
   const request = {
     id: 1,
@@ -555,7 +558,7 @@ it("管理文档创建任务在壳挂载后按 id 推送一次，重复渲染不
       ([message]) =>
         (message as { type?: unknown }).type === "kenfutwork:host-new-task",
     );
-  // 请求启动配置时，壳内的任务监听器尚未就位。
+  // ready 之前不推：壳内监听器尚未就位，消息会丢。
   expect(taskPosts()).toHaveLength(0);
   fireEvent(
     window,
@@ -563,15 +566,6 @@ it("管理文档创建任务在壳挂载后按 id 推送一次，重复渲染不
       origin: window.location.origin,
       source: frame.contentWindow,
       data: { type: "kenfutwork:code-ready" },
-    }),
-  );
-  expect(taskPosts()).toHaveLength(0);
-  fireEvent(
-    window,
-    new MessageEvent("message", {
-      origin: window.location.origin,
-      source: frame.contentWindow,
-      data: { type: "kenfutwork:code-mounted" },
     }),
   );
   await waitFor(() => expect(taskPosts()).toHaveLength(1));

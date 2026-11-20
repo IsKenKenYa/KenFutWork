@@ -52,7 +52,7 @@ const LEGACY_ALLOWED_FILES = new Set([
   // 兼容 shim 本体：LOOMIC_* → KENFUTWORK_* 一次性映射（新名优先）
   "apps/server/src/config/env.ts",
   // 盘点标注的「有意保留」：已执行迁移的历史陈述、事故记录注释
-  "supabase/migrations/20260914250000_mcp_servers.sql",
+  "docker/pg/migrations/20260914250000_mcp_servers.sql",
 ]);
 
 function walkFiles(dir, excludeParts, out = []) {

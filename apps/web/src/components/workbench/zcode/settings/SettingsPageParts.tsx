@@ -9,7 +9,6 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { useSettingsSearchTarget, type SettingsSearchId } from "@zui/settings-search/index.js";
 import {
   CODE_PREVIEW_THEME_OPTIONS,
   SETTINGS_PREVIEW_CODE,
@@ -121,39 +120,26 @@ export function ThemePreviewCard({
 }
 
 export function SettingsRow({
-  searchId,
   label,
   description,
   control,
   detail,
   controlLayout = "default",
 }: {
-  searchId?: SettingsSearchId;
   label: ReactNode;
   description?: ReactNode;
   control: ReactNode;
   detail?: ReactNode;
   controlLayout?: "default" | "wide";
 }) {
-  const { ref, highlighted } = useSettingsSearchTarget(searchId);
   return (
-    <div
-      ref={ref}
-      tabIndex={searchId ? -1 : undefined}
-      role={searchId ? "group" : undefined}
-      aria-label={searchId && typeof label === "string" ? label : undefined}
-      data-settings-search-target={searchId}
-      className={cn(
-        "border-t border-border px-4 py-3 first:border-t-0 focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2",
-        highlighted && "bg-selected",
-      )}
-    >
+    <div className="border-t border-border px-4 py-3 first:border-t-0">
       <div
         className={cn(
           "grid items-center gap-4",
           controlLayout === "wide"
             ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_280px]"
-            : "grid-cols-[minmax(0,1fr)_minmax(0,min(192px,55%))]",
+            : "grid-cols-[minmax(0,1fr)_192px]",
         )}
       >
         <div className="min-w-0">

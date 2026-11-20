@@ -46,21 +46,11 @@ const VOICE_UI_SRC = join(
   "voice-ui",
   "src",
 );
-const preservedSources = new Set<string>(
-  (
-    JSON.parse(
-      readFileSync(
-        join(
-          import.meta.dirname,
-          "../../../packages/third-party/zcode/来源清单.json",
-        ),
-        "utf8",
-      ),
-    ) as { records: Array<{ target: string }> }
-  ).records.map((record) =>
-    join(import.meta.dirname, "../../..", record.target),
-  ),
-);
+/** ZCode 上游移植目录（`host/` 是我们的宿主适配层，仍受文案规则约束）。 */
+const ZCODE_UI_ROOT = join(COMPONENTS, "workbench", "zcode");
+const ZCODE_UI_HOST = join(ZCODE_UI_ROOT, "host");
+const isPreservedSource = (file: string) =>
+  file.startsWith(ZCODE_UI_ROOT) && !file.startsWith(ZCODE_UI_HOST);
 const CJK = /[\u4e00-\u9fff]/;
 const CJK_GLOBAL = /[\u4e00-\u9fff]/g;
 
@@ -86,7 +76,7 @@ function uiFiles(): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".tsx") && !preservedSources.has(path))
+      else if (entry.name.endsWith(".tsx") && !isPreservedSource(path))
         files.push(path);
     }
   };

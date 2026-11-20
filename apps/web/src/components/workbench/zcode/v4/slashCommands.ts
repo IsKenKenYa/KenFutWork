@@ -33,6 +33,8 @@ export type V4VisibleSlashCommand =
     };
 
 interface V4VisibleSlashCommandParseOptions {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
+  goalStatus?: import("@zcode/shared/zcode-protocol-v4").GoalState["status"];
   contextAttachmentCount?: number;
 }
 
@@ -56,7 +58,15 @@ export function parseV4VisibleSlashCommand(
   options: V4VisibleSlashCommandParseOptions = {},
 ): V4VisibleSlashCommand | null {
   const displayText = content.trim();
-  if (!displayText.startsWith("/")) return null;
+  if (!displayText.startsWith("/")) {
+    if (options.executionMode !== "goal" || (options.goalStatus && options.goalStatus !== "verified"))
+      return null;
+    if (attachments.length > 0 || (options.contextAttachmentCount ?? 0) > 0)
+      return { kind: "unsupportedGoal", action: "attachments", displayText };
+    return displayText
+      ? { kind: "sendGoalCommand", objective: displayText, displayText }
+      : { kind: "emptyGoal", displayText };
+  }
   const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(displayText);
   if (!match) return null;
   const commandName = match[1]?.toLowerCase() ?? "";

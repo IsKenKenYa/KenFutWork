@@ -4,20 +4,19 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   DownloadIcon,
+  MinusIcon,
+  PlusIcon,
   XIcon,
 } from "lucide-react";
-import type { IPlatformService } from "@zcode/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
-import { Dialog, DialogContent, DialogTitle } from "@zui/components/ui/dialog.js";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@zui/components/ui/dialog.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { ImagePreviewSurface } from "@zui/image-preview-editor/ImagePreviewSurface.js";
 import { logger } from "@zui/logger.js";
-
-export { clampOffset as clampImagePreviewOffset } from "@zui/image-preview-editor/geometry.js";
 
 export interface ImagePreviewDialogItem {
   alt: string;
@@ -28,35 +27,40 @@ export interface ImagePreviewDialogItem {
   src?: string;
 }
 
+interface PreviewOffset {
+  x: number;
+  y: number;
+}
+
+interface PreviewSize {
+  height: number;
+  width: number;
+}
+
+const defaultPreviewOffset: PreviewOffset = { x: 0, y: 0 };
 const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 
 const imageExtensionByMediaType: Record<string, string> = {
-  "image/apng": "apng",
   "image/avif": "avif",
-  "image/bmp": "bmp",
-  "image/x-ms-bmp": "bmp",
   "image/gif": "gif",
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/svg+xml": "svg",
   "image/webp": "webp",
-  "image/x-icon": "ico",
-  "image/vnd.microsoft.icon": "ico",
 };
 
-function imageDownloadFilename(item: ImagePreviewDialogItem, mediaType = item.mediaType ?? "") {
-  const knownExtension = imageExtensionByMediaType[mediaType.toLowerCase().split(";")[0] ?? ""];
-  let sourcePath: string | undefined;
-  if (item.src && isHttpSource(item.src)) sourcePath = new URL(item.src).pathname;
-  const supportedExtensions = new Set([...Object.values(imageExtensionByMediaType), "jpeg"]);
-  const sourceExtension = [item.filename, sourcePath, item.alt]
-    .map((name) => /\.([a-z0-9]+)$/iu.exec(name?.trim() ?? "")?.[1]?.toLowerCase())
-    .find((extension) => extension !== undefined && supportedExtensions.has(extension));
-  // 原字节不能统一命名成 PNG；未知 MIME 保留可信图片后缀，已知 MIME 拒绝不相容的后缀。
-  const compatible =
-    !knownExtension || (sourceExtension === "jpeg" ? "jpg" : sourceExtension) === knownExtension;
-  const extension = (compatible ? sourceExtension : undefined) ?? knownExtension ?? "bin";
-  return `${safeDownloadBaseName(item)}.${extension}`;
+export function clampImagePreviewOffset(
+  offset: PreviewOffset,
+  scale: number,
+  imageSize: PreviewSize,
+  viewportSize: PreviewSize,
+): PreviewOffset {
+  const maxX = Math.max(0, (imageSize.width * scale - viewportSize.width) / 2);
+  const maxY = Math.max(0, (imageSize.height * scale - viewportSize.height) / 2);
+  return {
+    x: maxX === 0 ? 0 : Math.min(maxX, Math.max(-maxX, offset.x)),
+    y: maxY === 0 ? 0 : Math.min(maxY, Math.max(-maxY, offset.y)),
+  };
 }
 
 function safeDownloadBaseName(item: ImagePreviewDialogItem) {
@@ -144,52 +148,6 @@ function startBrowserNativeDownload(source: string) {
   link.remove();
 }
 
-export async function downloadImagePreview(
-  item: ImagePreviewDialogItem,
-  saveFile?: IPlatformService["saveFile"],
-): Promise<{ kind: "saved"; path: string } | { kind: "started" } | { kind: "canceled" }> {
-  if (!item.src) throw new ImageDownloadError("download_failed");
-  if (saveFile && isHttpSource(item.src)) {
-    const result = await saveFile({
-      sourceUrl: item.src,
-      suggestedName: imageDownloadFilename(item),
-    });
-    if (result.canceled) return { kind: "canceled" };
-    if (!result.success || !result.path) throw new Error(result.error || "save_failed");
-    return { kind: "saved", path: result.path };
-  }
-  let blob: Blob;
-  try {
-    blob = await readBoundedImageBlob(item.src);
-  } catch (error) {
-    if (
-      !saveFile &&
-      isHttpSource(item.src) &&
-      !(error instanceof ImageDownloadError && error.code === "file_too_large")
-    ) {
-      startBrowserNativeDownload(item.src);
-      return { kind: "started" };
-    }
-    throw error;
-  }
-  const filename = imageDownloadFilename(item, blob.type);
-  if (saveFile) {
-    const result = await saveFile({ data: await blob.arrayBuffer(), suggestedName: filename });
-    if (result.canceled) return { kind: "canceled" };
-    if (!result.success || !result.path) throw new Error(result.error || "save_failed");
-    return { kind: "saved", path: result.path };
-  }
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(objectUrl);
-  return { kind: "started" };
-}
-
 export function ImagePreviewDialog({
   dialogTestId,
   imageTestId,
@@ -209,64 +167,217 @@ export function ImagePreviewDialog({
 }) {
   const { intl } = useZCodeIntl();
   const platform = useOptionalPlatform();
-  const [selectedIndex, setSelectedIndex] = useState(initialIndex);
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const [previewScale, setPreviewScale] = useState(1);
+  const [previewOffset, setPreviewOffset] = useState(defaultPreviewOffset);
   const [isDownloading, setIsDownloading] = useState(false);
   const [videoState, setVideoState] = useState<"loading" | "ready" | "unsupported">("loading");
+  const previewViewportRef = useRef<HTMLDivElement>(null);
+  const previewImageRef = useRef<HTMLImageElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
-  const navigationGuardRef = useRef<((proceed: () => void) => void) | null>(null);
-  const bindNavigationGuard = useCallback(
-    (guard: typeof navigationGuardRef.current) => { navigationGuardRef.current = guard; },
-    [],
-  );
-  const activeIndex = Math.min(Math.max(selectedIndex, 0), Math.max(items.length - 1, 0));
+  const previewPointersRef = useRef(new Map<number, PreviewOffset>());
+  const dragStartRef = useRef<{
+    offset: PreviewOffset;
+    pointer: PreviewOffset;
+  } | null>(null);
+  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
   const activeItem = items[activeIndex];
   const activeItemIsVideo = activeItem?.mediaType?.startsWith("video/") === true;
   const hasMultiple = items.length > 1;
 
-  const requestNavigation = (proceed: () => void) => {
-    const guard = navigationGuardRef.current;
-    if (guard) guard(proceed);
-    else proceed();
+  const resetPreviewTransform = () => {
+    const viewport = previewViewportRef.current;
+    if (viewport) {
+      for (const pointerId of previewPointersRef.current.keys()) {
+        if (viewport.hasPointerCapture(pointerId)) {
+          viewport.releasePointerCapture(pointerId);
+        }
+      }
+    }
+    previewPointersRef.current.clear();
+    dragStartRef.current = null;
+    pinchStartRef.current = null;
+    setPreviewScale(1);
+    setPreviewOffset(defaultPreviewOffset);
   };
 
   const navigate = (direction: -1 | 1) => {
     if (items.length <= 1) return;
     const next = (activeIndex + direction + items.length) % items.length;
-    requestNavigation(() => {
-      setSelectedIndex(next);
-      onActiveIndexChange?.(next);
-    });
+    setActiveIndex(next);
+    onActiveIndexChange?.(next);
+    resetPreviewTransform();
   };
 
   useEffect(() => {
     if (!open) return;
-    setSelectedIndex(initialIndex);
-  }, [initialIndex, open]);
+    setActiveIndex(Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0)));
+    resetPreviewTransform();
+  }, [initialIndex, items.length, open]);
 
   useEffect(() => {
     setVideoState("loading");
   }, [activeIndex, activeItem?.src, open]);
 
   useEffect(() => {
-    const video = previewVideoRef.current;
     return () => {
       // 媒体 gallery 切离 video 时旧播放器可能继续解码或发声；显式暂停，
       // 让图片/视频混合导航只保留当前项的播放生命周期。
-      video?.pause();
+      previewVideoRef.current?.pause();
     };
   }, [activeIndex, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") navigate(-1);
+      else if (event.key === "ArrowRight") navigate(1);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeIndex, items.length, open]);
+
+  const clampPreviewOffset = (offset: PreviewOffset, scale: number) => {
+    const image = previewImageRef.current;
+    const viewport = previewViewportRef.current;
+    if (!image || !viewport) return defaultPreviewOffset;
+    return clampImagePreviewOffset(
+      offset,
+      scale,
+      { height: image.offsetHeight, width: image.offsetWidth },
+      { height: viewport.clientHeight, width: viewport.clientWidth },
+    );
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const clampCurrentOffset = () => {
+      setPreviewOffset((current) => clampPreviewOffset(current, previewScale));
+    };
+    window.addEventListener("resize", clampCurrentOffset);
+    return () => window.removeEventListener("resize", clampCurrentOffset);
+  }, [open, previewScale]);
+
+  const changePreviewScale = (delta: number) => {
+    const nextScale = Math.min(3, Math.max(0.5, previewScale + delta));
+    setPreviewScale(nextScale);
+    setPreviewOffset((current) => clampPreviewOffset(current, nextScale));
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const pointer = { x: event.clientX, y: event.clientY };
+    previewPointersRef.current.set(event.pointerId, pointer);
+    if (previewPointersRef.current.size === 1) {
+      dragStartRef.current = { offset: previewOffset, pointer };
+      pinchStartRef.current = null;
+      return;
+    }
+    const [first, second] = Array.from(previewPointersRef.current.values());
+    if (!first || !second) return;
+    const distance = Math.hypot(second.x - first.x, second.y - first.y);
+    if (distance === 0) return;
+    pinchStartRef.current = { distance, scale: previewScale };
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!previewPointersRef.current.has(event.pointerId)) return;
+    previewPointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+    const pointers = Array.from(previewPointersRef.current.values());
+    if (pointers.length >= 2) {
+      const [first, second] = pointers;
+      if (!first || !second || !pinchStartRef.current) return;
+      const distance = Math.hypot(second.x - first.x, second.y - first.y);
+      const nextScale = Math.min(
+        3,
+        Math.max(0.5, pinchStartRef.current.scale * (distance / pinchStartRef.current.distance)),
+      );
+      setPreviewScale(nextScale);
+      setPreviewOffset((current) => clampPreviewOffset(current, nextScale));
+      return;
+    }
+    const dragStart = dragStartRef.current;
+    const pointer = pointers[0];
+    if (!dragStart || !pointer) return;
+    setPreviewOffset(
+      clampPreviewOffset(
+        {
+          x: dragStart.offset.x + pointer.x - dragStart.pointer.x,
+          y: dragStart.offset.y + pointer.y - dragStart.pointer.y,
+        },
+        previewScale,
+      ),
+    );
+  };
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // 显式释放图片拖拽捕获；残留 capture 会让后续 hover/click 继续命中视口而非浮层按钮。
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    previewPointersRef.current.delete(event.pointerId);
+    pinchStartRef.current = null;
+    const remainingPointer = Array.from(previewPointersRef.current.values())[0];
+    dragStartRef.current = remainingPointer
+      ? { offset: previewOffset, pointer: remainingPointer }
+      : null;
+  };
 
   const downloadActiveImage = async () => {
     if (!activeItem?.src || activeItemIsVideo || isDownloading) return;
     setIsDownloading(true);
     try {
-      const result = await downloadImagePreview(activeItem, platform?.saveFile);
-      if (result.kind === "saved") {
-        toast(intl.formatMessage({ id: "markdownImage.downloadSucceeded" }));
-      } else if (result.kind === "started") {
-        toast(intl.formatMessage({ id: "markdownImage.downloadStarted" }));
+      if (platform?.saveFile && isHttpSource(activeItem.src)) {
+        const result = await platform.saveFile({
+          sourceUrl: activeItem.src,
+          suggestedName: `${safeDownloadBaseName(activeItem)}.png`,
+        });
+        if (result.canceled) return;
+        if (!result.success || !result.path) throw new Error(result.error || "save_failed");
+        toast(intl.formatMessage({ id: "markdownImage.downloadSucceeded" }, { path: result.path }));
+        return;
       }
+
+      let blob: Blob;
+      try {
+        blob = await readBoundedImageBlob(activeItem.src);
+      } catch (error) {
+        if (
+          !platform?.saveFile &&
+          isHttpSource(activeItem.src) &&
+          !(error instanceof ImageDownloadError && error.code === "file_too_large")
+        ) {
+          // <img> 可显示无 CORS 资源，但 fetch 无法读取；交给浏览器原生导航避免假失败。
+          startBrowserNativeDownload(activeItem.src);
+          toast(intl.formatMessage({ id: "markdownImage.downloadStarted" }));
+          return;
+        }
+        throw error;
+      }
+      const extension = imageExtensionByMediaType[blob.type.toLowerCase()] ?? "png";
+      const filename = `${safeDownloadBaseName(activeItem)}.${extension}`;
+      if (platform?.saveFile) {
+        const result = await platform.saveFile({
+          data: await blob.arrayBuffer(),
+          suggestedName: filename,
+        });
+        if (result.canceled) return;
+        if (!result.success || !result.path) throw new Error(result.error || "save_failed");
+        toast(intl.formatMessage({ id: "markdownImage.downloadSucceeded" }, { path: result.path }));
+        return;
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast(intl.formatMessage({ id: "markdownImage.downloadStarted" }));
     } catch (error) {
       logger.warn("[ImagePreviewDialog] 图片下载失败", {
         // 签名 URL 的 userinfo/query/fragment 不参与排障，禁止写入持久化日志。
@@ -280,65 +391,18 @@ export function ImagePreviewDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => requestNavigation(() => onOpenChange(next))}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
         // Radix modal 会禁用 body 指针事件；预览层需显式恢复命中并退出 Electron 拖拽区。
         className="pointer-events-auto h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none place-items-center gap-0 overflow-hidden border-0 bg-transparent p-10 shadow-none [app-region:no-drag] sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] platform-linux-desktop:h-[calc(100dvh-4rem)]"
         data-testid={dialogTestId}
-        onOpenAutoFocus={() => {
-          openerRef.current = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
-        }}
-        onCloseAutoFocus={(event) => {
-          const opener = openerRef.current;
-          openerRef.current = null;
-          if (!opener?.isConnected) return;
-          event.preventDefault();
-          opener.focus();
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.defaultPrevented ||
-            (event.target instanceof Element &&
-              event.target.closest("input, textarea, video, [contenteditable=true]"))
-          ) return;
-          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-            event.preventDefault();
-            navigate(event.key === "ArrowLeft" ? -1 : 1);
-          }
-        }}
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">
           {activeItem?.alt || intl.formatMessage({ id: "chat.attachments.preview.title" })}
         </DialogTitle>
         <div className="pointer-events-auto absolute right-4 top-4 z-20 flex items-center gap-2 [app-region:no-drag] platform-mac-desktop:top-12 platform-linux-desktop:right-6 platform-linux-desktop:top-4 platform-windows-desktop:right-6 platform-windows-desktop:top-[calc(env(titlebar-area-height,48px)_+_0.5rem)]">
-          {hasMultiple ? (
-            <>
-              <Button
-                type="button"
-                aria-label={intl.formatMessage({ id: "markdownImage.previous" })}
-                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background/80"
-                onClick={() => navigate(-1)}
-                size="icon-md"
-                variant="ghost"
-              >
-                <ArrowLeftIcon />
-              </Button>
-              <Button
-                type="button"
-                aria-label={intl.formatMessage({ id: "markdownImage.next" })}
-                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background/80"
-                onClick={() => navigate(1)}
-                size="icon-md"
-                variant="ghost"
-              >
-                <ArrowRightIcon />
-              </Button>
-            </>
-          ) : null}
           {!activeItemIsVideo ? (
             <Button
               type="button"
@@ -352,17 +416,42 @@ export function ImagePreviewDialog({
               <DownloadIcon />
             </Button>
           ) : null}
-          <Button
-            type="button"
-            aria-label={intl.formatMessage({ id: "common.close" })}
-            className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background/80"
-            onClick={() => requestNavigation(() => onOpenChange(false))}
-            size="icon-md"
-            variant="ghost"
-          >
-            <XIcon />
-          </Button>
+          <DialogClose asChild>
+            <Button
+              type="button"
+              aria-label={intl.formatMessage({ id: "common.close" })}
+              className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background/80"
+              size="icon-md"
+              variant="ghost"
+            >
+              <XIcon />
+            </Button>
+          </DialogClose>
         </div>
+        {hasMultiple ? (
+          <>
+            <Button
+              type="button"
+              aria-label={intl.formatMessage({ id: "markdownImage.previous" })}
+              className="pointer-events-auto absolute left-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-background text-foreground shadow-md [app-region:no-drag] hover:bg-background/80"
+              onClick={() => navigate(-1)}
+              size="icon-md"
+              variant="ghost"
+            >
+              <ArrowLeftIcon />
+            </Button>
+            <Button
+              type="button"
+              aria-label={intl.formatMessage({ id: "markdownImage.next" })}
+              className="pointer-events-auto absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border bg-background text-foreground shadow-md [app-region:no-drag] hover:bg-background/80"
+              onClick={() => navigate(1)}
+              size="icon-md"
+              variant="ghost"
+            >
+              <ArrowRightIcon />
+            </Button>
+          </>
+        ) : null}
         {activeItem ? (
           activeItemIsVideo ? (
             <div className="flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden">
@@ -415,17 +504,59 @@ export function ImagePreviewDialog({
                 </p>
               ) : null}
             </div>
-          ) : open && activeItem.src ? (
-            <ImagePreviewSurface
-              key={JSON.stringify([activeIndex, activeItem.src])}
-              alt={activeItem.alt}
-              filename={activeItem.filename}
-              imageTestId={imageTestId}
-              src={activeItem.src}
-              onNavigationGuardChange={bindNavigationGuard}
-              onSaved={() => onOpenChange(false)}
-            />
+          ) : activeItem.src ? (
+            <div
+              className="flex size-full min-h-0 min-w-0 touch-none cursor-grab items-center justify-center overflow-hidden active:cursor-grabbing"
+              onPointerCancel={handlePointerEnd}
+              onPointerDown={handlePointerDown}
+              onLostPointerCapture={handlePointerEnd}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerEnd}
+              ref={previewViewportRef}
+            >
+              <img
+                alt={activeItem.alt}
+                className="max-h-full max-w-full select-none rounded-xl border border-border bg-background object-contain shadow-2xl"
+                data-testid={imageTestId}
+                draggable={false}
+                onLoad={resetPreviewTransform}
+                ref={previewImageRef}
+                src={activeItem.src}
+                style={{
+                  transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0) scale(${previewScale})`,
+                }}
+              />
+            </div>
           ) : null
+        ) : null}
+        {!activeItemIsVideo ? (
+          <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-popover-border bg-popover/95 p-1 shadow-md [app-region:no-drag]">
+            <Button
+              type="button"
+              aria-label={intl.formatMessage({ id: "markdownImage.zoomOut" })}
+              className="rounded-full"
+              disabled={previewScale <= 0.5}
+              onClick={() => changePreviewScale(-0.5)}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <MinusIcon />
+            </Button>
+            <span className="min-w-12 text-center text-ui-base text-foreground">
+              {Math.round(previewScale * 100)}%
+            </span>
+            <Button
+              type="button"
+              aria-label={intl.formatMessage({ id: "markdownImage.zoomIn" })}
+              className="rounded-full"
+              disabled={previewScale >= 3}
+              onClick={() => changePreviewScale(0.5)}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <PlusIcon />
+            </Button>
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>

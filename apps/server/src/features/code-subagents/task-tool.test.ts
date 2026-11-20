@@ -19,6 +19,9 @@ async function fixture(
       context: TaskWorkContext,
       childRunId: string,
     ) => Promise<RunUsageSummary | null>;
+    resolveTarget?: Parameters<
+      typeof createCodeSubagentTool
+    >[0]["resolveTarget"];
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-child-tool-"));
@@ -89,6 +92,7 @@ async function fixture(
   let childSignal: AbortSignal | undefined;
   const tool = createCodeSubagentTool({
     manager,
+    ...(options?.resolveTarget ? { resolveTarget: options.resolveTarget } : {}),
     limitsFor: async () => ({ maxDepth: 2, previewMaxChars: 4 }),
     ...(options.usageFor ? { usageFor: options.usageFor } : {}),
     runChild: async (request, signal) => {
@@ -164,6 +168,61 @@ it.each(["code", "design"] as const)(
     }
   },
 );
+
+it("自定义智能体按名称派发：系统提示、工具清单与模型覆盖进入子运行", async () => {
+  const f = await fixture("code", {
+    resolveTarget: async ({ name }) =>
+      name === "doc-reviewer"
+        ? {
+            role: "worker",
+            label: "doc-reviewer",
+            systemPrompt: "你是文档审阅员。",
+            toolAllowlist: ["Read", "Grep"],
+            disallowedTools: ["Bash"],
+            modelSelection: {
+              providerId: "provider-1",
+              modelId: "model-a",
+            },
+          }
+        : null,
+  });
+  try {
+    const pending = f.tool.execute(
+      { ...input, subagent_type: "doc-reviewer" },
+      f.execution,
+    );
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "done",
+      outputRef: "/logs/result",
+      outputStats: { retainedBytes: 4, totalBytes: 4, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    await pending;
+    expect(f.requests[0]).toMatchObject({
+      role: "worker",
+      systemPrompt: "你是文档审阅员。",
+      toolAllowlist: ["Read", "Grep"],
+      disallowedTools: ["Bash"],
+      model: "provider-1:model-a",
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("未知名称与内置名称都由同一解析器拒绝或放行", async () => {
+  const f = await fixture("code", { resolveTarget: async () => null });
+  try {
+    await expect(
+      f.tool.execute({ ...input, subagent_type: "missing-agent" }, f.execution),
+    ).rejects.toThrow(/未知子智能体/);
+  } finally {
+    await f.cleanup();
+  }
+});
 
 it("后台Task不随父停止，重放返回同一child identity，完整输出引用保留", async () => {
   const f = await fixture();

@@ -630,14 +630,14 @@ describe("引擎栈「装上即用」自动安装判据", () => {
     ).toBe("skip");
   });
 
-  it("栈容器已在（哪怕全停）→ 不动，交给停止/启动语义", () => {
+  it("栈容器已在（哪怕全停）→ 也跑一次幂等初始化，补上中断的 Dify 管理员创建", () => {
     expect(
       planEngineAutoInstall({
         installState: "idle",
         stackContainerCount: 12,
         recommended: "container",
       }).action,
-    ).toBe("skip");
+    ).toBe("install");
   });
 
   it("容器清单查询失败时即使 Docker 可用也不自动安装", () => {

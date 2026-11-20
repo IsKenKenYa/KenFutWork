@@ -124,6 +124,18 @@ export async function registerFlowHostRoutes(
     secret?: string | undefined;
     frontendUrl?: string | undefined;
     gatewayUrl?: string | undefined;
+    /**
+     * 托管运行时状态（本机自动托管形态）：前端地址可能随端口冲突改写，
+     * 状态端点每次按实时快照回答，不缓存装配期的字符串。
+     */
+    runtime?:
+      | (() => {
+          state: "external" | "starting" | "ready" | "error" | "stopped";
+          detail?: string;
+          frontendUrl?: string;
+          gatewayUrl?: string;
+        })
+      | undefined;
   },
 ): Promise<void> {
   const error = (
@@ -153,15 +165,33 @@ export async function registerFlowHostRoutes(
   app.get("/api/flow/host/status", async (request, reply) => {
     if (!(await options.localAccess.authenticate(request)))
       return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const runtime = options.runtime?.();
+    const frontendUrl = runtime?.frontendUrl ?? options.frontendUrl?.trim();
+    const gatewayUrl = runtime?.gatewayUrl ?? options.gatewayUrl?.trim();
     const reasons: string[] = [];
     if (!options.secret?.trim()) reasons.push("未配置 Flow 网关共享密钥。");
-    if (!options.frontendUrl?.trim()) reasons.push("未配置 Flow 前端地址。");
-    if (!options.gatewayUrl?.trim()) reasons.push("未配置 Flow 网关控制地址。");
+    if (!frontendUrl) reasons.push("未配置 Flow 前端地址。");
+    if (!gatewayUrl) reasons.push("未配置 Flow 网关控制地址。");
+    if (runtime?.state === "starting")
+      reasons.push(runtime.detail ?? "Flow 运行时正在启动。");
+    if (runtime?.state === "error")
+      reasons.push(runtime.detail ?? "Flow 运行时启动失败。");
+    const ready =
+      !runtime || runtime.state === "external" || runtime.state === "ready";
+    const enabled = reasons.length === 0 && ready;
     return reply.send(
       flowHostStatusResponseSchema.parse({
-        enabled: reasons.length === 0,
-        frontendUrl: options.frontendUrl?.trim() || null,
+        enabled,
+        frontendUrl: enabled ? frontendUrl || null : null,
         reasons,
+        ...(runtime
+          ? {
+              runtime: {
+                state: runtime.state,
+                ...(runtime.detail ? { detail: runtime.detail } : {}),
+              },
+            }
+          : {}),
       }),
     );
   });

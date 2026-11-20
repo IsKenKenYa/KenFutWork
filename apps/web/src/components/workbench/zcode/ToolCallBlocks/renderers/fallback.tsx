@@ -30,8 +30,6 @@ export function FallbackToolCallBlock(context: FallbackToolCallBlockProps) {
     onOpenCodeViewer,
     onOpenFileLink,
     onOpenBrowserUrl,
-    sessionId,
-    onReadToolOutput,
   } = context;
   const { toolCall } = toolCallNode;
   const kindLabel =
@@ -53,8 +51,6 @@ export function FallbackToolCallBlock(context: FallbackToolCallBlockProps) {
           onOpenCodeViewer={onOpenCodeViewer}
           onOpenFileLink={onOpenFileLink}
           onOpenBrowserUrl={onOpenBrowserUrl}
-          sessionId={sessionId}
-          onReadToolOutput={onReadToolOutput}
         />
         <ToolSnapshotFieldNotice
           refs={toolCall.snapshotRefs ?? []}
@@ -80,8 +76,6 @@ export function FallbackToolCallBlock(context: FallbackToolCallBlockProps) {
       onOpenBrowserUrl,
       onOpenCodeViewer,
       onOpenFileLink,
-      onReadToolOutput,
-      sessionId,
       theme,
       toolCall,
       workspacePath,

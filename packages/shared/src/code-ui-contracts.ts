@@ -8,6 +8,7 @@ import {
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import { executionModeSchema } from "./capability-contracts.js";
 import {
   codeProjectEditorDeleteArgsSchema,
   codeProjectEditorReadDirectorySchema,
@@ -145,6 +146,14 @@ export const codeUiSubagentsListQuerySchema = z.object({
   provider: zcodeAgentProviderSchema.optional(),
   mode: z.enum(["allRuntimeScopes", "settingsUserOnly"]).optional(),
 });
+
+/** 第一方会话 RPC 的附加字段；原 V4 envelope 保持不变。 */
+export const codeUiCommandCompanionSchema = z.object({
+  executionMode: executionModeSchema.optional(),
+});
+export type CodeUiCommandCompanion = z.infer<
+  typeof codeUiCommandCompanionSchema
+>;
 
 /** 原项目编辑器的已接通调用；通用 RPC 继续承载其他 feature 的贡献。 */
 export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(

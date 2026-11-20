@@ -7,18 +7,13 @@ import type {
   FlowHostStatusResponse,
 } from "@kenfutwork/shared";
 import {
-  ApiAccessError,
-  ApiApplicationError,
   buildFlowHelloAck,
   buildFlowIdentity,
   buildFlowNavigate,
   FLOW_EMBED_PROTOCOL_VERSION,
-  flowEngineInstallStatusSchema,
-  flowHostIdentityTicketResponseSchema,
   isFlowProjectReady,
   parseFlowInbound,
   resolveFlowEntry,
-  throwPublicHttpError,
 } from "@kenfutwork/shared";
 import {
   Select,
@@ -27,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
-import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
@@ -57,44 +51,34 @@ import {
 import {
   getFlowSurfaceView,
   registerFlowNavigate,
-  resetFlowSurfaceView,
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 
-const noSubscription = () => () => {};
-
-type FlowEngineInstallState = FlowHostEngineInfoResponse["install"]["state"];
+/** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
+type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
 
 /**
  * 换一张一次性身份票据（本地实例身份缝）：宿主凭本机接入（cookie）换票，
  * 随 `ff-embed/identity` 注入 flow；票据由 flow 网关带回宿主验签。
+ * 换票失败返回 null——不拿假身份硬握，flow 侧会如实降级并给出原因。
  */
-async function fetchIdentityTicket(projectId: string, signal: AbortSignal) {
-  const response = await surfaceFetch("/api/flow/host/identity-ticket", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId }),
-    signal,
-  });
-  if (!response.ok) return throwPublicHttpError(response);
-  return flowHostIdentityTicketResponseSchema.parse(await response.json())
-    .token;
-}
-
-type FlowConnectionFailure = { message: string; retryable: boolean };
-
-function explainIdentityFailure(error: unknown): FlowConnectionFailure {
-  if (error instanceof ApiApplicationError) {
-    if (error.status === 401)
-      return { message: new ApiAccessError().message, retryable: false };
-    if (error.status === 403)
-      return { message: "无法访问此项目，请检查访问设置。", retryable: false };
-    if (error.status === 400 || error.status === 404 || error.status === 409)
-      return { message: "Flow 项目不可用，请重新选择项目。", retryable: false };
+async function fetchIdentityTicket(projectId: string): Promise<string | null> {
+  try {
+    const response = await surfaceFetch("/api/flow/host/identity-ticket", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { token?: unknown };
+    return typeof body.token === "string" && body.token.length > 0
+      ? body.token
+      : null;
+  } catch {
+    return null;
   }
-  return { message: "无法连接 Flow，请重试。", retryable: true };
 }
 
 /** 引擎栈托管安装（与原「引擎」页同一条状态机：POST → 轮询到 ready/error/超时）。 */
@@ -106,11 +90,9 @@ function useFlowEngineInstall(): {
 } {
   const [state, setState] = useState<FlowEngineInstallState>("idle");
   const [notice, setNotice] = useState<string | null>(null);
-  const installAttempt = useRef(0);
   const install = useCallback(
     async (launch?: FlowEngineLaunch) => {
       if (state === "installing") return;
-      const attempt = ++installAttempt.current;
       setState("installing");
       setNotice(null);
       try {
@@ -129,13 +111,6 @@ function useFlowEngineInstall(): {
           };
           throw new Error(body.error?.message ?? `HTTP ${start.status}`);
         }
-        if (start.ok) {
-          const initial = flowEngineInstallStatusSchema.parse(
-            await start.json(),
-          );
-          if (initial.state === "error")
-            throw new Error(initial.error ?? "请查看安装日志");
-        }
         // 轮询安装状态（拉镜像分钟级；上限 30 分钟防挂死）
         const deadline = Date.now() + 30 * 60 * 1000;
         let snapshot: { state: string; error?: string } = {
@@ -143,7 +118,6 @@ function useFlowEngineInstall(): {
         };
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          if (installAttempt.current !== attempt) return;
           const response = await surfaceFetch(
             "/api/flow/host/engine/install/status",
           );
@@ -152,7 +126,6 @@ function useFlowEngineInstall(): {
             state: string;
             error?: string;
           };
-          if (installAttempt.current !== attempt) return;
           if (snapshot.state === "ready" || snapshot.state === "error") break;
         }
         if (snapshot.state === "ready") {
@@ -165,7 +138,6 @@ function useFlowEngineInstall(): {
           setState("error");
         }
       } catch (error) {
-        if (installAttempt.current !== attempt) return;
         setNotice(
           `安装失败：${error instanceof Error ? error.message : "未知错误"}`,
         );
@@ -188,7 +160,6 @@ function useFlowEngineInstall(): {
       if (!response.ok) {
         throw new Error(body.error?.message ?? `HTTP ${response.status}`);
       }
-      installAttempt.current += 1;
       setState("idle");
     } catch (error) {
       setNotice(
@@ -209,26 +180,6 @@ function useFlowEngineInstall(): {
  * 把手共享于 flowSurfaceState.ts（模块级存储）。
  */
 export function HostFlowSurface({ active = true }: { active?: boolean }) {
-  const navigation = useOptionalPlatform()?.workbenchNavigation;
-  const available = useSyncExternalStore(
-    navigation?.subscribe ?? noSubscription,
-    () => navigation?.getSnapshot().availableModes.includes("flow") ?? true,
-  );
-  useEffect(() => {
-    if (!available) resetFlowSurfaceView();
-  }, [available]);
-  return available ? <AvailableFlowSurface active={active} /> : null;
-}
-
-function AvailableFlowSurface({ active }: { active: boolean }) {
-  const [opened, setOpened] = useState(active);
-  useEffect(() => {
-    if (active) setOpened(true);
-  }, [active]);
-  return opened || active ? <FlowSurfaceContent active={active} /> : null;
-}
-
-function FlowSurfaceContent({ active }: { active: boolean }) {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
   const { selectedProjectId, projects } = useFlowProjectsSnapshot();
   const selectedProject =
@@ -243,7 +194,7 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
   const [entry, setEntry] = useState<FlowEntry | null>(null);
   useEffect(() => {
     let cancelled = false;
-    // 父页已验证插件安装态；进入主区后再读取适配层地址。
+    // 门控与父页同一份规则（插件安装态决定入口，运行态只决定主区显示什么）。
     const resolve = (status: FlowHostStatusResponse | null) =>
       resolveFlowEntry({ pluginInstalled: true, pluginEnabled: true, status });
     surfaceJson<FlowHostStatusResponse>("/api/flow/host/status")
@@ -281,15 +232,18 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
         >
           正在获取 flow 宿主状态…
         </div>
-      ) : entry.available && selectedProjectId && directoryReady ? (
+      ) : entry.available &&
+        entry.frontendUrl &&
+        selectedProjectId &&
+        directoryReady ? (
         <FlowCanvasEmbed
-          key={`${selectedProjectId}:${bindingGeneration}:${entry.frontendUrl}`}
+          key={`${selectedProjectId}:${bindingGeneration}`}
           projectId={selectedProjectId}
           generation={bindingGeneration}
           frontendUrl={entry.frontendUrl}
           active={active}
         />
-      ) : entry.available ? (
+      ) : entry.available && entry.frontendUrl ? (
         <div
           role="status"
           aria-busy={directory.checking && !directory.error ? true : undefined}
@@ -333,6 +287,21 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
             </span>
           ) : null}
         </div>
+      ) : entry.available ? (
+        // 插件在、适配层/引擎没就绪：如实报原因并给一条去引擎页的路（不放空壳）。
+        <div
+          role="status"
+          className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-sm text-foreground-subtle"
+        >
+          <span>{entry.reason}</span>
+          <button
+            type="button"
+            onClick={() => setFlowSurfaceView("engine")}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30 hover:text-foreground"
+          >
+            打开引擎页
+          </button>
+        </div>
       ) : (
         <div
           role="status"
@@ -345,48 +314,21 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
   );
 }
 
-type FlowCanvasEmbedProps = {
-  frontendUrl: string;
-  active: boolean;
-  projectId: string;
-  generation: number;
-};
-
-function FlowCanvasEmbed(props: FlowCanvasEmbedProps) {
-  const [attempt, setAttempt] = useState(0);
-  const regionRef = useRef<HTMLElement>(null);
-  return (
-    <section
-      ref={regionRef}
-      aria-label="Flow 工作流"
-      tabIndex={-1}
-      className="relative h-full w-full outline-none"
-    >
-      <FlowCanvasConnection
-        {...props}
-        key={attempt}
-        onRetry={() => {
-          regionRef.current?.focus();
-          setAttempt((current) => current + 1);
-        }}
-      />
-    </section>
-  );
-}
-
 /** flow 前端 iframe 与 `ff-embed/v1` 握手（hello-ack + 一次性身份票据注入 + 站内导航）。 */
-function FlowCanvasConnection({
+function FlowCanvasEmbed({
   frontendUrl,
   active,
   projectId,
   generation,
-  onRetry,
-}: FlowCanvasEmbedProps & { onRetry: () => void }) {
+}: {
+  frontendUrl: string;
+  active: boolean;
+  projectId: string;
+  generation: number;
+}) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [frameSource, setFrameSource] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
-  const [connectionError, setConnectionError] =
-    useState<FlowConnectionFailure | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [frameLoaded, setFrameLoaded] = useState(false);
   // 引擎没起时 iframe 永远不 onLoad：8 秒后把「正在打开」换成去引擎页的引导，
   // 不让用户对着无限加载发呆（fail loud，不猜「也许马上好」）。
@@ -406,43 +348,14 @@ function FlowCanvasConnection({
 
   useEffect(() => {
     if (!flowOrigin) return;
-    let closed = false;
-    let identityRequest: AbortController | null = null;
+    let disposed = false;
+    let identityAttempt = 0;
     let identitySent = false;
-    function endAttempt(failure: FlowConnectionFailure) {
-      closed = true;
-      identityRequest?.abort();
-      window.clearTimeout(handshakeTimer);
-      setConnected(false);
-      setConnectionError(failure);
-    }
     const handshakeTimer = window.setTimeout(() => {
-      endAttempt({ message: "连接 Flow 超时，请重试。", retryable: true });
+      if (!disposed) setConnectionError("Flow 握手超时，请检查网关状态。");
     }, 15_000);
-    const sendIdentity = (frame: Window) => {
-      identityRequest?.abort();
-      const controller = new AbortController();
-      identityRequest = controller;
-      const isCurrent = () =>
-        !closed &&
-        !controller.signal.aborted &&
-        frameRef.current?.contentWindow === frame;
-      void fetchIdentityTicket(projectId, controller.signal).then(
-        (hostToken) => {
-          if (!isCurrent()) return;
-          frame.postMessage(
-            buildFlowIdentity(FLOW_EMBED_PROTOCOL_VERSION, hostToken),
-            flowOrigin,
-          );
-          identitySent = true;
-        },
-        (error: unknown) => {
-          if (isCurrent()) endAttempt(explainIdentityFailure(error));
-        },
-      );
-    };
     const onMessage = (event: MessageEvent) => {
-      if (closed || event.origin !== flowOrigin) return;
+      if (event.origin !== flowOrigin) return;
       const frame = frameRef.current?.contentWindow;
       if (!frame || event.source !== frame) return;
       const message = parseFlowInbound(event.data, {
@@ -451,45 +364,58 @@ function FlowCanvasConnection({
       });
       if (!message) return;
       if (message.type === "ff-embed/hello") {
+        const attempt = ++identityAttempt;
         identitySent = false;
         frame.postMessage(
           buildFlowHelloAck(FLOW_EMBED_PROTOCOL_VERSION),
           flowOrigin,
         );
         setConnected(false);
-        sendIdentity(frame);
+        void fetchIdentityTicket(projectId).then((hostToken) => {
+          const target = frameRef.current?.contentWindow;
+          if (
+            !disposed &&
+            attempt === identityAttempt &&
+            hostToken &&
+            target === frame
+          ) {
+            target.postMessage(
+              buildFlowIdentity(FLOW_EMBED_PROTOCOL_VERSION, hostToken),
+              flowOrigin,
+            );
+            identitySent = true;
+          } else if (!disposed && attempt === identityAttempt && !hostToken) {
+            setConnectionError("Flow 身份验证失败，请检查网关配置。");
+          }
+        });
         return;
       }
       if (message.type === "ff-embed/ready") {
-        if (!identitySent) return;
         window.clearTimeout(handshakeTimer);
         const valid =
+          identitySent &&
           isFlowProjectReady(message, projectId) &&
           message.generation === generation;
         setConnected(valid);
         setConnectionError(
-          valid
-            ? null
-            : { message: "Flow 项目绑定不匹配，请重新连接。", retryable: true },
+          valid ? null : "Flow 项目绑定不匹配，请重新打开项目。",
         );
       }
       if (
         message.type === "ff-embed/error" ||
         message.type === "ff-embed/bye"
       ) {
-        endAttempt({ message: "Flow 连接已中断，请重试。", retryable: true });
+        setConnected(false);
+        setConnectionError("Flow 连接失败，请检查网关状态。");
       }
     };
     window.addEventListener("message", onMessage);
-    // Flow 子页只发送一次 hello，监听就绪后才能开始加载子页。
-    setFrameSource(frontendUrl);
     return () => {
-      closed = true;
-      identityRequest?.abort();
+      disposed = true;
       window.clearTimeout(handshakeTimer);
       window.removeEventListener("message", onMessage);
     };
-  }, [flowOrigin, frontendUrl, projectId, generation]);
+  }, [flowOrigin, projectId, generation]);
 
   // 站内导航把手（握手前点击是 no-op，flow 会按默认页落地）；注册进共享状态，
   // 壳侧栏的 flow 导航项经 flowSurfaceState 驱动这里的 iframe 路由。
@@ -519,37 +445,27 @@ function FlowCanvasConnection({
     );
   }
   return (
-    <>
+    <div className="relative h-full w-full">
       {connectionError ? (
-        <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-background px-3 py-2 text-xs">
-          <p role="alert" className="min-w-0 text-destructive">
-            {connectionError.message}
-          </p>
-          {connectionError.retryable ? (
-            <button
-              type="button"
-              className="rounded-md border border-border px-2 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
-              onClick={onRetry}
-            >
-              重新连接
-            </button>
-          ) : null}
-        </div>
+        <p
+          role="alert"
+          className="absolute inset-x-0 top-0 z-10 bg-background px-3 py-2 text-xs text-destructive"
+        >
+          {connectionError}
+        </p>
       ) : null}
-      {frameSource ? (
-        <iframe
-          ref={frameRef}
-          src={frameSource}
-          title="Flow 工作流画布"
-          className={`h-full w-full border-0 transition-opacity duration-300 ${
-            frameLoaded ? "opacity-100" : "opacity-0"
-          }`}
-          inert={!active}
-          tabIndex={active ? 0 : -1}
-          onLoad={() => setFrameLoaded(true)}
-          allow="clipboard-read; clipboard-write; fullscreen"
-        />
-      ) : null}
+      <iframe
+        ref={frameRef}
+        src={frontendUrl}
+        title="Flow 工作流画布"
+        className={`h-full w-full border-0 transition-opacity duration-300 ${
+          frameLoaded ? "opacity-100" : "opacity-0"
+        }`}
+        inert={!active}
+        tabIndex={active ? 0 : -1}
+        onLoad={() => setFrameLoaded(true)}
+        allow="clipboard-read; clipboard-write; fullscreen"
+      />
       {!frameLoaded ? (
         <div
           role="status"
@@ -569,30 +485,12 @@ function FlowCanvasConnection({
           ) : null}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
-type EngineDisplayState = FlowEngineInstallState | "stopped" | "unreachable";
-
-export function resolveFlowEngineDisplayState(
-  state: FlowEngineInstallState,
-  info: Pick<FlowHostEngineInfoResponse, "install" | "stack"> | null,
-): EngineDisplayState {
-  const installState =
-    state === "idle" ? (info?.install.state ?? state) : state;
-  if (installState === "installing" || installState === "error" || !info)
-    return installState;
-  const { containers, error, stoppedByUser } = info.stack;
-  const apiRunning = containers.some(
-    ({ service, state }) => service === "api" && state === "running",
-  );
-  if (stoppedByUser && !apiRunning) return "stopped";
-  if (error) return "unreachable";
-  if (!containers.length) return "idle";
-  // 数据库或一次性初始化容器的状态不能代替 Dify API 的状态。
-  return apiRunning ? "ready" : "stopped";
-}
+/** `unreachable` = 查询容器清单失败（Docker 无响应等），与「未安装」不是一回事。 */
+type EngineDisplayState = FlowEngineInstallState | "unreachable";
 
 const ENGINE_STATE_META: Record<
   EngineDisplayState,
@@ -601,7 +499,6 @@ const ENGINE_STATE_META: Record<
   idle: { label: "未安装", className: "bg-hover text-foreground-subtle" },
   installing: { label: "安装中", className: "bg-hover text-foreground" },
   ready: { label: "已就绪", className: "bg-emerald-500/10 text-emerald-600" },
-  stopped: { label: "已停止", className: "bg-hover text-foreground-subtle" },
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
   unreachable: {
     label: "状态未知",
@@ -885,16 +782,25 @@ function EngineView() {
     }
   }, []);
   const refresh = useCallback(() => load(false), [load]);
-  const stopAndRefresh = async (deleteData: boolean) => {
-    await stop({ deleteData });
-    await refresh();
-  };
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  // 状态以运行期事实为准：本进程的安装动作 > 安装记录 > 容器清单。
+  // 服务重启后安装记录归零（`idle`），栈在跑却不能显示成「未安装」；
+  // 容器清单读不到（Docker 无响应）也不是「未安装」，单独给 `unreachable`。
+  const stackContainers = info?.stack.containers ?? [];
   const stackError = info?.stack.error ?? null;
-  const engineState = resolveFlowEngineDisplayState(state, info);
+  const engineState: EngineDisplayState =
+    state !== "idle"
+      ? state
+      : info?.install.state && info.install.state !== "idle"
+        ? info.install.state
+        : stackContainers.length > 0
+          ? "ready"
+          : stackError
+            ? "unreachable"
+            : "idle";
   // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
   // 查询失败（Docker 未就绪）按 10s 自愈重试，容器服务回来后不用手动刷新。
   // 一次性局部常量：页面轮询节奏，不进治理表（治理表管 agent 限额与工具超时）。
@@ -917,7 +823,6 @@ function EngineView() {
   const wslPath = info?.probe.paths.find((path) => path.id === "wsl2");
   const wslUsable = Boolean(wslPath?.available && wslPath?.distro);
   const activeLaunch: FlowEngineLaunch =
-    (engineState === "stopped" ? info?.runtime : undefined) ??
     launchChoice ??
     (info?.probe.recommended === "wsl2" && wslUsable
       ? { kind: "wsl2", distro: wslPath?.distro ?? "" }
@@ -960,7 +865,7 @@ function EngineView() {
             {engineState === "installing" ? (
               <button
                 type="button"
-                onClick={() => void stopAndRefresh(false)}
+                onClick={() => void stop({ deleteData: false })}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
               >
                 取消安装
@@ -972,7 +877,7 @@ function EngineView() {
                     type="button"
                     onClick={() => {
                       setStopAsk(false);
-                      void stopAndRefresh(false);
+                      void stop({ deleteData: false });
                     }}
                     className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
                   >
@@ -982,7 +887,7 @@ function EngineView() {
                     type="button"
                     onClick={() => {
                       setStopAsk(false);
-                      void stopAndRefresh(true);
+                      void stop({ deleteData: true });
                     }}
                     className="rounded-lg border border-destructive/40 px-3 py-1.5 text-xs text-destructive transition-colors hover:border-destructive"
                   >
@@ -1007,7 +912,7 @@ function EngineView() {
               )
             ) : engineState === "unreachable" ? null : (
               <>
-                {wslUsable && engineState !== "stopped" ? (
+                {wslUsable ? (
                   <div className="flex items-center gap-1 rounded-full bg-hover/60 p-1">
                     <button
                       type="button"
@@ -1037,11 +942,7 @@ function EngineView() {
                   onClick={() => void install(activeLaunch)}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
                 >
-                  {engineState === "stopped"
-                    ? "启动引擎"
-                    : engineState === "error"
-                      ? "重试安装"
-                      : "安装引擎栈"}
+                  {engineState === "error" ? "重试安装" : "安装引擎栈"}
                 </button>
               </>
             )}

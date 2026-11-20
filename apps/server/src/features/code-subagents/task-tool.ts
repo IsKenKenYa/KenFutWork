@@ -4,13 +4,20 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
+import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type {
   TaskWorkContext,
   TaskWorkManager,
   TaskWorkRecord,
 } from "../task-work/types.js";
 import type { RunUsageSummary } from "../usage/usage-service.js";
-import type { CodeChildRequest, CodeChildResult } from "./types.js";
+import type {
+  CodeChildRequest,
+  CodeChildResult,
+  CodeSubagentRole,
+  CodeSubagentTarget,
+} from "./types.js";
 
 /** 子代理用量查询失败只影响展示，不影响 Task 结果本身（计量是旁路）。 */
 async function readChildUsage(
@@ -37,13 +44,38 @@ async function readChildUsage(
 
 const schema = z
   .object({
-    subagent_type: z.enum(["explore", "review", "worker"]),
+    subagent_type: z.string().trim().min(1),
     description: z.string().trim().min(1),
     ownership: z.array(z.string().trim().min(1)).min(1),
     completion_criteria: z.string().trim().min(1),
     run_in_background: z.boolean().default(false),
   })
   .strict();
+
+const BUILT_IN_ROLES: readonly CodeSubagentRole[] = [
+  "explore",
+  "review",
+  "worker",
+];
+
+function builtInTarget(name: string): CodeSubagentTarget | null {
+  const role = BUILT_IN_ROLES.find((candidate) => candidate === name);
+  return role ? { role, label: role } : null;
+}
+
+function modelSpecifier(target: CodeSubagentTarget): string | undefined {
+  const selection = target.modelSelection;
+  return selection ? `${selection.providerId}:${selection.modelId}` : undefined;
+}
+
+function toolList(values: readonly string[] | undefined): string[] | undefined {
+  if (!values) return undefined;
+  const result = [
+    ...new Set(values.map((value) => value.trim()).filter(Boolean)),
+  ];
+  if (result.length === 0 || result.includes("*")) return undefined;
+  return result;
+}
 
 /** stable dispatch UUID; replay never allocates a different child session. */
 export function childSessionId(
@@ -99,6 +131,12 @@ export function createCodeSubagentTool(deps: {
     context: TaskWorkContext,
     childRunId: string,
   ): Promise<RunUsageSummary | null>;
+  /** 按名称解析派发目标：内置 explore/review/worker 或用户/工作区智能体。 */
+  resolveTarget?(input: {
+    actor: LocalActor;
+    name: string;
+    handle: ExecutionScopeHandle;
+  }): Promise<CodeSubagentTarget | null>;
 }): ToolDefinition {
   return {
     name: "Task",
@@ -108,7 +146,7 @@ export function createCodeSubagentTool(deps: {
     zodSchema: schema,
     parameters: z.toJSONSchema(schema),
     description:
-      "派发独立子会话，复用同一Harness。explore/review只读，worker声明ownership并继承父权限上限；提供完成标准。run_in_background=true属于当前Task并自动通知，不因父Run结束而停止。",
+      "派发独立子会话，复用同一Harness。subagent_type 取内置 explore/review/worker，或系统提示「用户智能体」段列出的自定义智能体名称。explore/review只读，worker声明ownership并继承父权限上限；提供完成标准。run_in_background=true属于当前Task并自动通知，不因父Run结束而停止。",
     async execute(raw, execution: ToolExecutionContext) {
       const input = schema.parse(raw);
       const parent = execution.taskWorkContext;
@@ -123,6 +161,16 @@ export function createCodeSubagentTool(deps: {
       )
         throw new Error("子任务缺少可信父会话、模型、权限或派发身份。");
       await handle.resolvePath(".", "read");
+      const target =
+        (await deps.resolveTarget?.({
+          actor: parent.actor,
+          name: input.subagent_type,
+          handle,
+        })) ?? builtInTarget(input.subagent_type);
+      if (!target)
+        throw new Error(
+          `未知子智能体「${input.subagent_type}」：可用 explore、review、worker，或系统提示中列出的用户智能体。`,
+        );
       const context = {
         ...parent,
         scope: handle.describe(),
@@ -133,7 +181,7 @@ export function createCodeSubagentTool(deps: {
       if (depth >= limits.maxDepth)
         throw new Error("子任务派生深度达到当前工作区配置上限。");
       if (
-        input.subagent_type === "worker" &&
+        target.role === "worker" &&
         (execution.approvedExecutionMode === "plan" ||
           execution.permissionInvocation?.mode === "plan" ||
           context.scope.sandboxMode === "read-only" ||
@@ -144,8 +192,10 @@ export function createCodeSubagentTool(deps: {
       for (const path of input.ownership)
         await handle.resolvePath(
           path,
-          input.subagent_type === "worker" ? "write" : "read",
+          target.role === "worker" ? "write" : "read",
         );
+      const toolAllowlist = toolList(target.toolAllowlist);
+      const disallowedTools = toolList(target.disallowedTools);
       const request: CodeChildRequest = {
         ...(execution.goalId ? { goalId: execution.goalId } : {}),
         ...(execution.frozenContributions
@@ -166,18 +216,27 @@ export function createCodeSubagentTool(deps: {
             : execution.codeApproval.ceiling,
         actor: parent.actor,
         scope: handle,
-        model: execution.modelSpecifier,
+        model: modelSpecifier(target) ?? execution.modelSpecifier,
         parentSessionId: execution.sessionId,
         parentRunId: context.runId,
         toolCallId: execution.toolCallId,
         branchGeneration: context.branchGeneration,
         delegationDepth: depth,
-        role: input.subagent_type,
+        role: target.role,
         description: input.description,
         ownership: input.ownership,
         completionCriteria: input.completion_criteria,
         detached: input.run_in_background,
+        ...(target.systemPrompt ? { systemPrompt: target.systemPrompt } : {}),
+        ...(toolAllowlist ? { toolAllowlist } : {}),
+        ...(disallowedTools ? { disallowedTools } : {}),
+        ...(target.injectAgentsMd === false
+          ? { omitInstanceInstructions: true }
+          : {}),
       };
+      const taskLabel = target.systemPrompt
+        ? `${target.label}：${input.description}`
+        : input.description;
       const controller = new AbortController();
       let running: Promise<CodeChildResult> | undefined;
       let childResult: CodeChildResult | undefined;
@@ -186,7 +245,7 @@ export function createCodeSubagentTool(deps: {
         {
           kind: "subagent",
           detached: input.run_in_background,
-          label: input.description,
+          label: taskLabel,
           toolCallId: execution.toolCallId,
           childSessionId: request.childSessionId,
           parameters: input,

@@ -10,7 +10,8 @@ import type { WorkFont } from "@kenfutwork/shared";
 export type FontFamilyGroup = {
   name: string;
   builtin: boolean;
-  userFiles: string[];
+  /** 该家族的全部字体文件：内置与用户上传都参与删除。 */
+  files: string[];
 };
 
 const CJK = /[\u3400-\u9fff\uf900-\ufaff]/u;
@@ -69,13 +70,13 @@ export function fontFamilies(fonts: readonly WorkFont[]): FontFamilyGroup[] {
     const key = name.toLowerCase();
     const group = groups.get(key);
     if (group) {
-      if (!font.builtin) group.userFiles.push(font.fileName);
+      group.files.push(font.fileName);
       group.builtin ||= font.builtin;
     } else {
       groups.set(key, {
         name,
         builtin: font.builtin,
-        userFiles: font.builtin ? [] : [font.fileName],
+        files: [font.fileName],
       });
     }
   }

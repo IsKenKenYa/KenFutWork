@@ -131,11 +131,6 @@ async function renderCodeFrame(tree = host()) {
       }),
     );
   message({ type: "kenfutwork:code-ready" });
-  expect(send).not.toHaveBeenCalledWith(
-    expect.objectContaining({ type: "kenfutwork:workbench-navigation" }),
-    window.location.origin,
-  );
-  message({ type: "kenfutwork:code-mounted" });
   return { view, frame, send, message };
 }
 
@@ -155,26 +150,20 @@ it("工作台恒渲染Code壳：深链design也不换壳，mode经导航消息�
   );
 });
 
-it("画布深链在壳挂载后传递一次，重复的挂载信号不重开画布", async () => {
+it("深链design向壳推mode=design；无flow插件时availableModes只有code/design", async () => {
   installFixture();
-  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
-  navigation.query = `mode=design&canvasId=${canvasId}`;
-  const { send, message } = await renderCodeFrame();
+  navigation.query = "mode=design";
+  const { send } = await renderCodeFrame();
   await waitFor(() => {
     expect(send).toHaveBeenCalledWith(
       {
         type: "kenfutwork:workbench-navigation",
         availableModes: ["code", "design"],
         mode: "design",
-        documentTarget: { resourceType: "canvas", documentId: canvasId },
       },
       window.location.origin,
     );
   });
-  message({ type: "kenfutwork:code-mounted" });
-  expect(
-    send.mock.calls.filter(([payload]) => payload.documentTarget),
-  ).toHaveLength(1);
 });
 
 it("刷新没有深链时只同步可用方式，让壳恢复当前窗口的选择", async () => {
@@ -341,7 +330,7 @@ it("状态探针慢于插件探针：?mode=flow 不被中间态改写成 design�
   );
 });
 
-it("深链 Flow 但宿主适配层未配齐时回到 Design 并隐藏 Flow 入口", async () => {
+it("深链flow但宿主适配层未配齐时仍进flow（入口只看插件安装态，主区报原因）", async () => {
   installFixture(true, false);
   navigation.query = "mode=flow";
   const { send } = await renderCodeFrame();
@@ -349,8 +338,8 @@ it("深链 Flow 但宿主适配层未配齐时回到 Design 并隐藏 Flow 入�
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "kenfutwork:workbench-navigation",
-        availableModes: ["code", "design"],
-        mode: "design",
+        availableModes: ["code", "design", "flow"],
+        mode: "flow",
       }),
       window.location.origin,
     );
@@ -520,7 +509,7 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
 
 it("旧模型入口打开同一管理文档并定位模型设置，重复打开不创建第二个页面", async () => {
   installFixture();
-  await renderCodeFrame();
+  render(host());
   const manager = (await screen.findByTitle(
     "管理设置",
     {},

@@ -72,7 +72,6 @@ interface ChatPaneShellProps {
   containerRef?: (element: HTMLDivElement | null) => void;
   paneId: string;
   focused: boolean;
-  hidden?: boolean;
   /** 单 pane 布局时不画焦点框（无歧义，避免视觉噪音）。 */
   showFocusIndicator: boolean;
   onFocusRequest: (paneId: string) => void;
@@ -117,7 +116,6 @@ const ChatPaneShell = memo(function ChatPaneShell({
   containerRef,
   paneId,
   focused,
-  hidden = false,
   showFocusIndicator,
   onFocusRequest,
   style,
@@ -147,7 +145,6 @@ const ChatPaneShell = memo(function ChatPaneShell({
       style={style}
       className={cn(
         "absolute flex min-h-0 min-w-0 flex-col",
-        hidden && "hidden",
         showFocusIndicator && focused && "ring-1 ring-inset ring-[var(--color-brand)]",
       )}
     >
@@ -309,7 +306,6 @@ interface WorkbenchLeafPaneProps {
   paneId: string;
   rect: RectExpr;
   focused: boolean;
-  hidden?: boolean;
   showFocusIndicator: boolean;
   canSplit: boolean;
   shellWorkspaceKey: string;
@@ -345,7 +341,6 @@ export function WorkbenchLeafPane({
   paneId,
   rect,
   focused,
-  hidden = false,
   showFocusIndicator,
   canSplit,
   shellWorkspaceKey,
@@ -531,7 +526,6 @@ export function WorkbenchLeafPane({
       containerRef={setPointerDropTargetRef}
       paneId={paneId}
       focused={focused}
-      hidden={hidden}
       showFocusIndicator={showFocusIndicator}
       onFocusRequest={onFocusRequest}
       style={style}

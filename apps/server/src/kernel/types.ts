@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@kenfutwork/shared";
+import type { ExecutionMode, StreamEvent } from "@kenfutwork/shared";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeAny } from "zod";
@@ -6,6 +6,7 @@ import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
+import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
@@ -88,6 +89,8 @@ export interface ServiceMap {
   agentPersistence: AgentPersistenceService;
   agentRunMetadata: AgentRunMetadataService;
   agentRuns: AgentRunService;
+  /** 执行模式（自主/计划/对话/目标/创造）：激活、切换与持久化。 */
+  agentModes: ExecutionModeService;
   contextHistoryArchives: ContextHistoryArchiveBindings;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
@@ -224,6 +227,8 @@ export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
 export interface PreStepPayload {
   input: unknown;
   runId: string | undefined;
+  /** run 接纳时冻结的执行模式；未声明时由监听器读回线程持久值。 */
+  executionMode?: ExecutionMode | undefined;
   threadId?: string | undefined;
   /** Runtime已接受的run/Task事实，仅供指导hydrate；不作为工具执行授权。 */
   preset?: "design" | "code" | undefined;
@@ -235,6 +240,8 @@ export interface PreStepPayload {
 export interface ToolPreExecutePayload {
   /** 仅由可信运行宿主传递的持久目标身份。 */
   goalId?: string | undefined;
+  /** run 接纳时冻结的执行模式；未声明时由监听器读回线程持久值。 */
+  executionMode?: ExecutionMode | undefined;
   permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
@@ -332,6 +339,8 @@ export interface PromptCompositionContext {
    * 作为提示段注入，保证插件规则每轮生效；与用户规则段同属 run 起始期事实。
    */
   pluginHookContext?: readonly string[];
+  /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+  omitInstanceInstructions?: boolean;
 }
 
 export type PromptExecutionContext = Pick<
@@ -397,6 +406,8 @@ export interface ToolExecutionContext {
     | undefined;
   /** 仅由可信运行宿主传递的持久目标身份。 */
   goalId?: string | undefined;
+  /** run 接纳时冻结的执行模式；工具门与事件监听器按它判定策略。 */
+  executionMode?: ExecutionMode | undefined;
   frozenContributions?: ToolContributionSnapshot | undefined;
   /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
   workContext?:

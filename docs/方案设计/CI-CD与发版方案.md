@@ -93,7 +93,7 @@ CI 侧的两个必修点：`bundle_dmg.sh --skip-jenkins`（脚本自述「跳�
 | rc | `v<版本>-rc.<时间戳>` 的 draft Release（prerelease） | 本轮落地 |
 | 正式 | `v<版本>` + 签名 + 公证 + CHANGELOG + 源码归档 | **流水线已有，正式发布条件待验**：当前 [release.yml](../../.github/workflows/release.yml) 校验 tag 与版本并复用双平台打包，产出 rc 通道 draft；签名、公证、源码归档及正式安装体验仍按实际产物核验 |
 
-后续验证（2026-10-22 更新）：① 从版本修改、tag 校验到双平台 draft 的完整产物流程；② 使用停机备份的数据目录验证新版首启迁移和再次启动，数据库测试与安装包升级分别记录；③ Windows 安装、原生依赖与桌面操作；④ 签名服务、macOS 公证、CHANGELOG 和源码归档的发布条件。当前源码中的流水线不证明这些条件已完成。安全修复状态见[安全告警核验](../调研/GitHub安全告警核验与修复.md)，不使用本节旧待办推断漏洞仍然存在；文档站、公共镜像和资助入口作为独立建议，不属于正式包验收。
+后续验证（2026-10-22 更新）：① 从版本修改、tag 校验到双平台 draft 的完整产物流程；② 使用停机备份的数据目录验证新版首启迁移和再次启动，数据库测试与安装包升级分别记录；③ Windows 安装、原生依赖与桌面操作；④ 签名服务、macOS 公证、CHANGELOG 和源码归档的发布条件。当前源码中的流水线不证明这些条件已完成。安全修复状态见[安全告警核验](../调研/21-GitHub安全告警核验与修复.md)，不使用本节旧待办推断漏洞仍然存在；文档站、公共镜像和资助入口作为独立建议，不属于正式包验收。
 
 ## 八、验证命令
 
@@ -110,3 +110,99 @@ gh workflow run build-debug.yml -f platform=both -f channel=debug
 gh run list --workflow CodeQL                          # 应只剩 4 个 job，无 swift 恒红
 gh api repos/IsKenKenYa/KenFutWork/code-scanning/alerts?state=open --jq 'length'
 ```
+
+## 九、依赖补丁与升级复核
+
+> 来源：2026-11-18 并入原 `patches/LangChain路由修复说明.md` 与 `patches/MCP取消清理修复说明.md`，原文件删除；补丁文件与许可文本仍在 `patches/`。
+
+### 9.1 LangChain 1.5.11 模型续跑路由
+
+- 固定包：官方 npm `langchain@1.5.11`，MIT，经 pnpm `patchedDependencies` 记录，不直接修改安装硬链接；上游 Git SHA 未随包提供，不虚构。
+- 原因：原 `afterModel` 的显式 model 跳转直达模型节点，绕过 `beforeModel`；final router 在纯文本回复时先结束再判断跳转。补丁让显式跳转先于纯文本终止，并回到既有 `loopEntryNode`，清理 `jumpTo`。默认工具/structured-response 路径与 `tools/end`、`afterAgent` 行为保留。
+- 文件：`langchain@1.5.11.patch`，ESM/CJS 两个发行入口；原 MIT 许可保存在 `LICENSE-langchain.txt`。source map 保持上游版本，补丁后的行号变化不反映在原 map 中。
+- 来源 SHA-256：`dist/agents/ReactAgent.js` 原 `8091e09101295ab0cac5dfef70c25542b676356b1d89b86f10be68e7aa5246c7`，补丁后 `311a020b7075d32596342810fafc5dd8364b3980030e67ae7bf6cd46355ab6ac`；`dist/agents/ReactAgent.cjs` 原 `55069419e51283fd5da6d03c241afe3cba221243adee7f37c681d41265af4bb9`，补丁后 `0ed859de8139eda73c1e260454ad80ead789484a9143e2ca67a7c19986464e6a`。
+- 验证：原产品正文 guide 真实失败后修复；正文/工具/未消费停止 3 条真实 HTTP/PG/native 回归通过；公共 SDK 44 条、运行取消/检查点/后台续轮与输入投影 101 条通过；server 类型检查 0 error。升级时必须重新审查上游是否已修复、重新验证公共跳转与消息持久语义，再退役或重建补丁。
+
+### 9.2 MCP SDK 1.32.1 取消关联清理
+
+- 固定包：官方 npm `@modelcontextprotocol/sdk@1.32.1`，MIT；首发补丁切在 1.30.0，2026-10-17 随安全修复升到 1.32.1。
+- 原因：原 `Protocol` 取消处理器会中止 handler 并抑制响应；`closeSSEStream()` 关闭 SSE 后 transport 仍保留请求关联；无 eventStore 时不会重放，重复取消会累积关联。补丁清理无 eventStore 的已关闭 POST 关联，保留有 eventStore 时的重连关联，会话 close 时清空全部关联。
+- 文件：`@modelcontextprotocol__sdk@1.32.1.patch`，ESM/CJS 同步修改；不在业务代码读写 SDK 私有映射；原许可保存在 `MCP原始许可证.txt`。
+- 来源 SHA-256：`webStandardStreamableHttp.js` ESM 原 `8ac6b6a32299f840377721c55ba4b938dd90158a415c8ccf09ce3cdda131897d`，补丁后 `1eafe082307ec308c266ecd91d2c1f9a357ad3efcce69829f5c0d17b62289261`；CJS 原 `aab0e9c79d398fd1e541d166c46f1893f6e6562fd7b36f3c6c5e5521a2382a0a`，补丁后 `5abd64e55e635371fce0fac6dc4b0480ee224fe8e6417c095060b6dd3d1d96b6`。
+- 升级注意：`pnpm.overrides` 将 `<1.32.1` 全部固定到 1.32.1，避免 `shadcn@4.21.0` 解析出第二份 1.30.0；客户端 transport 的 `redirectPolicy` 默认 `same-origin`，跨源重定向会显式失败，BYOK 网关需要直连地址或显式设 `follow`。
+- 验证：摘掉补丁后 `sdk-transport.test.ts` 4/4 失败；重切并安装后 4/4 通过；真实 HTTP/PG/Task/Agent/stdio 取消、撤权与 Run 停止回归通过。
+
+## 十、本机桌面打包（Tauri）
+
+> 来源：2026-11-18 并入原 `apps/desktop/README.md`，原文件删除。设计依据见《多端产品设计》§4（Tauri 2 + 系统 WebView + 服务端 sidecar，拒 Electron）。
+
+### 10.1 构建前置（2026-09-18 实测）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| MSVC（C++ 桌面开发） | VS 2022 生成工具 17.14.37628.2 | `link.exe` 在 `BuildTools/VC/Tools/MSVC/…/bin/Hostx64/x64` |
+| Windows SDK | 10.0.26100，装在非默认盘 `D:\Windows Kits\10` | 链接器按注册表 `InstallationFolder` 查找 |
+| WebView2 运行时 | 153.0.4234.32 | Win10 1803+ 自带；LTSC/精简版需另行安装 |
+| Rust 工具链 | rustup + `stable-x86_64-pc-windows-msvc` | 新装的 rustup 只对新终端生效，老 shell 需把 `~/.cargo/bin` 加入 PATH |
+| Tauri CLI | `@tauri-apps/cli ^2`（本包 devDependency） | `pnpm install` 即得；也可 `cargo install tauri-cli --version "^2" --locked` |
+
+构建分两步，Rust 侧需要 web 静态产物：
+
+```sh
+pnpm --filter @kenfutwork/web build                       # 产出 apps/web/out（静态导出）
+pnpm --filter @kenfutwork/desktop exec tauri build        # 出安装包；加 --debug --no-bundle 只出 exe
+```
+
+`tauri.conf.json` 的 `frontendDist` 相对 `src-tauri/` 解析，必须写 `../../web/out`；`bundle.resources` 引 `release/` 要写三级 `../../../release/...`（src-tauri → apps/desktop → apps → 仓库根）。
+
+### 10.2 macOS DMG（Apple Silicon，自包含 .app）
+
+```sh
+pnpm fetch:runtimes                                       # 拉随包运行时（darwin-arm64 资产，sha256 校验）
+pnpm package:mac                                          # 出 release/（server.cjs + web + pg + runtime + node_modules）
+pnpm --filter @kenfutwork/desktop build                   # tauri 出 .app → bundle_dmg.sh 摆布局 → DMG 收到仓库根
+```
+
+产物为仓库根 `KenFutWork_0.1.0_arm64.dmg`（约 285 MB；.app 818 MB 自包含：服务端 CJS + 内嵌 Postgres + 随包 Node/Python/uv/JRE）。安装引导为拖拽布局，背景由 `src-tauri/dmg/background.svg` 经 sharp 渲染，布局脚本 `scripts/dmg/bundle_dmg.sh` 在无头环境自动降级 appdmg → hdiutil。签名默认 ad-hoc；拷到别的 mac 首开会被 Gatekeeper 拦，右键打开或 `xattr -cr /Applications/KenFutWork.app`；对外分发需 Developer ID + 公证。数据目录为 `~/Library/Application Support/com.kenfutwork.desktop/`，检查点与沙箱由壳注入；PG 软链与 pgmq shim 由 `package-mac.mjs` 复刻。
+
+darwin 27 上 Node SEA 注入后必崩，改用「随包官方静态 node + esbuild CJS（`server/server.cjs`，`KFW_PACKAGED_CJS` 定位资源根）」；node 二进制零修改，签名天然有效，壳的 mac 分支按 `node server/server.cjs` 拉起。
+
+### 10.3 Windows 安装包（NSIS）
+
+```sh
+pnpm package:win                                          # 出 release/（服务端 exe + web + pg + runtime）
+pnpm --filter @kenfutwork/desktop build                   # 出安装包
+```
+
+产物为仓库根 `KenFutWork_<版本>_x64-setup.exe`（约 69 MB，压缩自约 300 MB 资源），`tauri build` 后由 `scripts/collect-bundle.mjs` 自动收集；原始产物在 `apps/desktop/src-tauri/target/release/bundle/nsis/`。安装向导支持所有用户/仅我、安装目录、开始菜单目录、双语（默认跟随系统），并写入卸载项、卸载器与环境变量：`KENFUTWORK_HOME=<安装目录>`、安装目录加入 PATH、广播 `WM_SETTINGCHANGE`，`HKCU|HKLM\Software\KenFutWork` 记录 `InstallDir`/`Version`；卸载逐项撤销并只删 PATH 中自己那一段。图标由 `node scripts/icons.mjs` 从 `docs/视觉设计/logo/新版.png` 生成多尺寸 `icon.ico` 与 `icon.png`。
+
+窗口指向 `http://127.0.0.1:<端口>`，不加载壳自带 UI：本机免登录可信来源只认回环，且 `tauri://localhost` 解析不了 `/canvas` 这类无扩展名路由，Design 画布会空白。端口在 `3001…3010` 中寻找「探活 200 且首页是 HTML」的服务端；撞上普通 dev API 就换端口。静默装/卸：`setup.exe /S /currentuser`，卸载 `"%LOCALAPPDATA%\Programs\KenFutWork\uninstall.exe" /S`。`tauri build` 需要 PATH 里有 `cargo`，Git Bash 先 `export PATH="$HOME/.cargo/bin:$PATH"`。
+
+### 10.4 本机运行与 macOS 权限
+
+```sh
+pnpm desktop          # 仓库根执行；自动拉起服务端内嵌 PG + web + Tauri 窗口，退出时回收自己拉起的进程
+```
+
+手动分步：`pnpm --filter @kenfutwork/server dev:server`（桌面形态 `KENFUTWORK_EMBEDDED_PG=1`）、`pnpm --filter @kenfutwork/web dev`、`cd apps/desktop/src-tauri && cargo tauri dev`。macOS 系统权限：文件夹选择走 `osascript choose folder`（无需特殊权限）；访问 `~/Desktop`、`~/Documents`、`~/Downloads` 首次弹 TCC 授权；下载统一经 `triggerDownload` → Rust `save_file` 落系统下载目录并 `reveal_path`；外部链接经 `installDesktopExternalLinks` 交系统浏览器（只放行 http/https）；麦克风/摄像头未使用。IPC 能力面只对 `main` 窗口放行回环地址，子 webview（browser-embed）不在列。
+
+已知限制：`frontendDist` 指向的 `apps/web/out` 需要静态导出构建；前端 API 调用依赖 `NEXT_PUBLIC_SERVER_BASE_URL` 指向 sidecar 回环端口。
+
+## 十一、落地页构建、部署与素材来源
+
+> 来源：2026-11-18 并入原 `apps/landing/使用说明.md` 与 `apps/landing/素材生成说明.md`，原文件删除。视觉验收记录见《日志》四百一十。
+
+落地页是独立静态应用，只负责品牌展示和下载入口，与 `apps/web`、桌面壳和服务端没有运行时依赖。
+
+```sh
+pnpm --filter @kenfutwork/landing dev          # 本地预览 http://127.0.0.1:4173/
+pnpm --filter @kenfutwork/landing build
+pnpm --filter @kenfutwork/landing typecheck
+pnpm --filter @kenfutwork/landing test
+```
+
+产物在 `apps/landing/dist/`。Vite 的 `base: "./"` 使入口、字体和背景支持相对路径，可部署到域名根目录或 GitHub Pages 仓库子路径：Cloudflare Pages 构建命令 `pnpm --filter @kenfutwork/landing build`、输出目录 `apps/landing/dist`、构建根目录为仓库根；GitHub Pages 上传 `apps/landing/dist` 为 artifact，无需服务端或路由重写。本轮不创建部署工作流，也不发布。
+
+下载弹窗只展示平台选择样式；尚无公开安装包，选择平台后显示真实的未发布状态，「查看发布」与「从源码开始」分别链接 GitHub Releases 与 README，不生成虚假的下载成功状态。产品介绍弹窗可切 Code / Design，仅为介绍面，不运行桌面工作台；将来安装包发布后在 `src/DownloadPanel.tsx` 接入直链即可，公共链接集中在 `src/links.ts`。
+
+素材与许可：`public/assets/logo-mark.png`、`public/favicon.png` 复用正式品牌文件；`public/fonts/` 复用在用的 Momo Trust Display 与 OFL 许可；控件图标使用 Lucide（ISC）。点阵主形状直接使用正式 KF Logo 透明 PNG 与格点遮罩；标题为逐字 3D Letter Swap，背景为立体圆柱文字，参考 ReactBits 公开演示，未复制付费源码；探照灯与磁吸为独立实现，磁吸上限 24px，触屏不激活，减少动态效果偏好会停止动画。来源与许可沿用 `legal/THIRD-PARTY-NOTICES.md` 的 Lucide 条目。

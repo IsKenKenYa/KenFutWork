@@ -160,7 +160,6 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           <TooltipProvider>
             <ConversationStatusPanel
               workspacePath={workspacePath}
-              hasActiveTask
               summaryPanelVariantOverride="panel"
             />
           </TooltipProvider>

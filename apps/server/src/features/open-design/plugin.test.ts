@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
-import { createOpenDesignHostPlugin } from "./plugin.js";
+import {
+  createOpenDesignHostPlugin,
+  resolveOpenDesignComposeFile,
+} from "./plugin.js";
 
 /** 最小 env（open-design 插件不吃治理字段；对位 kernel.test 的夹具口径）。 */
 function makeEnv(dataDir: string): ServerEnv {
@@ -36,6 +39,12 @@ const serviceOverrides = {
     listByProject: async () => ({ comments: [], annotations: [] }),
   },
 };
+
+describe("源码态 compose 路径", () => {
+  it("指向仓库 docker/open-design", () => {
+    expect(existsSync(resolveOpenDesignComposeFile())).toBe(true);
+  });
+});
 
 const tempDataDir = (): string => mkdtempSync(join(tmpdir(), "kfw-od-data-"));
 

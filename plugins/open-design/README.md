@@ -26,7 +26,7 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；�
 ## 承载形态：伴随容器（2026-10-15 拍板，规划 §9-3）
 
 - `KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456`（或 localhost / [::1] 同端口）
-  = **伴随容器**：主程序启动即拉起 `open-design/docker-compose.open-design.yml` 的栈，
+  = **伴随容器**：主程序启动即拉起 `docker/open-design/docker-compose.open-design.yml` 的栈，
   退出即停（数据卷保留）；首次启动需拉镜像（分钟级、异步不阻塞），期间入口如实显示
   「正在启动」而不是空壳；
 - 伴随栈固定 `OD_DISABLE_API_AUTH=1`：入站免认证只服务宿主 `127.0.0.1:7456`（与上游
@@ -52,7 +52,7 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；�
   以 env 为准，界面会如实标出来源）。
 
 - 镜像钉 digest（`ghcr.io/nexu-io/od@sha256:587a99…`，2026-10-15 观测 = release
-  `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `THIRD-PARTY-NOTICES.md` §F。
+  `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `legal/THIRD-PARTY-NOTICES.md` §F。
 
 ## BYOK 凭证下发（O3 / `OD-4`）
 

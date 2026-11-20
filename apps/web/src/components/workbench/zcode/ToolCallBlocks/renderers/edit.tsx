@@ -200,8 +200,6 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
             onOpenCodeViewer={context.onOpenCodeViewer}
             onOpenFileLink={context.onOpenFileLink}
             onOpenBrowserUrl={context.onOpenBrowserUrl}
-            sessionId={context.sessionId}
-            onReadToolOutput={context.onReadToolOutput}
           />
           <ToolSnapshotFieldNotice
             refs={toolCall.snapshotRefs ?? []}
@@ -230,8 +228,6 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
                   onOpenCodeViewer={context.onOpenCodeViewer}
                   onOpenFileLink={context.onOpenFileLink}
                   onOpenBrowserUrl={context.onOpenBrowserUrl}
-                  sessionId={context.sessionId}
-                  onReadToolOutput={context.onReadToolOutput}
                   childToolList={null}
                   displayModel={context.displayModel}
                   toolCall={toolCall}
@@ -276,8 +272,6 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
                 onOpenCodeViewer={context.onOpenCodeViewer}
                 onOpenFileLink={context.onOpenFileLink}
                 onOpenBrowserUrl={context.onOpenBrowserUrl}
-                sessionId={context.sessionId}
-                onReadToolOutput={context.onReadToolOutput}
               />
               <ToolSnapshotFieldNotice
                 refs={toolCall.snapshotRefs ?? []}
@@ -298,8 +292,6 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
       context.onOpenBrowserUrl,
       context.onOpenCodeViewer,
       context.onOpenFileLink,
-      context.onReadToolOutput,
-      context.sessionId,
       context.sourceLabel,
       context.theme,
       context.workspacePath,
@@ -361,8 +353,6 @@ function EditFileSummaryBlock({
   onOpenCodeViewer,
   onOpenFileLink,
   onOpenBrowserUrl,
-  sessionId,
-  onReadToolOutput,
   childToolList,
   displayModel,
   toolCall,
@@ -382,8 +372,6 @@ function EditFileSummaryBlock({
   onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"];
   onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"];
   onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"];
-  sessionId?: ToolCallBlockRenderContext["sessionId"];
-  onReadToolOutput?: ToolCallBlockRenderContext["onReadToolOutput"];
   childToolList: ToolCallBlockRenderContext["childToolList"];
   displayModel: ToolCallBlockRenderContext["displayModel"];
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"];
@@ -454,8 +442,6 @@ function EditFileSummaryBlock({
           onOpenCodeViewer={onOpenCodeViewer}
           onOpenFileLink={onOpenFileLink}
           onOpenBrowserUrl={onOpenBrowserUrl}
-          sessionId={sessionId}
-          onReadToolOutput={onReadToolOutput}
         />
       </div>
     ),
@@ -467,8 +453,6 @@ function EditFileSummaryBlock({
       onOpenBrowserUrl,
       onOpenCodeViewer,
       onOpenFileLink,
-      onReadToolOutput,
-      sessionId,
       theme,
       toolCall,
       workspacePath,

@@ -13,7 +13,7 @@ import { binaryName, runCapture } from "./postgres.js";
  * 于是「干净的捆绑 Postgres」上的迁移链会在那一条上停住——实测报
  * `extension "pgmq" is not available`。
  *
- * 做法与开发容器一致（`docker/pg-dev-shim/`）：把只含 `pgmq.create(queue)` 的最小 SQL
+ * 做法与开发容器一致（`docker/pg/pg-dev-shim/`）：把只含 `pgmq.create(queue)` 的最小 SQL
  * 作为扩展装进**该集群自己的** `share/extension`。这是「历史可重放」的兼容层，
  * 不是队列实现——桌面队列走 `in-process`（M3.2）。
  *
@@ -37,7 +37,7 @@ export type PgmqShimDeps = {
 const SHIM_FILES = ["pgmq.control", "pgmq--1.0.sql"] as const;
 
 /**
- * shim 源目录：`KENFUTWORK_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg-dev-shim`。
+ * shim 源目录：`KENFUTWORK_PGMQ_SHIM_DIR` → 发布包 `<exe>/pg/shim` → 仓库 `docker/pg/pg-dev-shim`。
  * 返回 undefined 表示「没有 shim 可用」——此时若库里也没装真 pgmq，由 `ensurePgmqAvailable`
  * 给出可执行的报错。
  */
@@ -51,7 +51,7 @@ export function resolvePgmqShimDir(input: {
   const candidates = [
     input.env.KENFUTWORK_PGMQ_SHIM_DIR?.trim(),
     join(input.exeDir ?? process.cwd(), "pg", "shim"),
-    join(input.repoRoot ?? process.cwd(), "docker", "pg-dev-shim"),
+    join(input.repoRoot ?? process.cwd(), "docker", "pg", "pg-dev-shim"),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   return candidates.find((candidate) =>

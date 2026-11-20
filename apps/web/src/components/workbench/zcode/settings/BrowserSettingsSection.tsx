@@ -104,16 +104,10 @@ export function BrowserSettingsSection({
     null,
   );
   const normalizedWorkspaceIdentity = workspaceIdentity?.trim() || null;
-  // 入口只在宿主真的能做时出现：Web 没有本机浏览器数据可清，Chrome 导入当前形态不支持。
-  const importAvailable =
+  const nativeActionsAvailable =
     isDesktop &&
-    platform.supportsChromeBrowserDataImport === true &&
-    typeof platform.importChromeBrowserData === "function";
-  const clearAvailable =
-    isDesktop &&
-    platform.supportsEmbeddedBrowserDataClear === true &&
+    typeof platform.importChromeBrowserData === "function" &&
     typeof platform.clearEmbeddedBrowserData === "function";
-  const nativeActionsAvailable = importAvailable || clearAvailable;
 
   useEffect(() => {
     if (!workspacePath) return;
@@ -246,6 +240,7 @@ export function BrowserSettingsSection({
 
   const pluginTogglePending = togglingPluginId === OFFICIAL_BROWSER_USE_PLUGIN_ID;
   const pluginUnavailable = !workspacePath || loading || !browserUsePlugin;
+  const operationDisabled = !nativeActionsAvailable;
 
   return (
     <div className="space-y-5">
@@ -275,7 +270,7 @@ export function BrowserSettingsSection({
           {/* 导入登录状态是“开启内置浏览器控制”之后的配套动作，与开关同卡片表达先后关系；
               清除类破坏性操作仍留在“浏览器数据”分组。
               Windows App-Bound 导入链路暂未开放，先隐藏入口但保留底层实现和清理能力。*/}
-          {!isWindowsDesktop && importAvailable ? (
+          {!isWindowsDesktop ? (
             <SettingsRow
               label={intl.formatMessage({ id: "settings.browser.import.title" })}
               description={intl.formatMessage({
@@ -285,7 +280,7 @@ export function BrowserSettingsSection({
                 <BrowserOperationButton
                   operation="import"
                   pendingOperation={pendingOperation}
-                  disabled={!importAvailable}
+                  disabled={operationDisabled}
                   onClick={() => void handleImport()}
                 >
                   {intl.formatMessage({ id: "settings.browser.import.action" })}
@@ -354,7 +349,7 @@ export function BrowserSettingsSection({
               <BrowserOperationButton
                 operation="clear-cache"
                 pendingOperation={pendingOperation}
-                disabled={!clearAvailable}
+                disabled={operationDisabled}
                 onClick={() => void handleClear("cache")}
               >
                 {intl.formatMessage({
@@ -374,7 +369,7 @@ export function BrowserSettingsSection({
               <BrowserOperationButton
                 operation="clear-all"
                 pendingOperation={pendingOperation}
-                disabled={!clearAvailable}
+                disabled={operationDisabled}
                 variant="destructive"
                 onClick={() => setConfirmClearAll(true)}
               >

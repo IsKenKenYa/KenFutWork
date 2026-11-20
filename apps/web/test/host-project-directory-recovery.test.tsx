@@ -91,7 +91,7 @@ describe("new-shell project directory recovery", () => {
           ? {
               status: 503,
               json: async () => ({
-                error: { message: "Flow状态不可读取，请恢复网关连接。" },
+                error: { message: "读取失败，请稍后重试。" },
               }),
             }
           : {
@@ -119,12 +119,82 @@ describe("new-shell project directory recovery", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(hook.result.current.error).toContain("恢复网关连接");
+      expect(hook.result.current.error).toContain("读取失败");
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5_000);
       });
       expect(hook.result.current.snapshot?.flow?.phase).toBe("available");
       expect(hook.result.current.error).toBeNull();
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("keeps polling a degraded flow snapshot (no receipt) until the gateway returns the real generation", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      api.surfaceFetch.mockImplementation(async () => {
+        calls += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projectId,
+            workDir: "/p",
+            tasks: [],
+            missing: false,
+            flow: {
+              generation: calls === 1 ? 1 : 3,
+              operationId,
+              phase: "available",
+              previousWorkDir: "/p",
+              nextWorkDir: null,
+              receipt:
+                calls === 1
+                  ? null
+                  : {
+                      projectId,
+                      operationId: null,
+                      generation: 3,
+                      draining: false,
+                      localSettled: true,
+                      quiesceSettled: true,
+                      activeRunIds: [],
+                      remoteStopped: 0,
+                      remoteOutstanding: 0,
+                    },
+            },
+          }),
+        };
+      });
+      const hook = renderHook(() =>
+        useCanvasProjectDirectory("flow", projectId),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // 网关不可达的降级读是成功响应：不报错、目录照常可用，但代际是占位值。
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.snapshot?.flow).toMatchObject({
+        phase: "available",
+        generation: 1,
+        receipt: null,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      // 网关回来后续读自动收敛到真实代际，无需用户刷新。
+      expect(api.surfaceFetch).toHaveBeenCalledTimes(2);
+      expect(hook.result.current.snapshot?.flow).toMatchObject({
+        generation: 3,
+        receipt: { generation: 3 },
+      });
+      // 拿到回执后不再继续轮询。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(api.surfaceFetch).toHaveBeenCalledTimes(2);
       hook.unmount();
     } finally {
       vi.useRealTimers();

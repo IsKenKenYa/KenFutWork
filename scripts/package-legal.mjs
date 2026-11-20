@@ -4,10 +4,10 @@ import { join } from "node:path";
 const LEGAL_DOCUMENTS = [
   ["LICENSE", "GPL-3.0.txt"],
   ["NOTICE.md", "NOTICE.md"],
-  ["EULA.md", "EULA.md"],
-  ["PRIVACY.md", "PRIVACY.md"],
-  ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
-  ["COPYRIGHT.md", "COPYRIGHT.md"],
+  ["legal/EULA.md", "EULA.md"],
+  ["legal/PRIVACY.md", "PRIVACY.md"],
+  ["legal/THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  ["legal/COPYRIGHT.md", "COPYRIGHT.md"],
   ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
 ];
 

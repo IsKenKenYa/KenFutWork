@@ -24,7 +24,7 @@ import {
 /**
  * Dify 无头栈的**托管安装状态机**（FORM-11 探测后的「下载 → 确认 → 托管」流程）。
  *
- * 职责：flow 插件启用且承载路径可用时，把 `dify/docker-compose.dify.yml --profile dify`
+ * 职责：flow 插件启用且承载路径可用时，把 `docker/dify/docker-compose.dify.yml --profile dify`
  * 拉起来（镜像 ~8.3GB 随 up 自动拉取）。安装是**长任务**（拉镜像分钟级）——
  * detached spawn + 日志落文件 + 状态轮询，不占请求连接。
  *
@@ -39,7 +39,7 @@ import {
  *    flow 插件**卸载**走 purge：`down --volumes --rmi all` + 清本地 env/日志/记录——
  *    下次安装重新拉镜像即可（用户口径：卸载就把 dify 那些删掉，代码保留才能二次安装）。
  *
- * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根 `dify/`，打包=资源根 `dify/`）。
+ * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根 `docker/dify/`，打包=资源根 `dify/`）。
  */
 
 export type EngineInstallState = "idle" | "installing" | "ready" | "error";
@@ -395,10 +395,14 @@ export function planEngineAutoInstall(input: {
     return { action: "skip", reason: "用户已手动停止引擎" };
   if (input.installState === "installing")
     return { action: "skip", reason: "已有安装任务在跑" };
+  // 无法读取容器清单时不能贸然拉起安装：承载可能可达但清单查询失败，
+  // 盲装会盖掉用户正在排查的真实故障。容器清单成功且已有容器时仍补跑幂等初始化。
   if (input.stackContainerCount === null)
     return { action: "skip", reason: "无法读取容器清单" };
-  if (input.stackContainerCount > 0)
-    return { action: "skip", reason: "引擎栈容器已在" };
+  // 容器已在也要再跑一次：上次可能在 compose up 之后、Dify 初始化之前被中断
+  // （应用重启/进程被杀），只跳过会留下「容器在、管理员没建」的半装栈。
+  // compose up 与 bootstrap 都是幂等的，已在就绪状态时只做检查。
+  if ((input.stackContainerCount ?? 0) > 0) return { action: "install" };
   if (input.recommended !== "wsl2" && input.recommended !== "container") {
     return {
       action: "skip",

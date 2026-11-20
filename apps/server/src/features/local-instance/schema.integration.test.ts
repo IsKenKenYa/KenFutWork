@@ -41,8 +41,8 @@ describe.skipIf(process.env.RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION !== "1")(
           shimDir: resolvePgmqShimDir({ env: {}, repoRoot: root }),
         });
         const files = loadMigrationSet({
-          bootstrapDir: join(root, "supabase/bootstrap"),
-          migrationsDir: join(root, "supabase/migrations"),
+          bootstrapDir: join(root, "docker/pg/bootstrap"),
+          migrationsDir: join(root, "docker/pg/migrations"),
         });
         const cleanup = files.find(
           (file) => file.name === "local_instance_schema",

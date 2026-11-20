@@ -3,6 +3,8 @@
 随产品分发的开源字体（Work 引擎页「字体」区展示，编辑器按 `fonts/manifest.txt` 取用）。
 **只放许可允许随软件再分发的字体**；每个字体同目录带许可全文，列表名后面标注出品方。日文字体（如 BIZ UD明朝）不入库。
 
+字体列表里的「删除」只影响本机实例的展示与清单，不删除仓库资产；授权信息以本文件与 `legal/THIRD-PARTY-NOTICES.md` 为准。
+
 | 字体（列表显示名） | 文件 | 出品方 | 许可 | 来源 |
 | --- | --- | --- | --- | --- |
 | Inter | `Inter-Regular.ttf`、`Inter-Bold.ttf` | Rasmus Andersson | SIL OFL 1.1（`OFL-Inter.txt`） | https://github.com/rsms/inter |
@@ -35,4 +37,4 @@
 
 - 只收 SIL OFL 1.1 许可的字体；改名、改写字形都不做，保留 Reserved Font Name。
 - 新增字体：放 ttf/otf + 许可全文到本目录，登记 `apps/server/src/features/work/fonts.ts` 的
-  `BUNDLED_LICENSES` / `BUNDLED_CJK`，并在根 `THIRD-PARTY-NOTICES.md` 登记来源与许可。
+  `BUNDLED_LICENSES` / `BUNDLED_CJK`，并在 `legal/THIRD-PARTY-NOTICES.md` 登记来源与许可。

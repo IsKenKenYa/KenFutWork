@@ -213,7 +213,7 @@ export function HostSidebarRail({
       >
         <PanelLeftOpen className="h-4 w-4" />
       </button>
-      <div className="my-1 w-5 shrink-0 border-t" />
+      <div className="my-1 w-5 shrink-0 border-t border-foreground/20" />
       {navigation ? (
         <div className="shrink-0">
           <WorkbenchModeNavigation
@@ -227,7 +227,7 @@ export function HostSidebarRail({
         <>
           {/* 与上面那条分界线同款（w-5 居中短线）；此前这条铺满 48px 轨道宽，
               两条线一长一短，视觉上像两个不同层级的分隔。 */}
-          <div className="my-1 w-5 shrink-0 border-t" />
+          <div className="my-1 w-5 shrink-0 border-t border-foreground/20" />
           <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-1">
             {actions}
           </div>

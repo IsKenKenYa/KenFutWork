@@ -46,8 +46,6 @@ function renderSection() {
             memoryService={{
               listProjectMemories: async () => [workspace],
               readProjectMemoryFile,
-              listTrashedMemories: async () => [],
-              restoreTrashedMemory: async () => ({ fileName: null }),
             }}
             onMemoryEnabledChange={async () => {}}
             projectMemoryViewerAvailable
@@ -88,8 +86,6 @@ it("读取失败时透出真实原因，不留空白", async () => {
               readProjectMemoryFile: async () => {
                 throw new Error("记忆功能已关闭，请先在设置里打开。");
               },
-              listTrashedMemories: async () => [],
-              restoreTrashedMemory: async () => ({ fileName: null }),
             }}
             onMemoryEnabledChange={async () => {}}
             projectMemoryViewerAvailable

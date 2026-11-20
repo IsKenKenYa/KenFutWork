@@ -149,12 +149,7 @@ export function createCodePlatform(
     supportsComputerUse: Boolean(macDesktop),
     ...(macDesktop
       ? {
-          ...createCuaPermissionOnboarding(desktop, {
-            requestPermission: (kind) =>
-              client
-                .getChannel("cua-permission")
-                .call("requestPermission", [{ kind }]),
-          }),
+          ...createCuaPermissionOnboarding(desktop),
           executeDesktopCommand: async (command: string) => {
             if (command === "getCuaOsSupport") return { kind: "supported" };
             throw new Error("当前桌面宿主未提供该操作。");
@@ -164,7 +159,7 @@ export function createCodePlatform(
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
-    supportsExternalAgentSettingsSync: true,
+    supportsExternalAgentSettingsSync: false,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
     getApplicationIcon: (request) =>

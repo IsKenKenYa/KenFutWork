@@ -25,8 +25,8 @@ export const toolListResponseSchema = z.object({
 });
 export type ToolListResponse = z.infer<typeof toolListResponseSchema>;
 
-// 执行方式枚举：UI 与工具门已按 2026-10-22 统一主 Agent 退役，协议层保留
-// 供管理文档新建任务等历史 wire 字段解析（消费方不据此切换工作方式）。
+// 执行方式枚举：会话级工作方式（自主/计划/对话/目标/创造），
+// 由 `/api/execution-modes` 持久化到线程，run 接纳时冻结并传给 pre-step 与工具策略。
 export const executionModeSchema = z.enum([
   "agent",
   "plan",
@@ -36,6 +36,11 @@ export const executionModeSchema = z.enum([
   "creative",
 ]);
 export type ExecutionMode = z.infer<typeof executionModeSchema>;
+
+/** 无人值守轮次（目标/循环）使用「自动化任务」审批场景。 */
+export function isAutomationExecutionMode(mode: ExecutionMode): boolean {
+  return mode === "goal" || mode === "loop";
+}
 
 // --- 权限档位（DEC-4：code 模式默认 default 档；R5-3 补第 4 档「自定义配置」） ---
 

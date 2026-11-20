@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   clampSubagentMaxContinuations,
+  type ExecutionMode,
   type HookEvent,
   type ImageAttachment,
   type ImageGenerationPreference,
@@ -189,6 +190,19 @@ export function resolvePresetForRun(run: {
   if (run.workContext) return run.workContext.preset;
   if (run.scopeHandle) return run.scopeHandle.preset;
   return run.preset ?? (run.canvasId ? "design" : "code");
+}
+
+/** 用户自定义智能体的工具白名单/黑名单：缺省不限制，显式声明才收窄。 */
+export function toolAllowedForRun(
+  run: {
+    toolAllowlist?: readonly string[] | undefined;
+    toolDenylist?: readonly string[] | undefined;
+  },
+  toolName: string,
+): boolean {
+  if (run.toolAllowlist && !run.toolAllowlist.includes(toolName)) return false;
+  if (run.toolDenylist?.includes(toolName)) return false;
+  return true;
 }
 
 /**
@@ -431,6 +445,8 @@ type RuntimeRunStatus =
 type RuntimeRunRecord = RunCreateRequest & {
   /** 持久目标属主确认的运行来源，普通请求不能提供。 */
   goalId?: string;
+  /** 接纳时冻结的执行方式；pre-step 引导与工具策略按它判定。 */
+  executionMode?: ExecutionMode;
   workContext?: protocol.ConversationWorkContext | undefined;
   frozenContributions?: ToolContributionSnapshot;
   acceptedCancellation?: Promise<void>;
@@ -453,6 +469,11 @@ type RuntimeRunRecord = RunCreateRequest & {
   approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
   delegationDepth?: number;
   roleInstructions?: string;
+  /** 子智能体（用户自定义）的工具白名单/黑名单；缺省不限制。 */
+  toolAllowlist?: readonly string[];
+  toolDenylist?: readonly string[];
+  /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+  omitInstanceInstructions?: boolean;
   eventSink?: (event: StreamEvent) => Promise<void>;
   /** 可信持久宿主在自身事务内结算账本，客户端请求不能选择所有权。 */
   terminalPersistence: "runtime" | "host";
@@ -574,6 +595,7 @@ type CreateAgentRuntimeOptions = {
     threadId: string,
     scoped?: boolean,
     goalId?: string,
+    executionMode?: ExecutionMode,
   ) => ToolGate | undefined;
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
@@ -736,6 +758,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input,
       runId: run.runId,
       preset: resolvePresetForRun(run),
+      ...(run.executionMode ? { executionMode: run.executionMode } : {}),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
       ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
@@ -827,6 +850,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
         /** 仅由持久目标属主确认，不从公开Run请求读取。 */
         goalId?: string;
+        /** 接纳时冻结的执行方式；缺省由 pre-step/工具门读回线程持久值。 */
+        executionMode?: ExecutionMode;
         operation?: { kind: "compact" };
         /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
         runId?: string;
@@ -844,6 +869,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         terminalPersistence?: "host";
         delegationDepth?: number;
         roleInstructions?: string;
+        /** 子智能体（用户自定义）的工具白名单/黑名单；缺省不限制。 */
+        toolAllowlist?: readonly string[];
+        toolDenylist?: readonly string[];
+        /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+        omitInstanceInstructions?: boolean;
         approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
@@ -919,12 +949,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
         ...(runOptions?.goalId ? { goalId: runOptions.goalId } : {}),
+        ...(runOptions?.executionMode
+          ? { executionMode: runOptions.executionMode }
+          : {}),
         ...(runOptions?.eventSink ? { eventSink: runOptions.eventSink } : {}),
         ...(runOptions?.delegationDepth !== undefined
           ? { delegationDepth: runOptions.delegationDepth }
           : {}),
         ...(runOptions?.roleInstructions
           ? { roleInstructions: runOptions.roleInstructions }
+          : {}),
+        ...(runOptions?.toolAllowlist
+          ? { toolAllowlist: [...runOptions.toolAllowlist] }
+          : {}),
+        ...(runOptions?.toolDenylist
+          ? { toolDenylist: [...runOptions.toolDenylist] }
+          : {}),
+        ...(runOptions?.omitInstanceInstructions
+          ? { omitInstanceInstructions: true }
           : {}),
         ...(runOptions?.approvalCeiling
           ? { approvalCeiling: runOptions.approvalCeiling }
@@ -1750,11 +1792,28 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const preset = resolvePresetForRun(run);
 
-          // Task权限由作用域和逐调用审批持有；非Task按可信目标身份取权限场景。
-          const toolGate =
+          // Task权限由作用域和逐调用审批持有；执行方式硬约束与线程权限在此合流。
+          const baseToolGate =
             run.threadId && options.toolGateFor
-              ? options.toolGateFor(run.threadId, !!run.scopeHandle, run.goalId)
+              ? options.toolGateFor(
+                  run.threadId,
+                  !!run.scopeHandle,
+                  run.goalId,
+                  run.executionMode,
+                )
               : undefined;
+          // 自定义智能体的工具清单再叠一层：模型清单已过滤，这里兜住线程历史里
+          // 复述旧工具名的调用，拒绝理由对模型可读。
+          const toolGate =
+            run.toolAllowlist || run.toolDenylist
+              ? (toolName: string, detail?: { subagentReadOnly?: boolean }) =>
+                  !toolAllowedForRun(run, toolName)
+                    ? ({
+                        allowed: false,
+                        reason: `该智能体未配置工具 ${toolName}。`,
+                      } as const)
+                    : (baseToolGate?.(toolName, detail) ?? { allowed: true })
+              : baseToolGate;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
           denialTracker = toolGate ? createToolDenialTracker() : undefined;
@@ -2153,6 +2212,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
             ...(run.goalId ? { goalId: run.goalId } : {}),
+            ...(run.executionMode ? { executionMode: run.executionMode } : {}),
             ...(run.frozenContributions
               ? {
                   frozenContributions: structuredClone(run.frozenContributions),
@@ -2235,6 +2295,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const kernelToolDefinitions = kernelToolRegistry
             ? kernelToolRegistry
                 .resolveRunTools(toolResolutionContext)
+                .filter((tool) => toolAllowedForRun(run, tool.name))
                 .map((tool) => ({
                   ...tool,
                   execute: (
@@ -2257,7 +2318,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             try {
               const current = kernelToolRegistry
                 ?.resolveRunTools(toolResolutionContext)
-                .find((tool) => tool.name === name);
+                .find(
+                  (tool) =>
+                    tool.name === name && toolAllowedForRun(run, tool.name),
+                );
               if (current?.projectArguments)
                 argumentProjectors.set(name, {
                   projectArguments: current.projectArguments,
@@ -2289,6 +2353,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             ...(userRulesFragment.length > 0 ? { userRulesFragment } : {}),
             ...(pluginHookContext.length > 0 ? { pluginHookContext } : {}),
+            ...(run.omitInstanceInstructions
+              ? { omitInstanceInstructions: true }
+              : {}),
           };
           const initialPolicy = await codeApproval?.resolve();
           if (run.scopeHandle) {

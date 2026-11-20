@@ -47,7 +47,6 @@ export async function installCodePublicHostDom(options: { url?: string } = {}) {
     "navigator",
     "Element",
     "HTMLElement",
-    "Image",
     "HTMLButtonElement",
     "HTMLInputElement",
     "HTMLFormElement",

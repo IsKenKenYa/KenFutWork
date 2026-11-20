@@ -1,10 +1,3 @@
-import {
-  type CheckpointSummary,
-  checkpointListResponseSchema,
-  checkpointPreviewResponseSchema,
-  checkpointRestoreResponseSchema,
-} from "@kenfutwork/shared";
-import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
@@ -21,18 +14,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
+import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { HistoryIcon } from "lucide-react";
-import { useState } from "react";
-import { RunTimelineDialog } from "./RunTimelineDialog.js";
+import { useCallback, useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
-import {
-  readableSurfaceError,
-  type SurfaceReadState,
-  useSurfaceRead,
-} from "./useSurfaceRead.js";
 
-type RestorePreview = ReturnType<typeof checkpointPreviewResponseSchema.parse>;
+/**
+ * 检查点多轮时间线回滚（G8/Q15，KenFutWork 宿主件）：恢复旧版
+ * checkpoint-restore-dialog 的三件套——时间线下拉（轮次快照倒序）+ 恢复预览
+ * （工作目录相对目标时点的未提交差异）+ 确认回滚。
+ *
+ * 数据面（cookie 会话，Task 作用域）：GET /api/code/checkpoints?taskId=…
+ * POST /api/code/checkpoints/:id/preview、/restore（服务端缝健在）。
+ * 入口挂 ConversationStatusPanel 顶部（G8 建议落点）；无检查点/拉取失败时
+ * 入口隐藏（不摆空壳）。
+ */
+interface CheckpointSummary {
+  id: string;
+  runId: string;
+  createdAt: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+}
+
+interface RestorePreview {
+  targetSha: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  files: Array<{ path: string; additions: number; deletions: number }>;
+}
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -50,134 +63,89 @@ function optionLabel(row: CheckpointSummary): string {
   return `${formatTimestamp(row.createdAt)} · ${row.filesChanged} 个文件 +${row.insertions} −${row.deletions}`;
 }
 
-async function readCheckpoints(path: string, signal: AbortSignal) {
-  const result = checkpointListResponseSchema.parse(
-    await surfaceJson<unknown>(path, { signal }),
-  );
-  return result.checkpoints.reverse();
-}
-
-async function readPreview(path: string, signal: AbortSignal) {
-  return checkpointPreviewResponseSchema.parse(
-    await surfaceJson<unknown>(path, { method: "POST", signal }),
-  );
+function readableError(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "操作失败";
 }
 
 export function CheckpointTimeline({
   workspacePath,
   workspaceIdentity,
-  completedTurnId,
   onRestored,
 }: {
   workspacePath: string;
   workspaceIdentity?: string;
-  completedTurnId?: string;
   onRestored?: () => void;
 }) {
-  const taskId = useZCodeSessionStore(
-    (state) =>
-      state.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
+  const [open, setOpen] = useState(false);
+  const [checkpoints, setCheckpoints] = useState<CheckpointSummary[] | null>(
+    null,
   );
-  if (!taskId) return null;
-  const projectId =
-    parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspacePath)
-      ?.projectId ?? null;
-  return (
-    <TaskCheckpointTimeline
-      key={taskId}
-      taskId={taskId}
-      projectId={projectId}
-      completedTurnId={completedTurnId}
-      onRestored={onRestored}
-    />
-  );
-}
-
-function TaskCheckpointTimeline({
-  taskId,
-  projectId,
-  completedTurnId,
-  onRestored,
-}: {
-  taskId: string;
-  projectId: string | null;
-  completedTurnId: string | undefined;
-  onRestored?: (() => void) | undefined;
-}) {
-  const [openedList, setOpenedList] = useState<{
-    completedTurnId: string | undefined;
-  } | null>(null);
-  const open = openedList !== null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<RestorePreview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const query = `taskId=${encodeURIComponent(taskId)}`;
-  const list = useSurfaceRead(
-    `/api/code/checkpoints?${query}`,
-    readCheckpoints,
-    "无法读取检查点 请重试",
-    // 预览期间保留用户选择的清单；关闭后才按最新轮次重新读取。
-    openedList ? openedList.completedTurnId : completedTurnId,
-  );
-  const checkpoints = list.state.status === "ready" ? list.state.value : [];
-  const selectedCheckpoint = checkpoints.find((row) => row.id === selectedId);
-  const selectedPath = selectedCheckpoint
-    ? `/api/code/checkpoints/${encodeURIComponent(selectedCheckpoint.id)}`
-    : null;
-  const previewRead = useSurfaceRead(
-    open && selectedPath ? `${selectedPath}/preview?${query}` : null,
-    readPreview,
-    "无法读取回滚预览 请重试",
-  );
-  const preview =
-    previewRead.state.status === "ready" && !restoreError
-      ? previewRead.state.value
-      : null;
+  const taskId = useZCodeSessionStore
+    .getState()
+    .getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId;
 
-  function close() {
-    setOpenedList(null);
-    setSelectedId(null);
-    setRestoreError(null);
-    previewRead.reload();
-  }
+  const reload = useCallback(async () => {
+    if (!taskId) {
+      setCheckpoints(null);
+      return;
+    }
+    try {
+      const payload = await surfaceJson<{ checkpoints: CheckpointSummary[] }>(
+        `/api/code/checkpoints?taskId=${encodeURIComponent(taskId)}`,
+      );
+      // 服务端按 createdAt 升序；时间线倒序（最新在前）
+      setCheckpoints([...payload.checkpoints].reverse());
+    } catch {
+      setCheckpoints(null);
+    }
+  }, [taskId]);
 
-  function retryPreview() {
-    setRestoreError(null);
-    previewRead.reload();
-  }
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
-  async function restore() {
-    if (!open || !selectedPath || !preview || busy) return;
+  useEffect(() => {
+    if (!open || !selectedId) return;
+    let cancelled = false;
+    setPreview(null);
+    void surfaceJson<RestorePreview>(
+      `/api/code/checkpoints/${encodeURIComponent(selectedId)}/preview?taskId=${encodeURIComponent(taskId ?? "")}`,
+      { method: "POST" },
+    )
+      .then((next) => {
+        if (!cancelled) setPreview(next);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) toast(readableError(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedId, taskId]);
+
+  const restore = useCallback(async () => {
+    if (!selectedId || busy) return;
     setBusy(true);
     try {
-      checkpointRestoreResponseSchema.parse(
-        await surfaceJson<unknown>(`${selectedPath}/restore?${query}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ expectedVersion: preview.expectedVersion }),
-        }),
+      await surfaceJson(
+        `/api/code/checkpoints/${encodeURIComponent(selectedId)}/restore?taskId=${encodeURIComponent(taskId ?? "")}`,
+        { method: "POST" },
       );
+      setOpen(false);
+      onRestored?.();
+      await reload();
     } catch (error) {
-      setRestoreError(readableSurfaceError(error, "无法回滚 请检查工作目录"));
-      return;
+      toast(readableError(error));
     } finally {
       setBusy(false);
     }
-    close();
-    list.reload();
-    onRestored?.();
-  }
+  }, [busy, onRestored, reload, selectedId, taskId]);
 
-  if (list.state.status === "error")
-    return (
-      <CheckpointReadError
-        message={list.state.message}
-        label="重试读取检查点"
-        retry={list.reload}
-      />
-    );
-  if (checkpoints.length === 0) return null;
+  // 无 Task（草稿态）或无检查点时不摆入口（空壳禁则）
+  if (!taskId || !checkpoints || checkpoints.length === 0) return null;
 
   return (
     <>
@@ -190,18 +158,13 @@ function TaskCheckpointTimeline({
         data-testid="checkpoint-timeline-trigger"
         onClick={() => {
           setSelectedId((current) => current ?? checkpoints[0]?.id ?? null);
-          setOpenedList({ completedTurnId });
+          setOpen(true);
         }}
       >
         <HistoryIcon className="size-3.5" />
         检查点
       </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next && !busy) close();
-        }}
-      >
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>回滚到检查点</DialogTitle>
@@ -210,11 +173,8 @@ function TaskCheckpointTimeline({
           <div className="space-y-3">
             <Select
               value={selectedId ?? ""}
-              disabled={busy}
               onValueChange={(next) => {
-                if (typeof next !== "string" || next === selectedId) return;
-                setSelectedId(next);
-                retryPreview();
+                if (typeof next === "string") setSelectedId(next);
               }}
             >
               <SelectTrigger aria-label="回滚目标" className="w-full">
@@ -228,11 +188,25 @@ function TaskCheckpointTimeline({
                 ))}
               </SelectContent>
             </Select>
-            <CheckpointPreviewContent
-              state={previewRead.state}
-              restoreError={restoreError}
-              retry={retryPreview}
-            />
+            <div className="rounded-md border border-border p-2.5 text-ui-sm">
+              {preview === null ? (
+                <span className="text-foreground-subtle">读取预览…</span>
+              ) : (
+                <div>
+                  <p className="text-foreground-subtle">
+                    将覆盖 {preview.filesChanged} 个文件的未提交改动（+
+                    {preview.insertions} −{preview.deletions}）
+                  </p>
+                  <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto text-foreground-subtle">
+                    {preview.files.map((file) => (
+                      <li key={file.path} className="truncate">
+                        {file.path}（+{file.additions} −{file.deletions}）
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
             <p className="text-ui-sm text-foreground-subtle">
               丢弃所选时点后的未提交改动
             </p>
@@ -241,15 +215,7 @@ function TaskCheckpointTimeline({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setTimelineOpen(true)}
-              disabled={!selectedCheckpoint?.runId || busy}
-            >
-              这一轮运行
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={close}
+              onClick={() => setOpen(false)}
               disabled={busy}
             >
               取消
@@ -264,81 +230,6 @@ function TaskCheckpointTimeline({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <RunTimelineDialog
-        taskId={taskId}
-        projectId={projectId}
-        initialRunId={selectedCheckpoint?.runId ?? null}
-        open={timelineOpen && Boolean(selectedCheckpoint?.runId)}
-        onOpenChange={setTimelineOpen}
-      />
     </>
-  );
-}
-
-function CheckpointReadError({
-  message,
-  label,
-  retry,
-}: {
-  message: string;
-  label: string;
-  retry(): void;
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 p-2">
-      <p role="alert" className="min-w-0 flex-1 text-ui-sm text-destructive">
-        {message}
-      </p>
-      <Button type="button" size="sm" variant="outline" onClick={retry}>
-        {label}
-      </Button>
-    </div>
-  );
-}
-
-function CheckpointPreviewContent({
-  state,
-  restoreError,
-  retry,
-}: {
-  state: SurfaceReadState<RestorePreview>;
-  restoreError: string | null;
-  retry(): void;
-}) {
-  const error =
-    restoreError ?? (state.status === "error" ? state.message : null);
-  if (error)
-    return (
-      <CheckpointReadError message={error} label="重新预览" retry={retry} />
-    );
-  if (state.status !== "ready")
-    return (
-      <p role="status" className="text-ui-sm text-foreground-subtle">
-        读取预览…
-      </p>
-    );
-  const preview = state.value;
-  return (
-    <div className="rounded-md border border-border p-2.5 text-ui-sm text-foreground-subtle">
-      <p>
-        将覆盖 {preview.filesChanged} 个文件的未提交改动（+{preview.insertions}{" "}
-        −{preview.deletions}）
-      </p>
-      <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto">
-        {preview.files.map((file) => (
-          <li
-            key={JSON.stringify([file.rootDirectory, file.path])}
-            className="truncate"
-            title={file.rootDirectory}
-          >
-            {file.path}（
-            {file.added === null || file.deleted === null
-              ? "二进制文件"
-              : `+${file.added} −${file.deleted}`}
-            ）
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

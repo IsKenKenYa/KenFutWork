@@ -8,7 +8,7 @@ import {
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
-import { serverFetch } from "@/lib/local-access";
+import { loadLocalInstance, serverFetch } from "@/lib/local-access";
 import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
 /**
@@ -41,6 +41,20 @@ export function useFlowHostEntry(enabled = true): {
       window.removeEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, refresh);
   }, [enabled, refresh]);
 
+  /**
+   * 本机托管运行时启动期（首次安装/应用刚启动）尚未就绪：每 2 秒重试探针，
+   * 就绪后入口自动出现。只在明确回报 `starting` 时轮询，配置错误不空转。
+   */
+  const starting =
+    probe?.pluginInstalled === true &&
+    probe.pluginEnabled &&
+    probe.status?.runtime?.state === "starting";
+  useEffect(() => {
+    if (!starting) return;
+    const timer = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(timer);
+  }, [starting, refresh]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick 是手动刷新信号（refresh() 递增它以重跑本 effect），effect 体内不读它
   useEffect(() => {
     if (!enabled) {
@@ -50,6 +64,9 @@ export function useFlowHostEntry(enabled = true): {
     let cancelled = false;
 
     void (async () => {
+      // 首次带 `#connect` 打开时，本机接入换票是异步的：先等它完成，
+      // 否则两路探针会撞上 401，Flow 入口要等用户手动刷新才出现。
+      await loadLocalInstance().catch(() => undefined);
       const [plugin, status] = await Promise.all([
         (async () => {
           try {

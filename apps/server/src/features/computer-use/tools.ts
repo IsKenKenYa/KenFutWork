@@ -1,11 +1,14 @@
 /**
- * Computer Use 工具面（ctx.tools 注册，scope: "code"）。
+ * Computer Use 工具面（ctx.tools 注册，scope: "shared"）。
  *
  * 命名 `mcp__computer-use__<action>`：与已照搬的 zcode CUA 渲染链解析约定
  * 一致（`isZCodeCuaToolName` 按名包含 computer-use 命中，连续行自动聚合成
  * 贴底操作组）。Task审批按实际副作用声明：只读发现为read，输入/拉起为execute。
  *
- * 用法纪律写进工具描述（里程碑 1 不注入独立技能文件）：
+ * 安装市场 bundle 后 code/design 两种 preset 均可见；主 Run 与子代理的隔离
+ * 由 plugin 执行包装和 active-runs 绑定负责。
+ *
+ * 用法纪律写进工具描述（不注入独立技能文件）：
  * - **a11y 优先**：get_app_state 的文本树是主观察方式，坐标/截图是兜底；
  * - **observe → act → observe**：动作后重新观察确认效果；
  * - **元素索引优先于坐标**；坐标只能引用最近一帧截图。
@@ -239,7 +242,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       access: "read",
       description:
         "检查 Computer Use 权限（辅助功能/屏幕录制/自动化）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权；pending 为 true 表示仍有未授予项，稍后再次调用（不要结束回合）。",
-      scope: "code",
+      scope: "shared",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
         guarded(deps, () => deps.service.requestAccess(execCtx)),
@@ -249,7 +252,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       access: "read",
       description:
         "列出当前运行的应用（pid/bundle_id/名称/是否活跃）。要操作某个应用前先看它的准确标识——显示名必须逐字复制 OS 列出的名字，不要翻译或简写。",
-      scope: "code",
+      scope: "shared",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
         guarded(deps, () => deps.service.listApps(execCtx)),
@@ -259,7 +262,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       access: "read",
       description:
         "列出某应用的窗口（window_id/标题/subrole/main/focused）。多窗口应用要先选窗口；没有 subrole 的行是合成表面，不可绑定。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: { app: APP_REF_SCHEMA },
@@ -272,7 +275,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}get_app_state`,
       description:
         "观察应用的无障碍树（首选观察方式，纯文本、不需要截图）。返回元素行 [index] 角色 标题 (状态) actions=[…]；后续动作用元素索引寻址。绑定未运行的应用会自动拉起它。include_screenshot=true 时附带当前窗口截图（坐标动作需先有帧）。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: {
@@ -296,7 +299,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}screenshot`,
       description:
         "截取目标应用当前窗口的截图（视觉兜底：a11y 树看不到的自绘/画布内容才用它）。返回帧的 frameId 与边界；坐标动作只能引用最近一帧。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: { app: APP_REF_SCHEMA },
@@ -309,7 +312,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}click`,
       description:
         "点击元素（首选索引寻址）或屏幕坐标（兜底，须引用最近截图帧）。动作后重新观察确认效果——成功下发≠界面已变化。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: {
@@ -355,7 +358,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}type`,
       description:
         "向目标输入文本（可带元素索引定位输入框；缺省打到当前焦点）。Unicode/中文走系统剪贴板通道，输入完成后恢复原剪贴板内容。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: {
@@ -381,7 +384,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       access: "read",
       description:
         "读取系统剪贴板文本。内容可能包含用户隐私，只在任务确实需要时调用。",
-      scope: "code",
+      scope: "shared",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
         guarded(deps, () => deps.service.readClipboard(execCtx)),
@@ -389,7 +392,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     {
       name: `${CU_TOOL_PREFIX}clipboard_write`,
       description: "把文本写入系统剪贴板，覆盖用户原有剪贴板内容。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: { text: { type: "string" } },
@@ -408,7 +411,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}stop_computer_control`,
       description:
         "停止桌面控制并释放租约（kill switch）。任务完成、用户要求停止、或遇到不可重试错误时立即调用。",
-      scope: "code",
+      scope: "shared",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
         guarded(deps, () => deps.service.stop(runIdOf(execCtx))),
@@ -422,7 +425,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     action: (args: Record<string, unknown>) => CuInputAction,
   ): ToolDefinition => ({
     name: `${CU_TOOL_PREFIX}${name}`,
-    scope: "code",
+    scope: "shared",
     description,
     parameters: {
       type: "object",
@@ -445,7 +448,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     access: "read",
     description:
       "发现全部显示器：返回全局逻辑边界（可能为负）、缩放比例和主屏标识。",
-    scope: "code",
+    scope: "shared",
     parameters: { type: "object", properties: {} },
     execute: async (_args, context) =>
       guarded(deps, () => deps.service.listDisplays!(context)),
@@ -537,7 +540,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       access: "read",
       description:
         "列出实际已装配的桌面后端；外部MCP引用原库存连接，不复制启动配置。",
-      scope: "code",
+      scope: "shared",
       parameters: { type: "object", properties: {} },
       execute: async (_args, context) =>
         guarded(deps, () => backends.list(context)),
@@ -546,7 +549,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}select_backend`,
       description:
         "选择list_backends给出的桌面实现。输入进行中或其它Run持有控制权时拒绝；切换后必须重新观察，旧帧不能复用。",
-      scope: "code",
+      scope: "shared",
       parameters: {
         type: "object",
         properties: { id: { type: "string", minLength: 1 } },

@@ -254,8 +254,8 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
           );
         const root = fileURLToPath(new URL("../../../../../", import.meta.url));
         const files = loadMigrationSet({
-          bootstrapDir: join(root, "supabase/bootstrap"),
-          migrationsDir: join(root, "supabase/migrations"),
+          bootstrapDir: join(root, "docker/pg/bootstrap"),
+          migrationsDir: join(root, "docker/pg/migrations"),
         }).filter(
           (file) =>
             file.version <= C850_CUTOFF ||

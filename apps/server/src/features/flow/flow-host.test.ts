@@ -1,14 +1,72 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   providerInstanceResponseSchema,
   type StreamEvent,
 } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import { authorizeFlowGateway } from "../../http/flow-gateway-auth.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import { CanvasEventBuffer, flowEventScopeKey } from "../../ws/event-buffer.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
 import type { ResolvedInstanceCredentials } from "../model-providers/model-provider-service.js";
 import { createFlowIdentityTickets } from "./identity.js";
+import { resolveDifyDir, resolveFlowDir } from "./plugin.js";
+
+describe("源码态资源路径", () => {
+  it("dify 与 flow 指向仓库 docker/dify 与根级 flow", () => {
+    // CI 检出不含 flow 子模块（submodules: false），这里只锁解析结果，
+    // 不把子模块是否检出当作代码回归。
+    const repoRoot = fileURLToPath(new URL("../../../../..", import.meta.url));
+    expect(resolveDifyDir()).toBe(join(repoRoot, "docker", "dify"));
+    expect(resolveFlowDir()).toBe(join(repoRoot, "flow"));
+    expect(existsSync(join(resolveDifyDir(), "docker-compose.dify.yml"))).toBe(
+      true,
+    );
+  });
+});
+
+describe("authorizeFlowGateway", () => {
+  async function probe(secret?: string, headers: Record<string, string> = {}) {
+    const app = Fastify();
+    app.post("/probe", async (request, reply) => {
+      if (!authorizeFlowGateway(request, reply, secret)) return;
+      return { ok: true };
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/probe",
+      headers,
+    });
+    await app.close();
+    return response;
+  }
+
+  it("未配置共享密钥时回 503：托管模式之外没有人能调这些回调", async () => {
+    const response = await probe();
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toEqual({
+      code: "service_unavailable",
+      message: "未配置 Flow 网关共享密钥，宿主回调不可用。",
+    });
+  });
+
+  it("密钥正确但协议版本不认识时回 400，密钥错误时回 401", async () => {
+    const badVersion = await probe("secret", {
+      authorization: "Bearer secret",
+      "x-ff-embed-protocol": "v0",
+    });
+    expect(badVersion.statusCode).toBe(400);
+    expect(badVersion.json().error.message).toContain("Flow 协议版本不匹配");
+
+    const badSecret = await probe("secret", { authorization: "Bearer forged" });
+    expect(badSecret.statusCode).toBe(401);
+    expect(badSecret.json().error.message).toBe("Flow 网关共享密钥不匹配。");
+  });
+});
 
 const INSTANCE_ID = "11111111-1111-4111-8111-111111111111";
 const PROVIDER_ID = "22222222-2222-4222-8222-222222222222";

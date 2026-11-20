@@ -1175,15 +1175,13 @@ export function GitActionMenu({
             paths: pathsToStage,
           });
         }
-        const commitResult = await gitService.commit({
+        await gitService.commit({
           workspacePath,
           message: nextCommitMessage,
           paths: stagePaths,
           stagedOnly: !includeUnstaged,
         });
         committed = true;
-        if (commitResult?.indexCleanupWarning)
-          toast(commitResult.indexCleanupWarning, { variant: "warning" });
 
         if (options?.pushAfterCommit) {
           await pushCurrentBranch({ showToast: false });

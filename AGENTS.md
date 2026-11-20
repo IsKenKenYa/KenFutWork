@@ -11,8 +11,8 @@
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
 - `packages/shared` — 跨端 zod 接口定义（HTTP API、WS 协议、job 事件、usage、skills 等），构建到 `dist/` 后被前后端引用；修改接口定义先修改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
-- `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
-- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/loomic` 是项目前身 Loomic 的 MIT 上游副本，本仓库早期代码在其基础上开发，按 MIT 保留声明（见 `COPYRIGHT.md`），不受本节「禁止复制」约束；根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已确认），按 `docs/方案设计/flow集成方案.md` 分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
+- `docker/pg/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL；桌面发布包内复制为 `db/`）。
+- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/loomic` 是项目前身 Loomic 的 MIT 上游副本，本仓库早期代码在其基础上开发，按 MIT 保留声明（见 `legal/COPYRIGHT.md`），不受本节「禁止复制」约束；根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已确认），按 `docs/方案设计/flow集成方案.md` 分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
 - `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/方案设计/改造计划.md` 是服务端架构演进蓝图，`docs/方案设计/多端产品设计.md` 是多端形态设计；`docs/调研/02-当前项目实现状态.md` 是代码现状快照。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
@@ -96,16 +96,17 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 5. **提交前必须复跑门禁**：`pnpm test`（含 `tests/workspace.test.mjs` 的仓库级棘轮/文档门禁）与 `pnpm typecheck` 至少要覆盖本次改动所在包；跨端接口定义（`packages/shared`）改动必须全量。
 6. **文档与提交同步**：里程碑或架构级改动在 `docs/日志.md`（历轮回执 + 变更台账）里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
 7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
-8. **新增第三方资产先登记归属**：vendored 代码、图标、字体、模型权重进仓库的同一 PR，须在根 `THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置；上游没有 LICENSE 文件的如实标「待核」，禁止默认按 GPL 分发。法律层文件是属主且互不复述：授权边界与免责见根 `EULA.md`（不得用它缩减 GPL-3.0 授予的权利），数据行为与已知缺口见根 `PRIVACY.md`（按代码实现写，不写愿望），贡献者授权见根 `CLA.md`，版权归属见根 `COPYRIGHT.md`。
+8. **新增第三方资产先登记归属**：vendored 代码、图标、字体、模型权重进仓库的同一 PR，须在`legal/THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置；上游没有 LICENSE 文件的如实标「待核」，禁止默认按 GPL 分发。法律层文件是属主且互不复述：授权边界与免责见`legal/EULA.md`（不得用它缩减 GPL-3.0 授予的权利），数据行为与已知缺口见`legal/PRIVACY.md`（按代码实现写，不写愿望），贡献者授权见`legal/CLA.md`，版权归属见`legal/COPYRIGHT.md`。
 9. **及时分批提交，禁止长期堆积 WIP**：一个可验证的行为完成、范围测试与类型检查通过后立即提交，再开始下一模块；不得以“整体任务尚未完成”为由长期不提交，也不得最后用一个大提交打包多个独立功能。跨模块改造先列文件/hunk、用途、依赖和验证命令，按依赖顺序交付，每批新增引用与消费方必须完整、提交后的 HEAD 必须能构建。
 10. **积压先盘点，交接必对账**：发现大量未提交改动时，先停止扩展实现，逐项核对 `git status` / `git diff`，区分本任务、并行任务和来源不明的改动，登记批次并逐批复核、测试、提交；不能靠记忆归属或为清空工作区混交。收尾、上下文压缩或交接前记录已提交 SHA 与剩余文件/hunk、用途、验证状态及阻断原因；备份和记录不能替代已具备提交条件的 commit。
 11. **提交按模块或类别归类**：一次提交只覆盖一个模块或同一类别的改动（单一 feature 域、纯文档、纯测试、构建配置等），跨模块改动按依赖顺序分多批提交，禁止无关模块混入同一提交。
+12. **实施回执只写入《日志》**：阶段回执、验收记录与证据说明一律写进 `docs/日志.md`，禁止在源码目录或 `docs/` 其他位置新建独立回执、验收记录类 Markdown 文件；历史独立回执已清理，细节可从 git 历史查看。
 
 ## 产品行为不变量（硬约束）
 主入口的行为约定在此登记，**任何 agent 改动前先读本节**，修改位置若与不变量冲突，先恢复不变量再处理其它需求。
 
 - **工作台恒为 Code 壳（zcode UI），Design/Flow 是壳内主区视图（融合架构）**。`/workbench` 只渲染 `CodeWorkbenchFrame`（`/code-ui/index.html` iframe）；切 Design/Flow **不再换壳**——模式 pills 在壳内切换主区（`WorkspaceMainView` 增 `design`/`flow`，Design 文档由 `zcode/host/DocumentPane.tsx` 的内容标签承载并保持挂载；`FlowSurface.tsx` 按视图显隐）。深链 `?mode=` 由父页一次性解析后经 `kenfutwork:workbench-navigation`（含 `mode`）推给壳。**旧画布工作台壳（CanvasWorkbench 及其侧栏/空态）已退役删除**，不得复辟。
-- **Code/Design 共用原 ZCode 会话 UI 与 Task 宿主**。项目导航可收起，左侧会话使用同一个 `SessionPane`，右侧承载画布、文件与浏览器内容标签。Design 默认内容为画布或文档创建入口；只有显式打开/切换动作改变内容标签，发送、审批、恢复及 Goal 不抢占画布。画布视口与选区保留。画布页只承载编辑能力，Agent 交互由共享会话接管；迁移中逐项验证媒体、选区、同步和权限后删除旧接线。实施与验收见 `docs/方案设计/Code工作域与工具内核实施规格.md`「Code/Design 统一实施」。
+- **Code/Design 共用原 ZCode 会话 UI 与 Task 宿主**。项目导航可收起，左侧会话使用同一个 `SessionPane`，右侧承载画布、文件与浏览器内容标签。Design 默认内容为画布或文档创建入口；只有显式打开/切换动作改变内容标签，发送、审批、恢复及 Goal 不抢占画布。画布视口与选区保留。画布页只承载编辑能力，Agent 交互由共享会话接管；迁移中逐项验证媒体、选区、同步和权限后删除旧接线。实施与验收见 `docs/方案设计/改造计划.md` §14.9「Code/Design 统一实施」。
 - **Flow 模式：主区恒为 flow 内容面（默认工作流画布），入口按插件安装态出现**。壳内 `FlowSurface`：默认渲染 flow 前端 iframe（`ff-embed/v1` 握手与身份票据在面内完成）；「引擎」信息页（引擎服务状态 / 承载路径 / 地址 / 容器事实）仅当用户**显式点面顶栏「引擎」**时替换画布，任何对话框/会话仍不得占据主区。**入口纪律**：flow 以插件形态交付（`FORM-11`），未安装 / 宿主适配层未接通时不出现 flow 入口（父页按探针结果给 `availableModes`，不可用深链返回 design），不摆空壳、不放假开关。**验收**：flow 主区必须是工作流画布或显式切到的引擎页；未装插件时模式 pills 与路由都不得出现 flow 空壳入口。
 - **Code 模式：以编码为重点的通用工作，Run 必须绑定持久 Task 工作域**。Code 也承接调研、文档和数据处理；独立 Work 模式留待后续设计。本期 Code Project 的主目录与附加授权目录由服务端持有；Task 创建时固定自己的主目录，项目默认目录变更仅影响新 Task。Code Run 必须用 taskId 打开 executionScopes，由真实 Task 生成文件、命令和子任务权限；禁止用 canvasId、conversationId 或路径猜测替代执行身份。Code/Design 共用真实 Task；画布是项目文档引用，选择画布不增加文件目录权限。每个 Run 冻结工作方式、能力、模型与资源目标；界面切换不改当前 Run。Flow 主区不变量保持有效。验证由执行作用域、原 Code 宿主 RPC 与工作台主区公共接口测试覆盖；目录不可用、权限撤销及 Run 失败必须透出可读原因。
 
@@ -127,9 +128,9 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - 公开仓继续 **GPL-3.0**；禁止把公开仓改私有、删除历史，或提交商业版专有代码、客户合同、签名、个人邮箱、收益台账。
 - 外部 PR 必须签 CLA；未签不合并。托管 CLA Assistant 是辅助，维护者复核；公司贡献者走 PDF CCLA + 手动 allowlist。
 - 商业版在独立私有仓维护；公开→私有允许；私有→公开必须权利清理、CLA、许可扫描与两位共同所有者批准。
-- 历史贡献边界：future73807 由《共同所有者协议》覆盖；Loomic MIT 保留 `licenses/loomic-MIT.txt` 与 `COPYRIGHT.md` 声明；提交 `81eecbb4`（PR #4）未获书面许可前不得进入商业版。
-- 新增第三方资产必须在 `THIRD-PARTY-NOTICES.md` 登记来源/许可/商业版可用性；未满足许可证义务的 GPL/无许可资产不得进商业版。
-- 法务文件属主：`CLA.md`、`EULA.md`、`COPYRIGHT.md`、`THIRD-PARTY-NOTICES.md`、`GOVERNANCE.md`；修改需两位共同所有者同意。
+- 历史贡献边界：future73807 由《共同所有者协议》覆盖；Loomic MIT 保留 `licenses/loomic-MIT.txt` 与 `legal/COPYRIGHT.md` 声明；提交 `81eecbb4`（PR #4）未获书面许可前不得进入商业版。
+- 新增第三方资产必须在 `legal/THIRD-PARTY-NOTICES.md` 登记来源/许可/商业版可用性；未满足许可证义务的 GPL/无许可资产不得进商业版。
+- 法务文件属主：`legal/CLA.md`、`legal/EULA.md`、`legal/COPYRIGHT.md`、`legal/THIRD-PARTY-NOTICES.md`、`legal/GOVERNANCE.md`；修改需两位共同所有者同意。
 - 公开文档只写收益分配原则，不承诺具体比例；具体在内部协议。
 
 ## Agent 专用指令
@@ -172,6 +173,13 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - **非运行时文件用中文**：纯文档、`docs/` 内部文档、工作笔记、独立诊断脚本（不被 CI 调用）、独立测试脚本（不被 CI 调用）。
 - **脚本内部面向用户的内容用中文**：echo、提示、错误消息等用户可见输出用中文；脚本文件名可保留英文。
 - **历史文件不改名**：现有文件保持原名，新文件按新约定。
+
+### Markdown 文档位置（硬约束）
+- **说明类 Markdown 只放 `docs/`**：方案、设计、调研、规划、规格、说明、报告一律放 `docs/` 对应子目录，并按 `docs/README.md` 的文档地图登记；源码目录、`apps/`、`packages/`、`scripts/`、`patches/` 不再新增说明类 Markdown，就近说明写代码注释。
+- **执行日志与阶段报告只写 `docs/日志.md`**：实施回执、验收记录、诊断结论、测试证据一律追加到该文件，禁止另建独立回执文件。
+- **根目录只保留平台与工具要求的入口**：`README.md`、`AGENTS.md`、`CONTEXT.md`、`NOTICE.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`MAINTAINERS.md`、`LICENSE`；法务文件在 `legal/`，GitHub 模板在 `.github/`。
+- **不计入本规则**：外部仓库与子模块（`references/`、`flow/`）、依赖、`**/skills/`（含 `.agents/skills` 与插件 bundle 内的技能）、MCP 服务自带文档、`plugins/` 内随插件分发的 Markdown、逐字节保真的移植目录（`apps/web/src/components/workbench/zcode/`）、资产目录内随资产分发的许可与来源说明（如 `apps/server/assets/work-fonts/README.md`）。
+- **既有散落文档随模块迁移**：现存于其他位置的说明类 Markdown，在下次改动对应模块时迁入 `docs/` 并同步更新引用，避免一次性大搬移打断并行改动。
 
 ## 行为准则（硬约束）
 
@@ -294,11 +302,11 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - 参照先例：kimi-code 的 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP` / `KIMI_CODE_INFINITE_RETRY`（重试档位可调 + 无限重试显式开启）。
 
 ## 数据库迁移（硬约束）
-> 方向说明：存储统一自管 Postgres（桌面捆绑本机实例 / 自部署连用户 Postgres，见《多端产品设计》§5）；代码与部署现状以《日志》为准。`supabase/migrations/` 目录名沿用，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
-- `supabase/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。
-- 新迁移使用 `YYYYMMDDHHmmss_description.sql` UTC 时间戳命名（用 `supabase migration new <描述>` 生成）。迁移一旦被共享或执行就不可修改、重命名或删除；错误必须新增前向修复迁移。
+> 方向说明：存储统一自管 Postgres（桌面捆绑本机实例 / 自部署连用户 Postgres，见《多端产品设计》§5）；代码与部署现状以《日志》为准。源码迁移目录为 `docker/pg/migrations/`，桌面发布包内复制为 `db/`，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
+- `docker/pg/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。
+- 新迁移使用 `YYYYMMDDHHmmss_description.sql` UTC 时间戳命名。迁移一旦被共享或执行就不可修改、重命名或删除；错误必须新增前向修复迁移。
 - 每次迁移必须通过历史 SHA-256、实际 Schema 定义、空数据库全量重放和二次 no-op 检查。禁止覆盖账本校验和或静默重跑已执行版本。
-- 本地开发（`supabase db reset` 等）仅允许在开发环境运行；Schema 校验保持只读严格校验，用于 CI 与发布前检查。生产迁移只能通过显式命令执行。
+- 本地开发库重建仅允许在开发环境运行；Schema 校验保持只读严格校验，用于 CI 与发布前检查。生产迁移只能通过显式命令执行。
 - 生产迁移只能由发布流水线的一次性迁移任务执行；API 与 Worker 使用无 DDL 权限的运行角色，并在 Schema、迁移历史或权限不匹配时拒绝启动。
 - 有真实部署兼容约束的破坏性变更采用 Expand/Contract；不得把应用代码回滚到与已迁移数据库不兼容的版本。本轮 `DEC-20` 已确认无 release/真实用户，测试数据无需保留，可以直接以前向迁移清理旧账户与商业对象；仍须检查历史 SHA、最终 schema、空库重放及二次 no-op，禁止改写旧迁移。
 - 发布必须先备份，再执行角色 bootstrap、迁移、运行权限授权、运行角色验证和 smoke test。迁移集合或校验和变化后禁止自动降级，只能前向修复或显式恢复匹配备份。

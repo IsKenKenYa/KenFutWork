@@ -10,6 +10,7 @@ import {
   TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH,
   TID_SETTINGS_LOCALE_SELECT_ITEM,
   TID_SETTINGS_LOCALE_SELECT_TRIGGER,
+  TID_SETTINGS_NATIVE_SEARCH_SWITCH,
   testId,
 } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
@@ -65,6 +66,7 @@ export function GeneralSectionContent({
   terminalFontFamily = "",
   integratedTerminalShell = { mode: "auto" },
   integratedTerminalShellOptions = [],
+  nativeSearchEnhancementsEnabled,
   httpProxy = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
@@ -90,6 +92,7 @@ export function GeneralSectionContent({
   onTerminalInheritSystemProfileChange = async () => {},
   onTerminalFontFamilyChange = async () => {},
   onIntegratedTerminalShellChange = async () => {},
+  onNativeSearchEnhancementsEnabledChange,
   onHttpProxyChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
@@ -125,6 +128,7 @@ export function GeneralSectionContent({
   terminalFontFamily: string;
   integratedTerminalShell?: IntegratedTerminalShellSelection;
   integratedTerminalShellOptions?: IntegratedTerminalShellOption[];
+  nativeSearchEnhancementsEnabled: boolean;
   httpProxy?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
@@ -153,6 +157,7 @@ export function GeneralSectionContent({
   onIntegratedTerminalShellChange?: (
     selection: IntegratedTerminalShellSelection,
   ) => Promise<void>;
+  onNativeSearchEnhancementsEnabledChange: (enabled: boolean) => Promise<void>;
   onHttpProxyChange?: (httpProxy: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
@@ -297,7 +302,6 @@ export function GeneralSectionContent({
     <div className="space-y-4">
       <SettingsGroupCard>
         <SettingsRow
-          searchId="settings.locale"
           label={intl.formatMessage({ id: "settings.locale" })}
           description={intl.formatMessage({ id: "settings.localeDescription" })}
           control={
@@ -344,7 +348,6 @@ export function GeneralSectionContent({
 
       <SettingsGroupCard>
         <SettingsRow
-          searchId="settings.terminalProfile"
           label={intl.formatMessage({ id: "settings.terminalProfile" })}
           description={intl.formatMessage({
             id: "settings.terminalProfileDescription",
@@ -359,7 +362,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.terminalFontFamily"
           label={intl.formatMessage({ id: "settings.terminalFontFamily" })}
           description={intl.formatMessage({
             id: "settings.terminalFontFamilyDescription",
@@ -430,11 +432,30 @@ export function GeneralSectionContent({
             }
           />
         ) : null}
+        <SettingsRow
+          label={intl.formatMessage({
+            id: "settings.nativeSearchEnhancements",
+          })}
+          description={intl.formatMessage({
+            id: "settings.nativeSearchEnhancementsDescription",
+          })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({
+                id: "settings.nativeSearchEnhancements",
+              })}
+              checked={nativeSearchEnhancementsEnabled}
+              data-testid={TID_SETTINGS_NATIVE_SEARCH_SWITCH}
+              onCheckedChange={(checked) => {
+                void onNativeSearchEnhancementsEnabledChange(checked);
+              }}
+            />
+          }
+        />
       </SettingsGroupCard>
 
       <SettingsGroupCard>
         <SettingsRow
-          searchId="settings.httpProxy"
           label={intl.formatMessage({ id: "settings.httpProxy" })}
           description={intl.formatMessage({
             id: "settings.httpProxyDescription",
@@ -470,7 +491,6 @@ export function GeneralSectionContent({
         />
         {/* No Proxy 与 HTTP 代理共同决定同一出口策略，必须贴在代理地址下面。*/}
         <SettingsRow
-          searchId="settings.httpProxyNoProxy"
           label={intl.formatMessage({ id: "settings.httpProxyNoProxy" })}
           description={intl.formatMessage({
             id: "settings.httpProxyNoProxyDescription",
@@ -506,7 +526,6 @@ export function GeneralSectionContent({
         />
         {/* 自定义 CA 属于 HTTP 代理的同一网络出口策略，必须跟代理输入放在同一卡片里。*/}
         <SettingsRow
-          searchId="settings.httpProxyCaCertPath"
           label={intl.formatMessage({ id: "settings.httpProxyCaCertPath" })}
           description={intl.formatMessage({
             id: "settings.httpProxyCaCertPathDescription",
@@ -605,7 +624,6 @@ export function GeneralSectionContent({
           </>
         ) : null}
         <SettingsRow
-          searchId="settings.notification"
           label={intl.formatMessage({ id: "settings.notification" })}
           description={intl.formatMessage({
             id: "settings.notificationDescription",
@@ -618,7 +636,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.notificationSound"
           label={intl.formatMessage({ id: "settings.notificationSound" })}
           description={intl.formatMessage({
             id: "settings.notificationSoundDescription",
@@ -670,7 +687,6 @@ export function GeneralSectionContent({
 
       <SettingsGroupCard>
         <SettingsRow
-          searchId="settings.zcodeInteractionBehavior"
           label={intl.formatMessage({
             id: "settings.zcodeInteractionBehavior",
           })}
@@ -748,7 +764,6 @@ export function GeneralSectionContent({
           />
         )}
         <SettingsRow
-          searchId="settings.messageStreamShowReasoning"
           label={intl.formatMessage({
             id: "settings.messageStreamShowReasoning",
           })}
@@ -768,7 +783,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.messageStreamShowTodos"
           label={intl.formatMessage({ id: "settings.messageStreamShowTodos" })}
           description={intl.formatMessage({
             id: "settings.messageStreamShowTodosDescription",
@@ -786,7 +800,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.toolGroupingExplore"
           label={intl.formatMessage({ id: "settings.toolGroupingExplore" })}
           description={intl.formatMessage({
             id: "settings.toolGroupingExploreDescription",
@@ -804,7 +817,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.toolGroupingTerminal"
           label={intl.formatMessage({ id: "settings.toolGroupingTerminal" })}
           description={intl.formatMessage({
             id: "settings.toolGroupingTerminalDescription",
@@ -822,7 +834,6 @@ export function GeneralSectionContent({
           }
         />
         <SettingsRow
-          searchId="settings.toolGroupingChanges"
           label={intl.formatMessage({ id: "settings.toolGroupingChanges" })}
           description={intl.formatMessage({
             id: "settings.toolGroupingChangesDescription",
@@ -894,7 +905,6 @@ export function GeneralSectionContent({
 
       <SettingsGroupCard>
         <SettingsRow
-          searchId="settings.dataBaseDir"
           label={intl.formatMessage({ id: "settings.dataBaseDir" })}
           description={intl.formatMessage({
             id: "settings.dataBaseDirDescription",

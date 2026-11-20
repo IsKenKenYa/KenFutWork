@@ -97,7 +97,7 @@ const SUGGESTED_ACTIONS: Record<string, string> = {
   controller_busy: "让用户停止当前持有桌面控制权的会话后再试。",
   occluded:
     "目标窗口被遮挡或不在当前屏幕：先调用 mcp__computer-use__focus_window 激活，或让用户移开遮挡窗口后重新截图。",
-  unavailable: "确认运行平台与执行器装配（里程碑 1 仅支持 macOS）。",
+  unavailable: "确认运行平台与执行器装配状态。",
   action_limit: "本轮动作数已达上限，让用户确认后续再继续。",
   session_expired: "控制会话超时，让用户重新发起。",
   timeout: "动作超时：先重新观察确认现场，再决定是否重试。",

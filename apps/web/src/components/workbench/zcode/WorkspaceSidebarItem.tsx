@@ -14,7 +14,6 @@ import {
   Cloud,
   CopyIcon,
   Ellipsis,
-  Pencil,
   Folder,
   FolderOpen,
   House,
@@ -27,7 +26,7 @@ import {
 } from "lucide-react";
 import type { useSortable } from "@dnd-kit/sortable";
 import { BorderBeam } from "border-beam";
-import { isLocalWorkspaceTarget, parseLocalWorkspaceIdentity } from "@zcode/shared";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
 import { STATUS_DOT } from "@zui/components/workflow-graph/run-status-presentation.js";
 import { Button, buttonVariants } from "@zui/components/ui/button.js";
 import {
@@ -135,7 +134,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   isActiveWorkspace,
   isExpanded,
   closeTab,
-  onEditProject,
   toggleWorkspaceExpanded,
   onSelectTask,
   onStartDraftInWorkspace,
@@ -160,7 +158,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   isExpanded: boolean;
   activateTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
-  onEditProject?: (tab: WorkspaceTabState) => void;
   toggleWorkspaceExpanded: (workspacePath: string) => void;
   onSelectTask: (
     targetWorkspacePath: string,
@@ -818,12 +815,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                 role="button"
                 tabIndex={0}
                 data-testid={testId(TID_WORKSPACE_ITEM, tab.workspacePath)}
-                data-project-id={
-                  parseLocalWorkspaceIdentity(
-                    tab.workspaceIdentity ?? "",
-                    tab.workspacePath,
-                  )?.projectId
-                }
                 className={cn(
                   buttonVariants({ variant: "ghost", size: "default" }),
                   /*
@@ -930,19 +921,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                           </DropdownMenuTrigger>
                         </ControlHintTooltip>
                         <DropdownMenuContent align="end" onClick={handleActionMenuClick}>
-                          {onEditProject ? (
-                            <DropdownMenuItem
-                              data-testid="code-project-edit"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                              }}
-                              onSelect={() => onEditProject(tab)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              {intl.formatMessage({ id: "project.edit" })}
-                            </DropdownMenuItem>
-                          ) : null}
                           <RemoteSyncMenuItems
                             canSyncSkills={showRemoteSkillSyncAction}
                             canSyncMcp={showRemoteSkillSyncAction}

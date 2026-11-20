@@ -55,7 +55,8 @@ import { SettingsResourceGroupHeader } from "@zui/settings/SettingsResourceGroup
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 import { SettingsBreadcrumbReporter } from "@zui/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
-import { AgentsInstructionRow } from "@zui/settings/AgentsInstructionRow.js";
+import { AgentsInstructionRow, resolveAgentsInstructionPath } from "@zui/settings/AgentsInstructionRow.js";
+import { AgentsInstructionEditor } from "@zui/settings/AgentsInstructionEditor.js";
 import {
   SubagentReasoningField,
   type SubagentReasoningFieldState,
@@ -1298,6 +1299,8 @@ export function SubagentsSection({
   }, [tabs]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [capability, setCapability] = useState<AgentsCapability | null>(null);
+  const [defaultInstructionsPath, setDefaultInstructionsPath] = useState<string | null>(null);
+  const [editingInstructions, setEditingInstructions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1312,17 +1315,39 @@ export function SubagentsSection({
   );
   const targetWorkspacePath = selectedWorkspace?.workspacePath ?? "";
   const targetWorkspaceIdentity = undefined;
-  // 顶部 AGENTS.md 入口跟随分区作用域；用户作用域回退到设置页当前打开的本地项目，
-  // 远端路径不在本机打开，宁可不显示也不打开错误目录。
-  const agentsInstructionWorkspacePath = useMemo(() => {
-    if (targetWorkspacePath) return targetWorkspacePath;
+  const activeScope = selectedWorkspace ? "workspace" : "user";
+  // 顶部 AGENTS.md 入口跟随分区作用域：用户=实例默认（注入所有运行），
+  // 工作区=项目根文件。默认路径由宿主清单返回，缺失时回退到当前打开的本地项目。
+  const agentsInstructionFilePath = useMemo(() => {
+    if (activeScope === "workspace" && targetWorkspacePath)
+      return resolveAgentsInstructionPath(targetWorkspacePath);
+    if (defaultInstructionsPath) return defaultInstructionsPath;
     const activeWorkspacePath = workspacePath ?? "";
     return workspaceTabs.some((tab) => tab.workspacePath === activeWorkspacePath)
-      ? activeWorkspacePath
+      ? resolveAgentsInstructionPath(activeWorkspacePath)
       : "";
-  }, [targetWorkspacePath, workspacePath, workspaceTabs]);
+  }, [
+    activeScope,
+    defaultInstructionsPath,
+    targetWorkspacePath,
+    workspacePath,
+    workspaceTabs,
+  ]);
   const { pluginManagementService, subagentsService } = localHostServices;
-  const activeScope = selectedWorkspace ? "workspace" : "user";
+  const loadDefaultInstructions = useCallback(
+    () => subagentsService.readDefaultInstructions(),
+    [subagentsService],
+  );
+  const saveDefaultInstructions = useCallback(
+    async (content: string) => {
+      await subagentsService.writeDefaultInstructions({ content });
+    },
+    [subagentsService],
+  );
+  const canEditDefaultInstructions =
+    activeScope === "user" &&
+    Boolean(defaultInstructionsPath) &&
+    agentsInstructionFilePath === defaultInstructionsPath;
   const latestRequestIdRef = useRef(0);
   const pluginInventoryWorkspacePath = targetWorkspacePath || workspaceTabs[0]?.workspacePath;
   const chatModelSelectGroups = useMemo(() => {
@@ -1359,6 +1384,7 @@ export function SubagentsSection({
         // 插件 agent 是运行时 profile 的只读投影；设置页展示它们，但仍不展示工作区级编辑入口。
         setAgents(projectSettingsSubagents(result));
         setCapability(result.capability);
+        setDefaultInstructionsPath(result.defaultInstructionsPath ?? null);
         setLoading(false);
         setRefreshing(false);
       } catch (loadError) {
@@ -1726,9 +1752,6 @@ export function SubagentsSection({
   const hasSearchResultEmpty = Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
-      {agentsInstructionWorkspacePath ? (
-        <AgentsInstructionRow workspacePath={agentsInstructionWorkspacePath} />
-      ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1754,6 +1777,14 @@ export function SubagentsSection({
           })}
         />
       </div>
+      {agentsInstructionFilePath ? (
+        <AgentsInstructionRow
+          filePath={agentsInstructionFilePath}
+          {...(canEditDefaultInstructions
+            ? { onEdit: () => setEditingInstructions(true) }
+            : {})}
+        />
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
@@ -1852,6 +1883,13 @@ export function SubagentsSection({
           ) : null}
         </div>
       )}
+      <AgentsInstructionEditor
+        open={editingInstructions && canEditDefaultInstructions}
+        filePath={agentsInstructionFilePath || defaultInstructionsPath || ""}
+        load={loadDefaultInstructions}
+        save={saveDefaultInstructions}
+        onClose={() => setEditingInstructions(false)}
+      />
     </div>
   );
 }
