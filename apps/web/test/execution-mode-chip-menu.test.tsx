@@ -124,9 +124,9 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
     ),
   );
   await waitFor(() =>
-    expect(
-      screen.getByTestId("execution-mode-chip").textContent,
-    ).toContain("计划"),
+    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
+      "计划",
+    ),
   );
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 });

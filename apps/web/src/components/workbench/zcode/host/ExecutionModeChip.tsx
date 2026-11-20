@@ -1,4 +1,5 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
+import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -6,12 +7,11 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { Button } from "@zui/components/ui/button.js";
 import {
   BotIcon,
   ChevronDownIcon,
-  type LucideIcon,
   LightbulbIcon,
+  type LucideIcon,
   MessageSquareIcon,
   PuzzleIcon,
   Repeat2Icon,

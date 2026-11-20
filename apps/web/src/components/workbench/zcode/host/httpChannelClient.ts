@@ -536,7 +536,9 @@ export class CodeHttpChannelClient implements IChannelClient {
     });
   }
 
-  private async saveTaskGroup(input: Record<string, unknown>): Promise<unknown> {
+  private async saveTaskGroup(
+    input: Record<string, unknown>,
+  ): Promise<unknown> {
     const payload = await this.request<{ result?: unknown }>(
       "/api/code-ui/rpc",
       {

@@ -331,9 +331,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         // Soft assertions deliberately keep the original send path running on
         // the old implementation, so its real Run config is also observed.
         expect
-          .soft(
-            f.session.view.getByTestId("execution-mode-chip").textContent,
-          )
+          .soft(f.session.view.getByTestId("execution-mode-chip").textContent)
           .toContain("自主");
         await assertOriginalSend(f);
       });
