@@ -272,14 +272,21 @@ export function createAgentRunsPlugin(
           canvasRepository,
           canvasService: d.get("canvas"),
           // 保留本次实际有效文件引用，runtime分别记录capture状态与run/phase。
+          // 自动备份开关（设置 → 权限 → 自动备份）只控制**轮次前**那道快照：
+          // 关掉后不再产生新的 pre 快照，已有快照仍可查看与恢复。
           ...(checkpoints
             ? {
                 checkpointHooks: {
                   beforeTurn: (hookCtx) =>
-                    checkpoints.captureTurnBoundary({
-                      ...hookCtx,
-                      phase: "pre",
-                    }),
+                    // 自动备份关闭时返回 undefined：边界记为 not_supported，
+                    // 不产生新的 pre 快照（runtime 的 captureFiles 契约支持这一点）。
+                    ctx.tryGet("permissions")?.getSettings().policy.autoBackup
+                      .enabled === false
+                      ? Promise.resolve(undefined)
+                      : checkpoints.captureTurnBoundary({
+                          ...hookCtx,
+                          phase: "pre",
+                        }),
                   afterTurn: (hookCtx) =>
                     checkpoints.captureTurnBoundary({
                       ...hookCtx,

@@ -262,6 +262,16 @@ export const permissionPolicySchema = z.object({
       injectionGuard: z.boolean().default(false),
     })
     .default({ injectionGuard: false }),
+  /**
+   * 自动备份（WorkBuddy「自动备份」）：每轮对话修改文件之前先留一份影子快照。
+   *
+   * 本仓库的对应实现是**检查点**（`features/checkpoints`：每个轮次边界在私有目录
+   * 里做一次 git 快照，可在检查点时间线上回看与恢复）。这里只控制「轮次前」那道
+   * 快照要不要做；关掉后不产生新的 pre 快照，已有快照不受影响。
+   */
+  autoBackup: z
+    .object({ enabled: z.boolean().default(true) })
+    .default({ enabled: true }),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -275,6 +285,7 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   sensitiveProtection: { enabled: true, patterns: [] },
   bundledRuntimes: { enabled: true },
   aiSafety: { injectionGuard: false },
+  autoBackup: { enabled: true },
 };
 /**
  * 内置的敏感数据格式（与 WorkBuddy「敏感保护」同口径：票据、密码这类东西不该被 AI 发出去）。

@@ -254,6 +254,10 @@ export function PermissionTierSection() {
         <AiSafetySection />
       </section>
       <section className="min-w-0 space-y-3">
+        <SettingsSubheading>自动备份</SettingsSubheading>
+        <AutoBackupSection />
+      </section>
+      <section className="min-w-0 space-y-3">
         <SettingsSubheading>审批模型</SettingsSubheading>
         <ModelDefaultsSection approvalOnly showHeading={false} />
       </section>
@@ -396,6 +400,84 @@ function RuleTable({
         {addLabel}
       </Button>
     </div>
+  );
+}
+
+/**
+ * 自动备份：每轮对话修改文件前先留一份影子快照（检查点）。
+ *
+ * 本仓库的对应实现是检查点：每个轮次边界在私有目录做一次 git 快照，可在时间线上
+ * 回看与恢复。开关只控制**轮次前**那道；关掉后不再产生新的 pre 快照，已有快照仍可用。
+ */
+function AutoBackupSection() {
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<{ policy?: { autoBackup?: { enabled?: boolean } } }>(
+      "/api/permissions/tier",
+    )
+      .then((view) => {
+        if (cancelled) return;
+        setEnabled(view.policy?.autoBackup?.enabled !== false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async (next: boolean) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = enabled;
+    setEnabled(next);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: { ...(view.policy ?? {}), autoBackup: { enabled: next } },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setEnabled(previous);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroupCard>
+      <SettingsRow
+        label="轮次前自动备份"
+        description="改动文件前留快照"
+        control={
+          <input
+            type="checkbox"
+            aria-label="轮次前自动备份"
+            checked={enabled}
+            disabled={saving}
+            onChange={(event) => void save(event.target.checked)}
+            className="size-4"
+          />
+        }
+      />
+      {message ? (
+        <div className="px-4 pb-3">
+          <span role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </span>
+        </div>
+      ) : null}
+    </SettingsGroupCard>
   );
 }
 
