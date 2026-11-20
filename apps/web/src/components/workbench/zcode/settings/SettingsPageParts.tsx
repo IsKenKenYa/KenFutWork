@@ -164,11 +164,10 @@ export function SettingsRow({
   );
 }
 
+/** 设置页分组标题：与设置页其他分区同级（14px / 中等粗细）。 */
 export function SettingsSubheading({ children }: { children: ReactNode }) {
   return (
-    <h3 className="text-ui-sm font-medium text-foreground-subtle">
-      {children}
-    </h3>
+    <h3 className="text-ui-base font-medium text-foreground">{children}</h3>
   );
 }
 
