@@ -429,6 +429,57 @@ function CustomRulesSection() {
             </span>
           ) : null}
         </div>
+        <div className="space-y-2 border-t border-border pt-3">
+          <div className="text-ui-base text-foreground">禁用工具</div>
+          {disabledTools.length === 0 ? (
+            <p className="text-ui-sm text-foreground-subtle">没有禁用的工具</p>
+          ) : (
+            <div className="space-y-2">
+              {disabledTools.map((pattern, index) => (
+                <div
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 禁用清单允许重复，索引是唯一稳定键。
+                  key={index}
+                  className="flex items-center gap-2"
+                >
+                  <Input
+                    aria-label="禁用工具名或前缀"
+                    value={pattern}
+                    onChange={(event) =>
+                      setDisabledTools((current) =>
+                        current.map((item, i) =>
+                          i === index ? event.target.value : item,
+                        ),
+                      )
+                    }
+                    className="min-w-0 flex-1 font-mono text-ui-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="移出禁用清单"
+                    disabled={saving}
+                    onClick={() =>
+                      setDisabledTools((current) =>
+                        current.filter((_, i) => i !== index),
+                      )
+                    }
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setDisabledTools((current) => [...current, ""])}
+          >
+            添加禁用项
+          </Button>
+        </div>
       </div>
     </SettingsGroupCard>
   );
