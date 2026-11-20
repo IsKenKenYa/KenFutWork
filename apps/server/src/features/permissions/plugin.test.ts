@@ -247,7 +247,7 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
       tier: "full-access",
       policy: {
         ...permissions.getSettings().policy,
-        pathRules: [{ path: "/protected", action: "deny" }],
+        pathRules: [{ path: "/protected", operation: "write", action: "deny" }],
       },
     });
 

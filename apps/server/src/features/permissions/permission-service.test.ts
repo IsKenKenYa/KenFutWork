@@ -381,7 +381,7 @@ describe("工具策略：三态规则与禁用清单", () => {
 
   it("路径规则按前缀判：规则目录及其下层命中，同前缀的邻居目录不命中", () => {
     const svc = withPolicy({
-      pathRules: [{ path: "/repo/app", action: "deny" }],
+      pathRules: [{ path: "/repo/app", operation: "write", action: "deny" }],
     });
     const write = (filePath: string) =>
       svc.evaluate({ toolName: "write_file", args: { file_path: filePath } });
@@ -398,7 +398,9 @@ describe("工具策略：三态规则与禁用清单", () => {
 
   it("路径规则两种分隔符与小写都认（Windows 路径大小写不敏感）", () => {
     const svc = withPolicy({
-      pathRules: [{ path: "C:\\Users\\me\\secrets", action: "deny" }],
+      pathRules: [
+        { path: "C:\\Users\\me\\secrets", operation: "write", action: "deny" },
+      ],
     });
     expect(
       svc.evaluate({
@@ -428,9 +430,64 @@ describe("工具策略：三态规则与禁用清单", () => {
     ).toBeUndefined();
   });
 
+  it("读 / 写 / 删各自独立配：只读允许不放开写入，删除单独一条", () => {
+    const svc = withPolicy({
+      pathRules: [
+        { path: "/repo/data", operation: "read", action: "allow" },
+        { path: "/repo/data", operation: "write", action: "deny" },
+        { path: "/repo/data", operation: "delete", action: "ask" },
+      ],
+    });
+    const decide = (
+      toolName: string,
+      args: Record<string, unknown>,
+    ): ReturnType<typeof svc.evaluate> => svc.evaluate({ toolName, args });
+
+    // 读：放行（同目录的 allow 规则）
+    expect(
+      decide("read_file", { file_path: "/repo/data/a.txt" }).decision,
+    ).toBe("allow");
+    // 写：硬拒绝（同目录的 deny 规则）
+    const write = decide("write_file", {
+      file_path: "/repo/data/a.txt",
+      content: "x",
+    });
+    expect(write.decision).toBe("deny");
+    expect(write.blocked).toBe(true);
+    // 删：询问（不硬拦，交给审批）
+    const remove = decide("delete_file", { file_path: "/repo/data/a.txt" });
+    expect(remove.decision).toBe("deny");
+    expect(remove.blocked).toBeUndefined();
+  });
+
+  it("操作类型从工具名与参数推断；不碰文件系统的工具不受路径规则影响", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo", operation: "read", action: "deny" }],
+    });
+    // 命令类工具的路径在命令字符串里、不在参数里 → 路径规则不参与（由命令规则管）
+    expect(
+      svc.evaluate({
+        toolName: "execute",
+        args: { command: "rm /repo/a.txt" },
+      }).source,
+    ).not.toBe("path-rule");
+    // 读类工具命中 read 规则
+    expect(
+      svc.evaluate({
+        toolName: "read_file",
+        args: { file_path: "/repo/a.txt" },
+      }).source,
+    ).toBe("path-rule");
+    // 写类工具即使只给路径，也按 write 判，不命中 read 规则
+    expect(
+      svc.evaluate({ toolName: "write_file", args: { file_path: "/repo/a" } })
+        .source,
+    ).not.toBe("path-rule");
+  });
+
   it("路径/命令的 allow 规则可越过档位，但硬拒绝仍然优先", () => {
     const svc = withPolicy({
-      pathRules: [{ path: "/repo/app", action: "allow" }],
+      pathRules: [{ path: "/repo/app", operation: "write", action: "allow" }],
       commandRules: [{ prefix: "rm -rf", action: "deny" }],
     });
     expect(
@@ -562,7 +619,7 @@ describe("审计中心：判定流水", () => {
 
   it("不记工具参数与命令原文（只记命中的规则，理由可定位）", () => {
     const { svc, records } = withSink({
-      pathRules: [{ path: "/secret", action: "deny" }],
+      pathRules: [{ path: "/secret", operation: "write", action: "deny" }],
       commandRules: [{ prefix: "curl -H Authorization", action: "deny" }],
     });
     svc.evaluate({

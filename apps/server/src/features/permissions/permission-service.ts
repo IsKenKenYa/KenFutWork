@@ -2,11 +2,13 @@ import {
   anyPermissionRuleMatches,
   detectDeleteCommand,
   EMPTY_PERMISSION_POLICY,
+  fileOperationFor,
   findSensitiveData,
   matchesPermissionDomain,
   matchesPermissionRule,
   type PermissionDecisionSource,
   type PermissionDomainRule,
+  type PermissionFileOperation,
   type PermissionPolicy,
   type PermissionRuleAction,
   type PermissionRules,
@@ -209,6 +211,13 @@ const TIER_LABELS: Record<PermissionTier, string> = {
   custom: "自定义档",
 };
 
+/** 文件操作 → 用户可见名（路径规则的理由里要能读出「管的是读还是写」）。 */
+const FILE_OPERATION_LABELS: Record<PermissionFileOperation, string> = {
+  read: "读",
+  write: "写",
+  delete: "删",
+};
+
 export interface ToolApproval {
   scope: "once" | "thread" | "forever";
   threadId?: string;
@@ -362,13 +371,16 @@ export function createPermissionService(
     );
     if (toolDecision) return toolDecision;
 
-    // 路径与命令规则只在参数里真的带了对应字段时才判：没带就不该命中。
+    // 路径规则只在参数里真的带了路径时才判；操作类型决定命中哪一档规则。
     const targetPath = pathArgument(args);
     if (targetPath) {
+      const operation = fileOperationFor({ toolName, args });
       const pathDecision = triStateDecision(
         policy.pathRules,
-        (rule) => rule.path,
-        (rule) => withinPathPrefix(targetPath, rule.path),
+        (rule) => `${rule.path}（${FILE_OPERATION_LABELS[rule.operation]}）`,
+        (rule) =>
+          rule.operation === operation &&
+          withinPathPrefix(targetPath, rule.path),
         "path-rule",
       );
       if (pathDecision) return pathDecision;

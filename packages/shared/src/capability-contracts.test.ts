@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectDeleteCommand,
   EMPTY_PERMISSION_POLICY,
+  fileOperationFor,
   findSensitiveData,
   matchesPermissionDomain,
   permissionDomainRuleSchema,
@@ -76,7 +77,7 @@ describe("域名规则契约", () => {
     const parsed = permissionPolicySchema.parse({
       rules: [{ pattern: "mcp__*", action: "deny" }],
       disabledTools: ["shell_*"],
-      pathRules: [{ path: "/protected", action: "deny" }],
+      pathRules: [{ path: "/protected", operation: "write", action: "deny" }],
     });
     expect(parsed.domainRules).toEqual([]);
     expect(parsed.rules).toHaveLength(1);
@@ -186,5 +187,59 @@ describe("敏感数据检测", () => {
     });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
     expect(parsed.bundledRuntimes).toEqual({ enabled: true });
+  });
+});
+
+/** 文件安全：按读 / 写 / 删分别配规则，操作类型必须从真实调用推得出来。 */
+describe("文件操作类型推断", () => {
+  it("工具名直接表达动作时以工具名为准", () => {
+    const cases: Array<[string, string]> = [
+      ["read_file", "read"],
+      ["ls", "read"],
+      ["grep", "read"],
+      ["write_file", "write"],
+      ["edit_file", "write"],
+      ["create_directory", "write"],
+      ["delete_file", "delete"],
+      ["remove_item", "delete"],
+      ["trash_path", "delete"],
+    ];
+    for (const [toolName, expected] of cases) {
+      expect(fileOperationFor({ toolName }), toolName).toBe(expected);
+    }
+  });
+
+  it("命令工具的路径在命令里：删除指令优先，其次看写入方向", () => {
+    expect(
+      fileOperationFor({ toolName: "execute", args: { command: "rm a" } }),
+    ).toBe("delete");
+    expect(
+      fileOperationFor({ toolName: "execute", args: { command: "cat a" } }),
+    ).toBe("read");
+    expect(
+      fileOperationFor({
+        toolName: "execute",
+        args: { command: "echo x > a" },
+      }),
+    ).toBe("write");
+    expect(
+      fileOperationFor({ toolName: "execute", args: { command: "cp a b" } }),
+    ).toBe("write");
+  });
+
+  it("没有命令时按写入类参数判断，只带路径按读", () => {
+    expect(
+      fileOperationFor({
+        toolName: "some_tool",
+        args: { file_path: "a", content: "x" },
+      }),
+    ).toBe("write");
+    expect(
+      fileOperationFor({ toolName: "some_tool", args: { file_path: "a" } }),
+    ).toBe("read");
+    // 完全看不出碰文件的调用返回 undefined（路径规则不参与）
+    expect(
+      fileOperationFor({ toolName: "web_search", args: { query: "x" } }),
+    ).toBe(undefined);
   });
 });

@@ -29,7 +29,22 @@ import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 type PolicyRule = { pattern: string; action: "allow" | "ask" | "deny" };
 
 /** 规则表在界面上的统一行形状：三种规则只是「值」的含义不同。 */
-type EditableRule = { value: string; action: PolicyRule["action"] };
+type EditableRule = {
+  value: string;
+  action: PolicyRule["action"];
+  /** 只有路径规则用：这次规则管的是读 / 写 / 删（缺省按读）。 */
+  operation?: "read" | "write" | "delete";
+};
+
+/** 路径规则的三个操作档（与 `permissionFileOperationSchema` 一一对应）。 */
+const FILE_OPERATIONS: ReadonlyArray<{
+  value: NonNullable<EditableRule["operation"]>;
+  label: string;
+}> = [
+  { value: "read", label: "读" },
+  { value: "write", label: "写" },
+  { value: "delete", label: "删" },
+];
 
 /**
  * 权限档（G7/T7/C1，KenFutWork 宿主件）：旧四档语义（默认/自动审批/完全访问/自定义）
@@ -325,6 +340,7 @@ function RuleTable({
   ariaLabel,
   emptyLabel,
   disabled,
+  showOperation = false,
 }: {
   rows: EditableRule[];
   onChange: (next: EditableRule[]) => void;
@@ -333,6 +349,8 @@ function RuleTable({
   ariaLabel: string;
   emptyLabel: string;
   disabled: boolean;
+  /** 路径规则表额外显示「操作」列（读 / 写 / 删分别配）。 */
+  showOperation?: boolean;
 }) {
   const update = (index: number, patch: Partial<EditableRule>) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -356,6 +374,31 @@ function RuleTable({
               onChange={(event) => update(index, { value: event.target.value })}
               className="min-w-0 flex-1 font-mono text-ui-sm"
             />
+            {showOperation ? (
+              <Select
+                value={row.operation ?? "read"}
+                onValueChange={(next) =>
+                  update(index, {
+                    operation: next as NonNullable<EditableRule["operation"]>,
+                  })
+                }
+              >
+                <SelectTrigger
+                  size="lg"
+                  aria-label="操作"
+                  className="w-24 shrink-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FILE_OPERATIONS.map((entry) => (
+                    <SelectItem key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             <Select
               value={row.action}
               onValueChange={(next) =>
@@ -703,7 +746,11 @@ function PermissionPolicySection() {
       policy?: {
         rules?: Array<{ pattern: string; action: PolicyRule["action"] }>;
         disabledTools?: string[];
-        pathRules?: Array<{ path: string; action: PolicyRule["action"] }>;
+        pathRules?: Array<{
+          path: string;
+          operation?: NonNullable<EditableRule["operation"]>;
+          action: PolicyRule["action"];
+        }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
         domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
         deleteProtection?: { enabled?: boolean; batchThreshold?: number };
@@ -723,6 +770,7 @@ function PermissionPolicySection() {
           (view.policy?.pathRules ?? []).map((rule) => ({
             value: rule.path,
             action: rule.action,
+            operation: rule.operation ?? "read",
           })),
         );
         setCommandRules(
@@ -758,7 +806,11 @@ function PermissionPolicySection() {
     try {
       const trimmed = (rows: EditableRule[]) =>
         rows
-          .map((row) => ({ value: row.value.trim(), action: row.action }))
+          .map((row) => ({
+            value: row.value.trim(),
+            action: row.action,
+            ...(row.operation ? { operation: row.operation } : {}),
+          }))
           .filter((row) => row.value.length > 0);
       await surfaceJson("/api/permissions/tier", {
         method: "PUT",
@@ -774,6 +826,7 @@ function PermissionPolicySection() {
               .filter((pattern) => pattern.length > 0),
             pathRules: trimmed(pathRules).map((row) => ({
               path: row.value,
+              operation: row.operation ?? "read",
               action: row.action,
             })),
             commandRules: trimmed(commandRules).map((row) => ({
@@ -837,6 +890,7 @@ function PermissionPolicySection() {
             ariaLabel="路径前缀"
             emptyLabel="没有路径规则"
             disabled={saving}
+            showOperation
           />
         </div>
         <div className="space-y-2 border-t border-border pt-4">

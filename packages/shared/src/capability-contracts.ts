@@ -105,14 +105,35 @@ export const permissionDisabledToolsSchema = z
   .default([]);
 
 /**
- * 路径规则（参考 WorkBuddy 的「文件安全」）：按路径前缀配三态动作。
+ * 文件操作类型（WorkBuddy「文件安全」按读 / 写 / 删分别配置）。
+ *
+ * 判定只看工具这次**实际要做的事**：工具名与参数决定 operation，
+ * 例如 `read_file` = read、`write_file`/`edit_file` = write、
+ * `rm`/`del` 命令 = delete、`ls`/`cat` 命令 = read。
+ */
+export const permissionFileOperationSchema = z.enum([
+  "read",
+  "write",
+  "delete",
+]);
+export type PermissionFileOperation = z.infer<
+  typeof permissionFileOperationSchema
+>;
+
+/**
+ * 路径规则（参考 WorkBuddy 的「文件安全」）：按路径前缀 + 操作类型配三态动作。
  *
  * 只按**前缀**匹配，不做通配符：路径通配（`**`、`?`）会让人误判覆盖面，
  * 前端也难解释「这条规则到底管到哪些文件」。前缀匹配的口径是「这个目录/文件及其下层」。
+ *
+ * `operations` 缺省 = 三种操作都管；显式列出时只对那几种生效——
+ * 「这个目录只读」= `operations: ["read"], action: "allow"` 再加一条
+ * `operations: ["write","delete"], action: "deny"`。
  */
 export const permissionPathRuleSchema = z
   .object({
     path: z.string().min(1).max(4096),
+    operation: permissionFileOperationSchema,
     action: permissionRuleActionSchema,
   })
   .strict();
@@ -330,6 +351,60 @@ export function findSensitiveData(
     }
   }
   return null;
+}
+
+/**
+ * 这次工具调用在文件系统上「做的是什么」——路径规则据此挑读 / 写 / 删那一档。
+ *
+ * 判据优先级（高到低）：
+ * 1. 工具名里能看出动作（`read_*` / `write_*` / `delete_*` / `rm` / `mv` / `cat` …）——
+ *    这是属主给的语义，最可靠；
+ * 2. 命令字符串里有删除指令 → delete；
+ * 3. 带写入类参数（`content` / `new_string` / `old_string`）→ write；
+ * 4. 只带路径、看不出写意图 → read。
+ *
+ * 返回 `undefined` 表示「这次调用不碰文件系统」，路径规则不参与判定。
+ */
+export function fileOperationFor(input: {
+  toolName: string;
+  /** 工具参数（可缺省：只按工具名判）。 */
+  args?: Record<string, unknown> | undefined;
+}): PermissionFileOperation | undefined {
+  const name = input.toolName.toLowerCase();
+  // 删除优先判：`delete_file` 也命中下面的 write 片段，但语义是删除。
+  if (/delete|remove|unlink|rmdir|\brm\b|trash/.test(name)) return "delete";
+  if (/^(read|get|list|ls|cat|view|inspect|search|grep|find|glob)/.test(name))
+    return "read";
+  if (/write|edit|create|append|patch|mkdir|move|rename|cp|copy/.test(name))
+    return "write";
+  const args = input.args;
+  if (!args) return undefined;
+  const command = ["command", "cmd"]
+    .map((key) => args[key])
+    .find((value): value is string => typeof value === "string");
+  if (command) {
+    if (detectDeleteCommand(command)) return "delete";
+    // 命令里的写入方向（`>`、`tee`、`cp`、`mv`、`mkdir`）按写处理，其余按读。
+    if (/>|tee\b|\bcp\b|\bmv\b|\bmkdir\b|\btouch\b/.test(command))
+      return "write";
+    return "read";
+  }
+  if (
+    typeof args.content === "string" ||
+    typeof args.new_string === "string" ||
+    typeof args.old_string === "string"
+  ) {
+    return "write";
+  }
+  // 只带路径参数的一律按读：宁可少拦一次写入，也不把普通查询按写规则拒掉。
+  if (
+    typeof args.file_path === "string" ||
+    typeof args.path === "string" ||
+    typeof args.target_path === "string"
+  ) {
+    return "read";
+  }
+  return undefined;
 }
 
 /**

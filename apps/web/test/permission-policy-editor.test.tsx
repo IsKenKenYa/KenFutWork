@@ -158,7 +158,7 @@ it("读回已保存的三张规则表与禁用清单", async () => {
     policy: {
       rules: [{ pattern: "mcp__*", action: "deny" }],
       disabledTools: ["shell_*"],
-      pathRules: [{ path: "D:\\项目\\密钥", action: "ask" }],
+      pathRules: [{ path: "D:\\项目\\密钥", operation: "read", action: "ask" }],
       commandRules: [{ prefix: "rm -rf", action: "deny" }],
       domainRules: [],
       ...FETCHED_POLICY_DEFAULTS,
@@ -189,7 +189,7 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
     policy: {
       rules: [],
       disabledTools: [],
-      pathRules: [{ path: "C:\\机密", action: "ask" }],
+      pathRules: [{ path: "C:\\机密", operation: "read", action: "ask" }],
       commandRules: [{ prefix: "git push", action: "ask" }],
       domainRules: [],
       ...DEFAULT_DATA_SAFETY,
@@ -347,4 +347,45 @@ it("沙箱安全：内置运行时开关读得回、单独保存时保留其它�
   expect(body.policy.bundledRuntimes).toEqual({ enabled: false });
   // 单独提交只改这一项：同卡片其它策略字段原样带回去
   expect(body.policy.rules).toEqual([{ pattern: "mcp__*", action: "deny" }]);
+});
+
+it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
+
+  // 三条规则指向同一目录，但操作不同
+  for (const [index, path] of [
+    "/repo/data",
+    "/repo/data",
+    "/repo/data",
+  ].entries()) {
+    await user.click(screen.getByRole("button", { name: "添加路径规则" }));
+    const inputs = screen.getAllByLabelText("路径前缀");
+    fireEvent.change(inputs[index] as HTMLElement, {
+      target: { value: path },
+    });
+  }
+  // 第 2、3 条改成「写」「删」
+  const operationTriggers = screen.getAllByRole("combobox", { name: "操作" });
+  for (const [index, label] of [
+    [1, "写"],
+    [2, "删"],
+  ] as const) {
+    act(() => operationTriggers[index]?.focus());
+    await userEvent.keyboard("[Space]");
+    const option = await screen.findByRole("option", { name: label });
+    await user.click(option);
+  }
+
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  const body = tierPuts[0] as {
+    policy: { pathRules: Array<{ operation: string }> };
+  };
+  expect(body.policy.pathRules.map((rule) => rule.operation)).toEqual([
+    "read",
+    "write",
+    "delete",
+  ]);
 });
