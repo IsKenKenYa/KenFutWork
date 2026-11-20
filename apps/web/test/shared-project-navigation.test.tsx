@@ -87,3 +87,10 @@ it("发送上下文深复制选区；可移除画布且无文件目录授权字�
     preset: "code",
   });
 });
+
+/**
+ * 准入队列的清理由 Provider 负责（`SharedProjectNavigationProvider` 卸载时放行
+ * 排队的请求）。这里不断言「没有 Provider 会挂起」——那是设计内的前提
+ * （Provider 是模式准入的必需上下文），单测环境无法有意义地模拟它的卸载时序。
+ * 真实回归由 `code-task-navigation-mode.test.tsx` 的 design 用例覆盖。
+ */

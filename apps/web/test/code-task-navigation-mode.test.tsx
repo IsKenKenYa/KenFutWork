@@ -198,10 +198,9 @@ it.each(["design", "flow"] as const)(
           .activeTaskId,
       ).toBe(taskB),
     );
-    // 真实共享Provider已完成准入，不能让一个未绑定的pending Promise掩盖随后反向切Code。
-    await act(async () => {
-      expect(await admitProjectMode("code")).toBe(true);
-    });
+    // 真实共享 Provider 已完成准入：这里只读一次裁决结果，不把 Promise 交给 act
+    // （act 会顺带 flush 整棵 design 子树，Suspense 未 settle 时会把用例挂到超时）。
+    expect(await admitProjectMode("code")).toBe(true);
     expect(f.navigation.getSnapshot().mode).toBe(mode);
     expect(
       screen
@@ -225,7 +224,9 @@ it("原侧栏新建任务的showChatMainView保留Design画布，只有显式Cod
   const buttons = await screen.findAllByRole("button", { name: "新建任务" });
   const button = buttons[0];
   if (!button) throw new Error("原侧栏新建任务入口缺失");
-  await act(async () => {
+  // 点击与扫码都用同步 act：异步 act 会等待整棵 design 子树 settle，
+  // 该视图首帧依赖宿主的异步数据面（Suspense），会把用例挂到超时。
+  act(() => {
     fireEvent.click(button);
   });
   await waitFor(() =>
@@ -234,13 +235,11 @@ it("原侧栏新建任务的showChatMainView保留Design画布，只有显式Cod
         .activeTaskId,
     ).toBeNull(),
   );
-  await act(async () => {
-    expect(await admitProjectMode("code")).toBe(true);
-  });
+  expect(await admitProjectMode("code")).toBe(true);
   expect(f.navigation.getSnapshot().mode).toBe("design");
   expect(document.querySelector('iframe[title="保持的画布"]')).toBe(f.canvas);
   expect(f.canvas.getAttribute("data-document-visible")).toBe("true");
-  await act(async () => {
+  act(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Code" }));
   });
   await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
