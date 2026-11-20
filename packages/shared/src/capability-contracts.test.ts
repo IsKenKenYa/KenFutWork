@@ -184,6 +184,7 @@ describe("敏感数据检测", () => {
     expect(parsed.deleteProtection).toEqual({
       enabled: false,
       batchThreshold: 50,
+      trashFirst: false,
     });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
     expect(parsed.bundledRuntimes).toEqual({ enabled: true });

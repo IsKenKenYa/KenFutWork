@@ -770,6 +770,7 @@ function PermissionPolicySection() {
   const [deleteProtection, setDeleteProtection] = useState({
     enabled: false,
     batchThreshold: 50,
+    trashFirst: false,
   });
   const [sensitiveProtection, setSensitiveProtection] = useState({
     enabled: true,
@@ -791,7 +792,11 @@ function PermissionPolicySection() {
         }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
         domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
-        deleteProtection?: { enabled?: boolean; batchThreshold?: number };
+        deleteProtection?: {
+          enabled?: boolean;
+          batchThreshold?: number;
+          trashFirst?: boolean;
+        };
         sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
       };
     }>("/api/permissions/tier")
@@ -826,6 +831,7 @@ function PermissionPolicySection() {
         setDeleteProtection({
           enabled: view.policy?.deleteProtection?.enabled === true,
           batchThreshold: view.policy?.deleteProtection?.batchThreshold ?? 50,
+          trashFirst: view.policy?.deleteProtection?.trashFirst === true,
         });
         setSensitiveProtection({
           enabled: view.policy?.sensitiveProtection?.enabled !== false,
@@ -881,6 +887,7 @@ function PermissionPolicySection() {
                 1,
                 Math.round(deleteProtection.batchThreshold),
               ),
+              trashFirst: deleteProtection.trashFirst,
             },
             sensitiveProtection: {
               enabled: sensitiveProtection.enabled,
@@ -1049,6 +1056,22 @@ function PermissionPolicySection() {
               className="w-24"
             />
           </div>
+          <label className="flex items-center justify-between gap-3 text-ui-sm text-foreground-subtle">
+            删除前先移到回收站
+            <input
+              type="checkbox"
+              aria-label="删除前先移到回收站"
+              checked={deleteProtection.trashFirst}
+              disabled={!deleteProtection.enabled || saving}
+              onChange={(event) =>
+                setDeleteProtection((current) => ({
+                  ...current,
+                  trashFirst: event.target.checked,
+                }))
+              }
+              className="size-4"
+            />
+          </label>
         </div>
         <div className="space-y-2 border-t border-border pt-4">
           <label className="flex items-center justify-between gap-3 text-ui-base font-medium text-foreground">

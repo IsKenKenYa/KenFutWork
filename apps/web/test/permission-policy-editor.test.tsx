@@ -44,7 +44,11 @@ type PolicyDraft = {
   }>;
   commandRules: Array<{ prefix: string; action: RuleAction }>;
   domainRules: Array<{ domain: string; action: RuleAction }>;
-  deleteProtection: { enabled: boolean; batchThreshold: number };
+  deleteProtection: {
+    enabled: boolean;
+    batchThreshold: number;
+    trashFirst: boolean;
+  };
   sensitiveProtection: { enabled: boolean; patterns: string[] };
 };
 /** 服务端读回的完整策略：比提交形状多内置运行时与沙箱总开关。 */
@@ -71,7 +75,11 @@ type PolicySettings = {
  * `bundledRuntimes` 不在这里：它属于「沙箱安全」卡片，单独提交，规则卡片不会带它。
  */
 const DEFAULT_DATA_SAFETY = {
-  deleteProtection: { enabled: false, batchThreshold: 50 },
+  deleteProtection: {
+    enabled: false,
+    batchThreshold: 50,
+    trashFirst: false,
+  },
   sensitiveProtection: { enabled: true, patterns: [] },
 };
 
@@ -289,7 +297,11 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      deleteProtection: { enabled: true, batchThreshold: 20 },
+      deleteProtection: {
+        enabled: true,
+        batchThreshold: 20,
+        trashFirst: false,
+      },
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
@@ -322,7 +334,11 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      deleteProtection: { enabled: true, batchThreshold: 20 },
+      deleteProtection: {
+        enabled: true,
+        batchThreshold: 20,
+        trashFirst: false,
+      },
       sensitiveProtection: {
         enabled: true,
         patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],

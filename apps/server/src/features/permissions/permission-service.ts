@@ -435,10 +435,15 @@ export function createPermissionService(
   };
 
   /**
-   * 删除保护：开启后，删除命令要么需要审批（单目标），要么因批量而需要审批。
+   * 删除保护：开启后，删除命令要么需要审批（单目标），要么因批量而需要审批；
+   * 打开 `trashFirst` 时，删除命令一律硬拦并给出「先移到回收站目录」的改写建议。
    *
    * 单目标也拦的理由：删除不可撤销，而「完全访问」档把它放开了；
    * 用户在数据安全里显式打开保护，就是表达「删除前让我看一眼」。
+   *
+   * `trashFirst` 为什么是拦下而不是替用户移：删除发生在沙箱内的 shell 命令里，
+   * 服务端拿不到那些文件句柄，也无法在命令执行后恢复。如实拦下 + 给改写建议，
+   * 用户能看见到底发生了什么，也不会以为「已经进了回收站」。
    */
   const deleteProtectionFor = (
     args: Record<string, unknown> | undefined,
@@ -449,6 +454,14 @@ export function createPermissionService(
     if (!command) return undefined;
     const match = detectDeleteCommand(command);
     if (!match) return undefined;
+    if (policy.deleteProtection.trashFirst) {
+      return {
+        decision: "deny",
+        blocked: true,
+        source: "delete-protection",
+        reason: `删除命令 ${match.command} 被拦下：已开启「删除前先移到回收站」。请改用 mv 把目标移到项目里的备份目录，确认后再删。`,
+      };
+    }
     if (match.targets >= policy.deleteProtection.batchThreshold) {
       return {
         decision: "deny",

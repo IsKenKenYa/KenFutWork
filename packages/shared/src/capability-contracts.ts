@@ -233,18 +233,25 @@ export const permissionPolicySchema = z.object({
    * 因此判定方式是**识别命令里的删除指令**并按目标数量计：
    * - `enabled` 关（缺省）：不额外干预，删除只走档位与命令规则；
    * - `enabled` 开 + 单目标删除：仍需审批（默认档本来就拦，这里保证「完全访问」下也拦）；
-   * - 一批删除达到 `batchThreshold` 即需审批。
+   * - 一批删除达到 `batchThreshold` 即需审批；
+   * - `trashFirst`：删除命令一律拦下并给出「移到回收站目录」的改写建议
+   *   （见下）。
    *
-   * 不做「优先移到回收站」：那要做跨平台回收站实现（Windows 回收站 API / Linux
-   * trash 规范），本仓库没有这个能力，做成开关只会是假开关。
+   * **为什么 trashFirst 是「拦下 + 给改写建议」而不是「偷偷替用户移到回收站」**：
+   * 删除发生在沙箱内的 shell 命令里，服务端拿不到那些文件句柄，也没法在命令执行后
+   * 把已删的东西变回来。想真正做到「优先移到回收站」，必须在用户的工作目录外
+   * 维护一个按时间分桶的回收站目录，并让命令改写成 `mv` 到那里——那是命令重写，
+   * 不是删除保护。这里选择如实拦下并要求改写，用户能看到到底发生了什么。
    */
   deleteProtection: z
     .object({
       enabled: z.boolean().default(false),
       /** 一批删除的目标数达到该值即需审批（默认 50，与 WorkBuddy 一致）。 */
       batchThreshold: z.number().int().min(1).max(10_000).default(50),
+      /** 删除前先移入回收站目录（拦下删除命令并给出改写建议）。 */
+      trashFirst: z.boolean().default(false),
     })
-    .default({ enabled: false, batchThreshold: 50 }),
+    .default({ enabled: false, batchThreshold: 50, trashFirst: false }),
   /**
    * 敏感保护（WorkBuddy「数据安全」）：默认开。
    *
@@ -316,7 +323,11 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   pathRules: [],
   commandRules: [],
   domainRules: [],
-  deleteProtection: { enabled: false, batchThreshold: 50 },
+  deleteProtection: {
+    enabled: false,
+    batchThreshold: 50,
+    trashFirst: false,
+  },
   sensitiveProtection: { enabled: true, patterns: [] },
   bundledRuntimes: { enabled: true },
   aiSafety: { injectionGuard: false },

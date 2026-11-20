@@ -672,7 +672,11 @@ describe("审计中心：判定流水", () => {
 /** 数据安全：删除保护与敏感保护（参考 WorkBuddy 的「数据安全」）。 */
 describe("数据安全：删除保护", () => {
   const withPolicy = (
-    deleteProtection: { enabled: boolean; batchThreshold?: number },
+    deleteProtection: {
+      enabled: boolean;
+      batchThreshold?: number;
+      trashFirst?: boolean;
+    },
     tier: "default" | "full-access" = "full-access",
   ) => {
     const svc = createPermissionService();
@@ -684,6 +688,7 @@ describe("数据安全：删除保护", () => {
         deleteProtection: {
           enabled: deleteProtection.enabled,
           batchThreshold: deleteProtection.batchThreshold ?? 50,
+          trashFirst: deleteProtection.trashFirst ?? false,
         },
       },
     });
@@ -719,6 +724,41 @@ describe("数据安全：删除保护", () => {
     });
     expect(decision.decision).toBe("deny");
     expect(decision.reason).toMatch(/批量删除阈值 3/);
+  });
+
+  it("trashFirst：删除命令硬拦并给出「先移到回收站」的改写建议", () => {
+    const svc = withPolicy({ enabled: true, trashFirst: true });
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm -rf build" },
+    });
+    expect(decision.decision).toBe("deny");
+    // 硬拦：不给审批机会——用户要求的是「先备份再删」，放行就等于绕过
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toMatch(/移到回收站/);
+    expect(decision.reason).toMatch(/mv/);
+  });
+
+  it("trashFirst 优先于批量阈值判定（两条同时开时按硬拦处理）", () => {
+    const svc = withPolicy({
+      enabled: true,
+      batchThreshold: 2,
+      trashFirst: true,
+    });
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm a b c" },
+    });
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toMatch(/移到回收站/);
+  });
+
+  it("trashFirst 只影响删除命令；其它命令照常走档位", () => {
+    const svc = withPolicy({ enabled: true, trashFirst: true });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "ls -la" } })
+        .decision,
+    ).toBe("allow");
   });
 
   it("识别常见删除命令；非删除命令不误拦", () => {
