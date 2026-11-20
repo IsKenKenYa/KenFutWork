@@ -14,18 +14,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
-import { Textarea } from "@zui/components/ui/textarea.js";
 import { toast } from "@zui/components/ui/toast.js";
-import { ChevronDownIcon } from "lucide-react";
-import { cn } from "@zui/components/lib/utils.js";
 import {
   SettingsGroupCard,
   SettingsRow,
   SettingsSubheading,
 } from "@zui/settings/SettingsPageParts.js";
+import { ChevronDownIcon, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 import { surfaceJson } from "./surfaceApi.js";
+
+/** 一条三态规则的界面形状（与服务端 `permissionPolicyRuleSchema` 对齐）。 */
+type PolicyRule = { pattern: string; action: "allow" | "ask" | "deny" };
 
 /**
  * 权限档（G7/T7/C1，KenFutWork 宿主件）：旧四档语义（默认/自动审批/完全访问/自定义）
@@ -119,8 +120,9 @@ export function PermissionTierChip() {
 
   if (!tier) return null;
   // custom 档不在三档里：菜单仍显示它最接近的语义，避免按钮空白。
-  const current =
-    CHIP_TIERS.find((entry) => entry.value === tier) ?? CHIP_TIERS[0]!;
+  const fallback = CHIP_TIERS[0];
+  const current = CHIP_TIERS.find((entry) => entry.value === tier) ?? fallback;
+  if (!current) return null;
 
   return (
     <DropdownMenu>
@@ -237,7 +239,7 @@ export function PermissionTierSection() {
       </section>
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>规则与放行</SettingsSubheading>
-        <CustomRulesSection active={tier === "custom"} />
+        <CustomRulesSection />
         <ToolApprovalSection />
       </section>
       <section className="min-w-0 space-y-3">
@@ -280,33 +282,30 @@ function PermissionTierSelect({
   );
 }
 
-function rulesToLines(rules: readonly string[]): string {
-  return rules.join("\n");
-}
-
-function linesToRules(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-/** 自定义档的规则表：一行一条、`*` 通配、拒绝优先（与 service 的判定顺序同源）。 */
-function CustomRulesSection({ active }: { active: boolean }) {
-  const [denyText, setDenyText] = useState("");
-  const [allowText, setAllowText] = useState("");
+/** 三态工具规则：按顺序匹配，首个命中生效（与 service 的判定同源）。 */
+function CustomRulesSection() {
+  const [rules, setRules] = useState<PolicyRule[]>([]);
+  const [disabledTools, setDisabledTools] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    surfaceJson<{ rules: { allow: string[]; deny: string[] } }>(
-      "/api/permissions/tier",
-    )
+    surfaceJson<{
+      policy?: {
+        rules?: Array<{ pattern: string; action: PolicyRule["action"] }>;
+        disabledTools?: string[];
+      };
+    }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
-        setDenyText(rulesToLines(view.rules.deny));
-        setAllowText(rulesToLines(view.rules.allow));
+        setRules(
+          (view.policy?.rules ?? []).map((rule) => ({
+            pattern: rule.pattern,
+            action: rule.action,
+          })),
+        );
+        setDisabledTools(view.policy?.disabledTools ?? []);
       })
       .catch(() => {});
     return () => {
@@ -314,21 +313,34 @@ function CustomRulesSection({ active }: { active: boolean }) {
     };
   }, []);
 
+  const updateRule = (index: number, patch: Partial<PolicyRule>) => {
+    setRules((current) =>
+      current.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)),
+    );
+  };
+
+  const addRule = () => {
+    setRules((current) => [...current, { pattern: "", action: "ask" }]);
+  };
+
+  const removeRule = (index: number) => {
+    setRules((current) => current.filter((_, i) => i !== index));
+  };
+
   const saveRules = async () => {
     setSaving(true);
     setMessage(null);
     try {
+      // 空白匹配式不提交：空规则会命中一切，绝不能静默存下去。
+      const payload = rules
+        .map((rule) => ({ pattern: rule.pattern.trim(), action: rule.action }))
+        .filter((rule) => rule.pattern.length > 0);
       await surfaceJson("/api/permissions/tier", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          rules: {
-            deny: linesToRules(denyText),
-            allow: linesToRules(allowText),
-          },
-        }),
+        body: JSON.stringify({ policy: { rules: payload, disabledTools } }),
       });
-      setMessage("规则已保存");
+      setMessage("已保存");
     } catch (error) {
       setMessage(readableError(error));
     } finally {
@@ -337,58 +349,88 @@ function CustomRulesSection({ active }: { active: boolean }) {
   };
 
   return (
-    <section className="min-w-0 space-y-3">
-      <SettingsGroupCard>
-        <div className="space-y-3 p-3">
-          {active ? null : (
-            <p className="text-ui-sm text-foreground-subtle">
-              切到自定义档后按这条规则表判定
-            </p>
-          )}
-          <div className="block text-ui-base">
-            <span>禁止调用</span>
-            <Textarea
-              aria-label="拒绝规则"
-              value={denyText}
-              onChange={(event) => setDenyText(event.target.value)}
-              rows={3}
-              placeholder={"mcp__dangerous__delete\nshell_*"}
-              className="mt-1 font-mono text-ui-sm"
-            />
+    <SettingsGroupCard>
+      <div className="space-y-3 p-3">
+        {rules.length === 0 ? (
+          <p className="text-ui-sm text-foreground-subtle">
+            还没有规则 未命中的工具按权限模式判定
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {rules.map((rule, index) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复匹配式，索引是唯一稳定键。
+                key={index}
+                className="flex flex-wrap items-center gap-2"
+              >
+                <Input
+                  aria-label="工具名或前缀"
+                  placeholder="mcp__fs__*"
+                  value={rule.pattern}
+                  onChange={(event) =>
+                    updateRule(index, { pattern: event.target.value })
+                  }
+                  className="min-w-0 flex-1 font-mono text-ui-sm"
+                />
+                <Select
+                  value={rule.action}
+                  onValueChange={(next) =>
+                    updateRule(index, {
+                      action: next as PolicyRule["action"],
+                    })
+                  }
+                >
+                  <SelectTrigger
+                    size="lg"
+                    aria-label="动作"
+                    className="w-32 shrink-0"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="allow">允许</SelectItem>
+                    <SelectItem value="ask">询问</SelectItem>
+                    <SelectItem value="deny">拒绝</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="删除这条规则"
+                  disabled={saving}
+                  onClick={() => removeRule(index)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))}
           </div>
-          <div className="block text-ui-base">
-            <span>允许调用</span>
-            <Textarea
-              aria-label="放行规则"
-              value={allowText}
-              onChange={(event) => setAllowText(event.target.value)}
-              rows={3}
-              placeholder={"write_file\nmcp__py-helper__echo"}
-              className="mt-1 font-mono text-ui-sm"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving}
-              onClick={() => void saveRules()}
-            >
-              保存规则
-            </Button>
-            <span className="text-ui-sm text-foreground-subtle">
-              一行一条 · * 通配 · 拒绝优先
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" size="sm" onClick={addRule}>
+            添加规则
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            onClick={() => void saveRules()}
+          >
+            保存
+          </Button>
+          <span className="text-ui-sm text-foreground-subtle">
+            按顺序匹配 首个命中生效
+          </span>
+          {message ? (
+            <span role="status" className="text-ui-sm text-foreground-subtle">
+              {message}
             </span>
-            {message ? (
-              <span role="status" className="text-ui-sm text-foreground-subtle">
-                {message}
-              </span>
-            ) : null}
-          </div>
+          ) : null}
         </div>
-      </SettingsGroupCard>
-    </section>
+      </div>
+    </SettingsGroupCard>
   );
 }
 

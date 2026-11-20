@@ -73,6 +73,56 @@ export const permissionRulesSchema = z.object({
 });
 export type PermissionRules = z.infer<typeof permissionRulesSchema>;
 
+/**
+ * 三态规则的动作（参考 WorkBuddy 安全中心）：
+ * - `allow`：直接放行，不再问；
+ * - `ask`：交给人审批（现在 `deny` 的行为）；
+ * - `deny`：直接拒绝，连审批机会都不给。
+ *
+ * 旧的两张表（`rules.deny` / `rules.allow`）继续按 deny-first 判，语义不变：
+ * `deny` 表命中即审批阻断（= ask），`allow` 表命中即放行。三态表是它的替代形态，
+ * 允许同一工具名显式写成「拒绝」而不只是「需审批」。
+ */
+export const permissionRuleActionSchema = z.enum(["allow", "ask", "deny"]);
+export type PermissionRuleAction = z.infer<typeof permissionRuleActionSchema>;
+
+/** 一条三态规则：匹配式 + 动作。匹配式与 `permissionRuleSchema` 同一写法。 */
+export const permissionPolicyRuleSchema = z
+  .object({
+    pattern: permissionRuleSchema,
+    action: permissionRuleActionSchema,
+  })
+  .strict();
+export type PermissionPolicyRule = z.infer<typeof permissionPolicyRuleSchema>;
+
+/**
+ * 工具启停：被禁用的工具在执行前**直接拦截**，不进入审批。
+ * 存的是匹配式（支持 `mcp__*` 前缀），便于整组关闭 MCP 服务。
+ */
+export const permissionDisabledToolsSchema = z
+  .array(permissionRuleSchema)
+  .max(500)
+  .default([]);
+
+/**
+ * 工具策略：三态规则表 + 禁用清单。
+ *
+ * 判定顺序（与 WorkBuddy 一致，且拒绝优先）：
+ * 1. 命中禁用清单 → `deny`（硬拒绝，无审批）；
+ * 2. 三态规则按**表内顺序**取第一条命中 → 该动作；
+ * 3. 都没命中 → 回落档位判定（与改造前完全一致）。
+ */
+export const permissionPolicySchema = z.object({
+  rules: z.array(permissionPolicyRuleSchema).max(500).default([]),
+  disabledTools: permissionDisabledToolsSchema,
+});
+export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
+
+export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
+  rules: [],
+  disabledTools: [],
+};
+
 /** 规则是否命中工具名（精确或「前缀 *」）。 */
 export function matchesPermissionRule(rule: string, toolName: string): boolean {
   if (rule.endsWith("*")) {

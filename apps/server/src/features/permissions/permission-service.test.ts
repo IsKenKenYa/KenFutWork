@@ -5,6 +5,7 @@ import {
   isDangerousCall,
   isDangerousTool,
 } from "./permission-service.js";
+import { DEFAULT_PERMISSION_SETTINGS } from "./tier-store.js";
 
 describe("permissions 缝（DEC-4）", () => {
   it("不带调用绑定的 once 不再假装授权成功", () => {
@@ -55,6 +56,7 @@ describe("permissions 缝（DEC-4）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: { rules: [], disabledTools: [] },
       approvedForever: ["execute", "mcp__py__run"],
       browserControlEnabled: false,
       browserAutoScreenshot: false,
@@ -181,6 +183,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
         allow: ["write_file", "mcp__py-helper__echo"],
         deny: ["mcp__py-helper__add"],
       },
+      policy: { rules: [], disabledTools: [] },
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -206,6 +209,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "custom",
       automationTier: "default",
       rules: { allow: [], deny: ["mcp__*"] },
+      policy: { rules: [], disabledTools: [] },
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -229,6 +233,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "full-access",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: { rules: [], disabledTools: [] },
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -250,6 +255,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "auto-approve",
       rules: { allow: [], deny: [] },
+      policy: { rules: [], disabledTools: [] },
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -272,6 +278,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: { rules: [], disabledTools: [] },
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -287,5 +294,81 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
         scenario: "automation",
       }).decision,
     ).toBe("allow");
+  });
+});
+
+describe("工具策略：三态规则与禁用清单", () => {
+  const withPolicy = (
+    policy: { rules: Array<{ pattern: string; action: "allow" | "ask" | "deny" }>; disabledTools: string[] },
+    tier: "default" | "full-access" = "default",
+  ) => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy,
+    });
+    return svc;
+  };
+
+  it("禁用清单是硬拒绝：完全访问档也拦，且不给审批机会", () => {
+    const svc = withPolicy({ rules: [], disabledTools: ["shell_*"] }, "full-access");
+    const decision = svc.evaluate({ toolName: "shell_exec" });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBe(true);
+  });
+
+  it("三态 deny 是硬拒绝，ask 只阻断但不带 blocked（照常弹审批）", () => {
+    const denied = withPolicy({
+      rules: [{ pattern: "mcp__*", action: "deny" }],
+      disabledTools: [],
+    }).evaluate({ toolName: "mcp__fs__write" });
+    expect(denied.decision).toBe("deny");
+    expect(denied.blocked).toBe(true);
+
+    const asked = withPolicy({
+      rules: [{ pattern: "execute", action: "ask" }],
+      disabledTools: [],
+    }).evaluate({ toolName: "execute" });
+    expect(asked.decision).toBe("deny");
+    expect(asked.blocked).toBeUndefined();
+  });
+
+  it("三态 allow 直接放行，不看档位", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "write_file", action: "allow" }],
+      disabledTools: [],
+    });
+    expect(svc.evaluate({ toolName: "write_file" }).decision).toBe("allow");
+  });
+
+  it("规则按表内顺序取第一条命中", () => {
+    const svc = withPolicy({
+      rules: [
+        { pattern: "mcp__fs__*", action: "allow" },
+        { pattern: "mcp__*", action: "deny" },
+      ],
+      disabledTools: [],
+    });
+    expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("allow");
+    expect(svc.evaluate({ toolName: "mcp__other__run" }).decision).toBe("deny");
+  });
+
+  it("策略未命中时回落档位判定，行为与改造前一致", () => {
+    const svc = withPolicy({ rules: [], disabledTools: [] });
+    // default 档下危险工具仍需审批（deny 但非 blocked）
+    const decision = svc.evaluate({ toolName: "write_file" });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBeUndefined();
+  });
+
+  it("checkToolPolicy 只报策略命中，未命中返回 undefined", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "execute", action: "deny" }],
+      disabledTools: ["shell_*"],
+    });
+    expect(svc.checkToolPolicy("execute")?.blocked).toBe(true);
+    expect(svc.checkToolPolicy("shell_exec")?.blocked).toBe(true);
+    expect(svc.checkToolPolicy("read_file")).toBeUndefined();
   });
 });

@@ -493,11 +493,16 @@ export async function updateInstanceSettings(
 
 // --- Permissions API（DEC-4 权限档位/审批）---
 
-/** 权限设置（R5-3）：常规档 / 自动化档 / 自定义规则 / 浏览器控制开关。 */
+/** 权限设置（R5-3）：常规档 / 自动化档 / 自定义规则 / 工具策略 / 浏览器控制开关。 */
 export interface PermissionSettingsView {
   tier: PermissionTier;
   automationTier: PermissionTier;
   rules: { allow: string[]; deny: string[] };
+  /** 工具策略：三态规则表 + 禁用清单。旧服务端不带此字段时按空策略处理。 */
+  policy?: {
+    rules: Array<{ pattern: string; action: "allow" | "ask" | "deny" }>;
+    disabledTools: string[];
+  };
   browserControlEnabled: boolean;
   /** 浏览器动作后自动附截图（R5-4）。 */
   browserAutoScreenshot: boolean;

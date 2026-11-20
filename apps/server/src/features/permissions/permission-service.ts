@@ -1,9 +1,11 @@
-import type {
-  PermissionRules,
-  PermissionScenario,
-  PermissionTier,
+import {
+  anyPermissionRuleMatches,
+  EMPTY_PERMISSION_POLICY,
+  matchesPermissionRule,
+  type PermissionRules,
+  type PermissionScenario,
+  type PermissionTier,
 } from "@kenfutwork/shared";
-import { anyPermissionRuleMatches } from "@kenfutwork/shared";
 import type { CodeApprovalService } from "./approval-types.js";
 import { createCodeApprovalService } from "./code-approval.js";
 
@@ -84,6 +86,13 @@ export interface ToolApproval {
 export interface PermissionDecision {
   decision: "allow" | "deny";
   reason?: string;
+  /**
+   * `true` = 命中「拒绝」规则或禁用清单：**硬拒绝**，不给审批机会。
+   *
+   * 缺省（undefined）表示 `deny` 是「需要审批」——这是改造前唯一的行为，
+   * 保持默认值不变才不会让既有调用方误把「需审批」当成永久拒绝。
+   */
+  blocked?: boolean;
 }
 
 export interface PermissionService extends CodeApprovalService {
@@ -104,6 +113,14 @@ export interface PermissionService extends CodeApprovalService {
     /** 属主声明的执行效果（内核随 tool-pre-execute 事件带来）；缺省按名字判。 */
     access?: "read" | "write" | "execute" | undefined;
   }): PermissionDecision;
+  /**
+   * 只检查工具策略（禁用清单 + 三态规则），不看档位。
+   *
+   * 审批入口（`admit`）用它做前置拦截：命中禁用或「拒绝」规则时直接返回 `blocked`，
+   * 不进入人工审批；命中「询问」返回 `deny`（无 `blocked`），照常弹审批。
+   * 返回 `undefined` 表示策略未命中，调用方继续走 Task 策略。
+   */
+  checkToolPolicy(toolName: string): PermissionDecision | undefined;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
   listApprovedForever(): string[];
@@ -130,8 +147,47 @@ export function createPermissionService(
     return scenario === "automation" ? settings.automationTier : settings.tier;
   };
 
+  /**
+   * 工具策略判定（禁用清单 → 三态规则）。命中即返回，未命中返回 undefined。
+   *
+   * `evaluate`（工具门）与 `checkToolPolicy`（审批入口）共用这一份，
+   * 保证「禁用/拒绝」在两条路径上语义一致：都是硬拒绝，不给审批机会。
+   */
+  const policyDecisionFor = (
+    toolName: string,
+  ): PermissionDecision | undefined => {
+    const policy = settings.policy ?? EMPTY_PERMISSION_POLICY;
+    if (anyPermissionRuleMatches(policy.disabledTools, toolName)) {
+      return {
+        decision: "deny",
+        blocked: true,
+        reason: `工具 ${toolName} 已在「设置 → 权限 → 工具管控」里被禁用`,
+      };
+    }
+    for (const rule of policy.rules) {
+      if (!matchesPermissionRule(rule.pattern, toolName)) continue;
+      if (rule.action === "allow") return { decision: "allow" };
+      if (rule.action === "deny") {
+        return {
+          decision: "deny",
+          blocked: true,
+          reason: `工具 ${toolName} 命中「拒绝」规则 ${rule.pattern}`,
+        };
+      }
+      // ask：交给审批（不给记忆，每次都要人点）
+      return {
+        decision: "deny",
+        reason: `工具 ${toolName} 命中「询问」规则 ${rule.pattern}，需你确认`,
+      };
+    }
+    return undefined;
+  };
+
   const service: PermissionService = {
     ...createCodeApprovalService(options),
+    checkToolPolicy(toolName) {
+      return policyDecisionFor(toolName);
+    },
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;
     },
@@ -154,6 +210,11 @@ export function createPermissionService(
     },
     evaluate({ toolName, threadId, scenario = "interactive", access }) {
       const tier = tierFor(threadId, scenario);
+      // 工具策略优先于档位：禁用清单是硬拒绝（完全访问档也拦），
+      // 三态规则按表内顺序取第一条命中。这两项是 WorkBuddy 安全中心的口径，
+      // 与档位正交——「完全访问」放开的是审批，不该放开用户明确禁用的工具。
+      const policyDecision = policyDecisionFor(toolName);
+      if (policyDecision) return policyDecision;
       if (tier === "full-access") {
         return { decision: "allow" };
       }

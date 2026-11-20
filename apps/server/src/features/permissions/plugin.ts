@@ -30,15 +30,27 @@ export function createPermissionsPlugin(_deps: {
       // Code 在此等待真实人审；所有 waterfall 消费方放行后才由 kernel claim。
       ctx.on("tool-pre-execute", async (payload, next) => {
         if (payload.decision === "deny") return next(payload);
-        const decision = payload.permissionInvocation
-          ? await service.admit(payload.permissionInvocation)
-          : service.evaluate({
-              toolName: payload.toolName,
-              scenario: payload.goalId ? "automation" : "interactive",
-              ...(payload.threadId ? { threadId: payload.threadId } : {}),
-              // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
-              ...(payload.access ? { access: payload.access } : {}),
-            });
+        // 工具策略（禁用清单 / 三态「拒绝」）先于一切：命中即硬拒绝，不弹审批。
+        // 「询问」规则返回不带 blocked 的 deny，走下面的审批链路。
+        const policy = service.checkToolPolicy(payload.toolName);
+        if (policy?.blocked) {
+          return next({
+            ...payload,
+            decision: "deny",
+            denyReason: policy.reason,
+          });
+        }
+        const decision =
+          policy ??
+          (payload.permissionInvocation
+            ? await service.admit(payload.permissionInvocation)
+            : service.evaluate({
+                toolName: payload.toolName,
+                scenario: payload.goalId ? "automation" : "interactive",
+                ...(payload.threadId ? { threadId: payload.threadId } : {}),
+                // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
+                ...(payload.access ? { access: payload.access } : {}),
+              }));
         return next({
           ...payload,
           ...(decision.decision === "deny"

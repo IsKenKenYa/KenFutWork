@@ -1,5 +1,6 @@
 import {
   applicationErrorResponseSchema,
+  permissionPolicySchema,
   permissionRulesSchema,
   permissionTierSchema,
   unauthenticatedErrorResponseSchema,
@@ -36,6 +37,7 @@ export async function registerPermissionRoutes(
       tier: permissionTierSchema.parse(settings.tier),
       automationTier: permissionTierSchema.parse(settings.automationTier),
       rules: permissionRulesSchema.parse(settings.rules),
+      policy: permissionPolicySchema.parse(settings.policy),
       browserControlEnabled: settings.browserControlEnabled,
       browserAutoScreenshot: settings.browserAutoScreenshot,
       browserHeadless: settings.browserHeadless,
@@ -62,6 +64,7 @@ export async function registerPermissionRoutes(
       tier?: unknown;
       automationTier?: unknown;
       rules?: unknown;
+      policy?: unknown;
       browserControlEnabled?: unknown;
       browserAutoScreenshot?: unknown;
       browserHeadless?: unknown;
@@ -82,6 +85,9 @@ export async function registerPermissionRoutes(
       }
       if (body.rules !== undefined) {
         next = { ...next, rules: permissionRulesSchema.parse(body.rules) };
+      }
+      if (body.policy !== undefined) {
+        next = { ...next, policy: permissionPolicySchema.parse(body.policy) };
       }
       if (body.browserControlEnabled !== undefined) {
         next = {
@@ -144,6 +150,7 @@ export async function registerPermissionRoutes(
       tier: next.tier,
       automationTier: next.automationTier,
       rules: next.rules,
+      policy: next.policy,
       browserControlEnabled: next.browserControlEnabled,
       browserAutoScreenshot: next.browserAutoScreenshot,
       browserHeadless: next.browserHeadless,
