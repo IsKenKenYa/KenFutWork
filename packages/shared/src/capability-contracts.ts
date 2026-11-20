@@ -240,6 +240,16 @@ export const permissionPolicySchema = z.object({
       patterns: z.array(z.string().min(1).max(500)).max(50).default([]),
     })
     .default({ enabled: true, patterns: [] }),
+  /**
+   * 内置运行时（WorkBuddy「内置运行时」）：允许执行的命令使用随包提供的运行时。
+   *
+   * 关掉后沙箱不再把随包 node/python/uv/java/git 的 bin 目录前置进 PATH、
+   * 也不再授权它们的读根，命令只能用宿主自带的运行时（或都没有）。
+   * 这是「缩小可用工具面」的保护，不是开关沙箱本身。
+   */
+  bundledRuntimes: z
+    .object({ enabled: z.boolean().default(true) })
+    .default({ enabled: true }),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -251,6 +261,7 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   domainRules: [],
   deleteProtection: { enabled: false, batchThreshold: 50 },
   sensitiveProtection: { enabled: true, patterns: [] },
+  bundledRuntimes: { enabled: true },
 };
 /**
  * 内置的敏感数据格式（与 WorkBuddy「敏感保护」同口径：票据、密码这类东西不该被 AI 发出去）。

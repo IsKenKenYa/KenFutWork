@@ -33,19 +33,23 @@ if (!Element.prototype.scrollIntoView) {
  */
 
 type RuleAction = "allow" | "ask" | "deny";
+/** 「规则与放行」卡片提交的策略形状（不含内置运行时——那属于沙箱安全卡片）。 */
+type PolicyDraft = {
+  rules: Array<{ pattern: string; action: RuleAction }>;
+  disabledTools: string[];
+  pathRules: Array<{ path: string; action: RuleAction }>;
+  commandRules: Array<{ prefix: string; action: RuleAction }>;
+  domainRules: Array<{ domain: string; action: RuleAction }>;
+  deleteProtection: { enabled: boolean; batchThreshold: number };
+  sensitiveProtection: { enabled: boolean; patterns: string[] };
+};
+/** 服务端读回的完整策略：比提交形状多内置运行时开关。 */
+type FetchedPolicy = PolicyDraft & { bundledRuntimes: { enabled: boolean } };
 type PolicySettings = {
   tier: string;
   automationTier: string;
   rules: { allow: string[]; deny: string[] };
-  policy: {
-    rules: Array<{ pattern: string; action: RuleAction }>;
-    disabledTools: string[];
-    pathRules: Array<{ path: string; action: RuleAction }>;
-    commandRules: Array<{ prefix: string; action: RuleAction }>;
-    domainRules: Array<{ domain: string; action: RuleAction }>;
-    deleteProtection: { enabled: boolean; batchThreshold: number };
-    sensitiveProtection: { enabled: boolean; patterns: string[] };
-  };
+  policy: FetchedPolicy;
   browserControlEnabled: boolean;
   browserAutoScreenshot: boolean;
   browserHeadless: boolean;
@@ -54,10 +58,20 @@ type PolicySettings = {
   approvedForever: string[];
 };
 
-/** 保存时总会带上的数据安全字段（与界面缺省一致）。 */
+/**
+ * 「规则与放行」卡片保存时带的数据安全字段（与界面缺省一致）。
+ *
+ * `bundledRuntimes` 不在这里：它属于「沙箱安全」卡片，单独提交，规则卡片不会带它。
+ */
 const DEFAULT_DATA_SAFETY = {
   deleteProtection: { enabled: false, batchThreshold: 50 },
   sensitiveProtection: { enabled: true, patterns: [] },
+};
+
+/** 服务端读回时的完整策略：比规则卡片多一个内置运行时开关。 */
+const FETCHED_POLICY_DEFAULTS = {
+  ...DEFAULT_DATA_SAFETY,
+  bundledRuntimes: { enabled: true },
 };
 
 const EMPTY_SETTINGS: PolicySettings = {
@@ -70,7 +84,7 @@ const EMPTY_SETTINGS: PolicySettings = {
     pathRules: [],
     commandRules: [],
     domainRules: [],
-    ...DEFAULT_DATA_SAFETY,
+    ...FETCHED_POLICY_DEFAULTS,
   },
   browserControlEnabled: false,
   browserAutoScreenshot: false,
@@ -147,7 +161,7 @@ it("读回已保存的三张规则表与禁用清单", async () => {
       pathRules: [{ path: "D:\\项目\\密钥", action: "ask" }],
       commandRules: [{ prefix: "rm -rf", action: "deny" }],
       domainRules: [],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
 
@@ -194,7 +208,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
 
@@ -229,7 +243,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [{ domain: "*.internal.example", action: "deny" }],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
 
@@ -269,6 +283,7 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       domainRules: [],
       deleteProtection: { enabled: true, batchThreshold: 20 },
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
+      bundledRuntimes: { enabled: true },
     },
   });
 
@@ -305,4 +320,31 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       },
     },
   });
+});
+
+it("沙箱安全：内置运行时开关读得回、单独保存时保留其它策略", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [{ pattern: "mcp__*", action: "deny" }],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      ...FETCHED_POLICY_DEFAULTS,
+    },
+  });
+
+  const toggle = (await screen.findByLabelText(
+    "内置运行时",
+  )) as HTMLInputElement;
+  expect(toggle.checked).toBe(true);
+  await user.click(toggle);
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  const body = tierPuts[0] as { policy: Record<string, unknown> };
+  expect(body.policy.bundledRuntimes).toEqual({ enabled: false });
+  // 单独提交只改这一项：同卡片其它策略字段原样带回去
+  expect(body.policy.rules).toEqual([{ pattern: "mcp__*", action: "deny" }]);
 });

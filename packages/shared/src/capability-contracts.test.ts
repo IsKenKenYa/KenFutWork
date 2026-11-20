@@ -172,10 +172,11 @@ describe("敏感数据检测", () => {
     expect(findSensitiveData("内部工号 123456", ["([未闭合"])).toBeNull();
   });
 
-  it("缺省策略：敏感保护默认开、删除保护默认关", () => {
+  it("缺省策略：敏感保护默认开、删除保护默认关、内置运行时默认开", () => {
     expect(EMPTY_PERMISSION_POLICY.sensitiveProtection.enabled).toBe(true);
     expect(EMPTY_PERMISSION_POLICY.deleteProtection.enabled).toBe(false);
-    // 旧数据解析后两个新字段都补齐
+    expect(EMPTY_PERMISSION_POLICY.bundledRuntimes.enabled).toBe(true);
+    // 旧数据解析后新字段都补齐
     const parsed = permissionPolicySchema.parse({
       rules: [{ pattern: "mcp__*", action: "deny" }],
     });
@@ -184,5 +185,6 @@ describe("敏感数据检测", () => {
       batchThreshold: 50,
     });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
+    expect(parsed.bundledRuntimes).toEqual({ enabled: true });
   });
 });

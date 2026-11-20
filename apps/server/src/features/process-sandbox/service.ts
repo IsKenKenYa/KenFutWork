@@ -411,10 +411,23 @@ export function createProcessSandbox(
           options.resolveNetwork
             ? await options.resolveNetwork(request.scope)
             : options.network;
+        // 内置运行时开关（设置 → 权限 → 内置运行时）：关闭时不给随包运行时的
+        // bin 目录（PATH）与读根（授权），命令只能用宿主自带的运行时。
+        const bundled = options.resolveBundledRuntimes
+          ? await options.resolveBundledRuntimes(request.scope)
+          : { allowed: true };
+        const { runtimeReadRoots, runtimePathAdditions, ...connectionOptions } =
+          options;
         return new TaskConnection(
           {
-            ...options,
+            ...connectionOptions,
             network,
+            ...(bundled.allowed
+              ? {
+                  ...(runtimeReadRoots ? { runtimeReadRoots } : {}),
+                  ...(runtimePathAdditions ? { runtimePathAdditions } : {}),
+                }
+              : {}),
             onSnapshot: (snapshot) => {
               restore.observe(snapshot);
               options.onSnapshot?.(snapshot);

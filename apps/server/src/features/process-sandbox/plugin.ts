@@ -89,6 +89,15 @@ export function createProcessSandboxPlugin(): PluginDefinition {
               permissions?.getSettings().policy.domainRules ?? [];
             return sandboxNetworkFor(domainRules);
           },
+          /** 内置运行时开关（设置 → 权限 → 内置运行时）；未装配 permissions 时视为允许。 */
+          resolveBundledRuntimes: async () => {
+            const permissions = ctx.tryGet("permissions");
+            return {
+              allowed:
+                permissions?.getSettings().policy.bundledRuntimes.enabled ??
+                true,
+            };
+          },
           onSnapshot: (snapshot) => {
             for (const registration of ctx
               .get("capabilities")

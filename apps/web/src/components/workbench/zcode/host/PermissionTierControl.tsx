@@ -406,6 +406,56 @@ function RuleTable({
  * 界面因此只做**事实披露**：隔离生效在哪里、网络白名单从哪来。
  */
 function SandboxSecuritySection() {
+  const [bundledRuntimes, setBundledRuntimes] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<{ policy?: { bundledRuntimes?: { enabled?: boolean } } }>(
+      "/api/permissions/tier",
+    )
+      .then((view) => {
+        if (cancelled) return;
+        setBundledRuntimes(view.policy?.bundledRuntimes?.enabled !== false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * 只改内置运行时一项：读回当前策略再合并提交。
+   *
+   * 不复用「规则与放行」的一次性保存——那个卡片持有全部规则表，两处各自提交
+   * 会把对方刚改的字段覆盖回旧值。
+   */
+  const saveBundledRuntimes = async (enabled: boolean) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = bundledRuntimes;
+    setBundledRuntimes(enabled);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: { ...(view.policy ?? {}), bundledRuntimes: { enabled } },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setBundledRuntimes(previous);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <SettingsGroupCard>
       <SettingsRow
@@ -429,6 +479,27 @@ function SandboxSecuritySection() {
           <span className="text-ui-sm text-foreground-subtle">严格白名单</span>
         }
       />
+      <SettingsRow
+        label="内置运行时"
+        description="命令使用随包运行时"
+        control={
+          <input
+            type="checkbox"
+            aria-label="内置运行时"
+            checked={bundledRuntimes}
+            disabled={saving}
+            onChange={(event) => void saveBundledRuntimes(event.target.checked)}
+            className="size-4"
+          />
+        }
+      />
+      {message ? (
+        <div className="px-4 pb-3">
+          <span role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </span>
+        </div>
+      ) : null}
     </SettingsGroupCard>
   );
 }
