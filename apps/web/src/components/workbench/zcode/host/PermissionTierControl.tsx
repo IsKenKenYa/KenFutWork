@@ -762,7 +762,7 @@ function SandboxSecuritySection() {
       />
       <SettingsRow
         label="网络访问"
-        description="按域名规则的允许项放行"
+        description="系统层只放行代理端口"
         control={
           <span className="text-ui-sm text-foreground-subtle">严格白名单</span>
         }
