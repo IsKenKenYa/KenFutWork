@@ -1179,6 +1179,22 @@ function PermissionPolicySection() {
             添加敏感规则
           </Button>
         </div>
+        {/* 安全网关与传输加密：本仓库的形态是「服务端只监听回环 + 本机凭据」，
+            没有独立的流量网关层。如实写明，不摆开关。 */}
+        <div className="space-y-1 border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-ui-base font-medium text-foreground">
+              安全网关
+            </span>
+            <span className="text-ui-sm text-foreground-subtle">本机回环</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-ui-base font-medium text-foreground">
+              传输加密
+            </span>
+            <span className="text-ui-sm text-foreground-subtle">本机凭据</span>
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <Button
             type="button"
