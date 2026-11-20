@@ -149,6 +149,46 @@ export const permissionDomainRuleSchema = z
 export type PermissionDomainRule = z.infer<typeof permissionDomainRuleSchema>;
 
 /**
+ * 判定来源（审计中心用）：回答「这次是命中哪条规则被拦/放行的」。
+ *
+ * 这是用户能读懂的分类，不是内部函数名——审计页直接按它显示。
+ */
+export const permissionDecisionSourceSchema = z.enum([
+  "disabled",
+  "tool-rule",
+  "path-rule",
+  "command-rule",
+  "domain-rule",
+  "custom-rules",
+  "approval-memory",
+  "tier",
+  "approval",
+]);
+export type PermissionDecisionSource = z.infer<
+  typeof permissionDecisionSourceSchema
+>;
+
+/**
+ * 一条审计记录（设置 → 权限 → 审计中心）。
+ *
+ * 刻意**不含工具参数**：参数里可能带文件内容、命令与凭据，审计只需回答
+ * 「哪个工具、什么结论、为什么」。`blocked` 区分硬拒绝与「需审批」。
+ */
+export const permissionAuditEntrySchema = z.object({
+  id: z.string().min(1),
+  occurredAt: z.string().min(1),
+  toolName: z.string().min(1),
+  decision: z.enum(["allow", "deny"]),
+  source: permissionDecisionSourceSchema.nullable(),
+  blocked: z.boolean(),
+  reason: z.string().nullable(),
+});
+export type PermissionAuditEntry = z.infer<typeof permissionAuditEntrySchema>;
+
+/** 审计记录上限：超过即裁剪最旧的（服务端写入时执行）。 */
+export const PERMISSION_AUDIT_LIMIT = 5000;
+
+/**
  * 工具策略：三态规则表 + 禁用清单 + 路径/命令/域名规则。
  *
  * 判定顺序（拒绝优先，全部在档位之前）：

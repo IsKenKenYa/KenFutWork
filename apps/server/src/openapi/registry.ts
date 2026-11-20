@@ -2700,6 +2700,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description:
       "为旧线程策略设置 thread/forever 放行记忆，成功无响应体；缺 toolName 或未绑定调用的 scope=once 返回 400。Code 逐调用审批经原 V4 resolveInteraction 回执，绑定用户、Task、Run、参数和有效授权代际。",
   },
+  {
+    method: "get",
+    path: "/api/permissions/audit",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({
+      limit: z.coerce.number().int().min(1).max(5000).optional(),
+    }),
+    summary: "查询权限审计流水",
+    description:
+      "返回最近的放行与拦截记录（新的在前，缺省 200 条）：工具名、结论、命中的规则来源、是否为硬拒绝与可读原因。不含工具参数（参数可能带文件内容、命令或凭据）。上限 5000 条，写入时裁剪最旧记录。",
+  },
+  {
+    method: "delete",
+    path: "/api/permissions/audit",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 204,
+    summary: "清空权限审计流水",
+    description:
+      "删除全部审计记录，成功无响应体。用户主动清空或导出后清理时使用。",
+  },
   // ---- plugins.ts（插件；变更类操作需管理员）----
   {
     method: "get",

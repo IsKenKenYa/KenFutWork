@@ -7,6 +7,7 @@ import {
   createPermissionService,
   isDangerousCall,
   isDangerousTool,
+  type PermissionService,
 } from "./permission-service.js";
 import { DEFAULT_PERMISSION_SETTINGS } from "./tier-store.js";
 
@@ -509,5 +510,104 @@ describe("工具策略：三态规则与禁用清单", () => {
     const decision = svc.checkUrlPolicy("https://example.com");
     expect(decision?.decision).toBe("deny");
     expect(decision?.blocked).toBeUndefined();
+  });
+});
+
+describe("审计中心：判定流水", () => {
+  const withSink = (policy: Partial<PermissionPolicy> = {}) => {
+    const records: Parameters<
+      NonNullable<Parameters<PermissionService["setAuditSink"]>[0]>
+    >[0][] = [];
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      policy: { ...EMPTY_PERMISSION_POLICY, ...policy },
+    });
+    svc.setAuditSink((record) => records.push(record));
+    return { svc, records };
+  };
+
+  it("工具门每条结论都记：放行与拦截都在，且带命中来源", () => {
+    const { svc, records } = withSink({
+      rules: [{ pattern: "blocked_tool", action: "deny" }],
+    });
+    svc.evaluate({ toolName: "preview_file" });
+    svc.evaluate({ toolName: "blocked_tool" });
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      toolName: "preview_file",
+      decision: "allow",
+      blocked: false,
+    });
+    expect(records[1]).toMatchObject({
+      toolName: "blocked_tool",
+      decision: "deny",
+      source: "tool-rule",
+      blocked: true,
+    });
+  });
+
+  it("审批入口只在命中策略时记一条（未命中留给档位判定，不重复记）", () => {
+    const { svc, records } = withSink({
+      disabledTools: ["shell_*"],
+    });
+    expect(svc.checkToolPolicy("read_file")).toBeUndefined();
+    expect(records).toHaveLength(0);
+
+    svc.checkToolPolicy("shell_exec");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ source: "disabled", blocked: true });
+  });
+
+  it("不记工具参数与命令原文（只记命中的规则，理由可定位）", () => {
+    const { svc, records } = withSink({
+      pathRules: [{ path: "/secret", action: "deny" }],
+      commandRules: [{ prefix: "curl -H Authorization", action: "deny" }],
+    });
+    svc.evaluate({
+      toolName: "write_file",
+      args: { file_path: "/secret/token.txt", content: "top-secret-value" },
+    });
+    svc.evaluate({
+      toolName: "execute",
+      args: { command: "curl -H Authorization: Bearer sk-live-123 https://x" },
+    });
+
+    const serialized = JSON.stringify(records);
+    // 内容与凭据一个字都不落库
+    expect(serialized).not.toContain("top-secret-value");
+    expect(serialized).not.toContain("Bearer");
+    expect(serialized).not.toContain("sk-live-123");
+    // 也不记被操作的路径/命令原文
+    expect(serialized).not.toContain("token.txt");
+    // 理由指向**命中的规则**，用户据此能定位是哪条配错了
+    expect(records[0]).toMatchObject({ source: "path-rule", blocked: true });
+    expect(records[0]?.reason).toContain("/secret");
+    expect(records[1]).toMatchObject({ source: "command-rule", blocked: true });
+    expect(records[1]?.reason).toContain("curl -H Authorization");
+  });
+
+  it("记录器抛错不影响判定（审计是旁路）", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        rules: [{ pattern: "blocked_tool", action: "deny" }],
+      },
+    });
+    svc.setAuditSink(() => {
+      throw new Error("落库失败");
+    });
+    expect(svc.evaluate({ toolName: "blocked_tool" }).blocked).toBe(true);
+    expect(svc.evaluate({ toolName: "preview_file" }).decision).toBe("allow");
+  });
+
+  it("摘掉记录器后不再记流水", () => {
+    const { svc, records } = withSink();
+    svc.setAuditSink(null);
+    svc.evaluate({ toolName: "preview_file" });
+    expect(records).toHaveLength(0);
   });
 });

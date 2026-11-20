@@ -1,5 +1,6 @@
 import { registerPermissionRoutes } from "../../http/permissions.js";
 import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
+import { createPermissionAuditStore } from "./audit-store.js";
 import {
   createPermissionService,
   type PermissionService,
@@ -66,6 +67,13 @@ export function createPermissionsPlugin(_deps: {
     mounted(ctx) {
       const service = ctx.get("permissions");
       const tierStore = createPermissionSettingsStore(ctx.get("persistence"));
+      const auditStore = createPermissionAuditStore(ctx.get("persistence"));
+      // 审计流水接在 service 的判定旁路：只记结论与命中的规则，不记工具参数。
+      service.setAuditSink((record) => {
+        void auditStore.record(record).catch(() => {
+          // 流水写失败不影响判定；这里只吞掉，避免未处理的 rejection 打断进程
+        });
+      });
       void tierStore
         .load()
         .then((settings) => {
@@ -86,6 +94,7 @@ export function createPermissionsPlugin(_deps: {
         localAccess: ctx.get("localAccess"),
         permissions: service,
         tierStore,
+        auditStore,
       });
     },
   };

@@ -23,7 +23,7 @@ import {
 import { ChevronDownIcon, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
-import { surfaceJson } from "./surfaceApi.js";
+import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 
 /** 一条三态规则的界面形状（与服务端 `permissionPolicySchema` 对齐）。 */
 type PolicyRule = { pattern: string; action: "allow" | "ask" | "deny" };
@@ -248,6 +248,10 @@ export function PermissionTierSection() {
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>审批模型</SettingsSubheading>
         <ModelDefaultsSection approvalOnly showHeading={false} />
+      </section>
+      <section className="min-w-0 space-y-3">
+        <SettingsSubheading>审计中心</SettingsSubheading>
+        <PermissionAuditSection />
       </section>
     </div>
   );
@@ -737,5 +741,174 @@ function ToolApprovalSection() {
         </div>
       </SettingsGroupCard>
     </section>
+  );
+}
+
+/** 审计来源 → 界面标签（与服务端 `permissionDecisionSourceSchema` 一一对应）。 */
+const AUDIT_SOURCES: Record<string, string> = {
+  disabled: "禁用清单",
+  "tool-rule": "工具规则",
+  "path-rule": "路径规则",
+  "command-rule": "命令规则",
+  "domain-rule": "域名规则",
+  "custom-rules": "自定义规则",
+  "approval-memory": "已批准",
+  tier: "权限模式",
+  approval: "人工审批",
+};
+
+interface AuditEntry {
+  id: string;
+  occurredAt: string;
+  toolName: string;
+  decision: "allow" | "deny";
+  source: string | null;
+  blocked: boolean;
+  reason: string | null;
+}
+
+/**
+ * 审计中心：最近的判定流水（放行与拦截都在），可导出与清空。
+ *
+ * 流水只记工具名、结论、命中的规则与理由——**不含工具参数**，所以整段导出
+ * 不需要额外打码。导出为 CSV：一列一项，用户能直接用表格软件打开。
+ */
+function PermissionAuditSection() {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const view = await surfaceJson<{ entries?: AuditEntry[] }>(
+        "/api/permissions/audit",
+      );
+      setEntries(view.entries ?? []);
+    } catch (error) {
+      setMessage(readableError(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const exportCsv = () => {
+    const header = "时间,工具,结论,命中规则,硬拒绝,原因";
+    const csvCell = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const rows = entries.map((entry) =>
+      [
+        entry.occurredAt,
+        entry.toolName,
+        entry.decision === "deny" ? "拒绝" : "放行",
+        entry.source ? (AUDIT_SOURCES[entry.source] ?? entry.source) : "",
+        entry.blocked ? "是" : "否",
+        entry.reason ?? "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+    const blob = new Blob([[header, ...rows].join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `审计记录-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setMessage("已导出");
+  };
+
+  const clear = async () => {
+    try {
+      await surfaceRequest("/api/permissions/audit", { method: "DELETE" });
+      setEntries([]);
+      setMessage("已清空");
+    } catch (error) {
+      setMessage(readableError(error));
+    }
+  };
+
+  return (
+    <SettingsGroupCard>
+      <div className="space-y-3 p-4">
+        {loading ? (
+          <p className="text-ui-sm text-foreground-subtle">读取中</p>
+        ) : entries.length === 0 ? (
+          <p className="text-ui-sm text-foreground-subtle">还没有记录</p>
+        ) : (
+          <div className="max-h-80 space-y-1 overflow-y-auto">
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-border pb-1 text-ui-sm last:border-b-0"
+              >
+                <span className="shrink-0 font-mono text-foreground-subtle">
+                  {entry.occurredAt.slice(11, 19)}
+                </span>
+                <span className="font-mono text-foreground">
+                  {entry.toolName}
+                </span>
+                <span
+                  className={
+                    entry.decision === "deny"
+                      ? "text-destructive"
+                      : "text-foreground-subtle"
+                  }
+                >
+                  {entry.decision === "deny"
+                    ? entry.blocked
+                      ? "拒绝"
+                      : "待审批"
+                    : "放行"}
+                </span>
+                {entry.source ? (
+                  <span className="text-foreground-subtle">
+                    {AUDIT_SOURCES[entry.source] ?? entry.source}
+                  </span>
+                ) : null}
+                {entry.reason ? (
+                  <span className="min-w-0 flex-1 truncate text-foreground-subtle">
+                    {entry.reason}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" size="sm" onClick={load}>
+            刷新
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={entries.length === 0}
+            onClick={exportCsv}
+          >
+            导出
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={entries.length === 0}
+            onClick={() => void clear()}
+          >
+            清空
+          </Button>
+          {message ? (
+            <span role="status" className="text-ui-sm text-foreground-subtle">
+              {message}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </SettingsGroupCard>
   );
 }

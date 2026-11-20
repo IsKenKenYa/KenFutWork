@@ -3,6 +3,7 @@ import {
   EMPTY_PERMISSION_POLICY,
   matchesPermissionDomain,
   matchesPermissionRule,
+  type PermissionDecisionSource,
   type PermissionDomainRule,
   type PermissionRuleAction,
   type PermissionRules,
@@ -118,26 +119,32 @@ export function withinPathPrefix(
  *
  * 抽成泛型是为了工具规则、路径规则、命令规则共用同一套「首个命中生效」语义，
  * 避免三处各写一遍循环而判定顺序漂移。
+ *
+ * 理由里写**命中的规则**（不放被操作的内容）：命令原文可能带 `curl -H "Authorization: …"`，
+ * 路径也可能是私密文件名。审计流水会落库，理由因此只描述规则本身。
  */
 function triStateDecision<T extends { action: PermissionRuleAction }>(
   table: readonly T[],
-  subject: string,
+  label: (rule: T) => string,
   matches: (rule: T) => boolean,
+  source: PermissionDecisionSource,
 ): PermissionDecision | undefined {
   for (const rule of table) {
     if (!matches(rule)) continue;
-    if (rule.action === "allow") return { decision: "allow" };
+    if (rule.action === "allow") return { decision: "allow", source };
     if (rule.action === "deny") {
       return {
         decision: "deny",
         blocked: true,
-        reason: `${subject} 命中「拒绝」规则`,
+        source,
+        reason: `命中「拒绝」规则 ${label(rule)}`,
       };
     }
     // ask：交给审批，不给记忆（每次都要人点）
     return {
       decision: "deny",
-      reason: `${subject} 命中「询问」规则，需你确认`,
+      source,
+      reason: `命中「询问」规则 ${label(rule)}，需你确认`,
     };
   }
   return undefined;
@@ -188,6 +195,20 @@ export interface PermissionDecision {
    * 保持默认值不变才不会让既有调用方误把「需审批」当成永久拒绝。
    */
   blocked?: boolean;
+  /** 这次结论来自哪条规则（审计中心按它分类显示；未命中规则时缺省）。 */
+  source?: PermissionDecisionSource;
+}
+
+/**
+ * 审计记录的一条输入（服务端落库用；不含工具参数，理由见
+ * `permissionAuditEntrySchema`）。
+ */
+export interface PermissionAuditRecord {
+  toolName: string;
+  decision: "allow" | "deny";
+  source: PermissionDecisionSource | undefined;
+  blocked: boolean;
+  reason: string | undefined;
 }
 
 export interface PermissionService extends CodeApprovalService {
@@ -229,6 +250,14 @@ export interface PermissionService extends CodeApprovalService {
    * 让调用方按原行为继续。与工具策略同理，完全访问档也拦不住用户显式拒绝的域名。
    */
   checkUrlPolicy(url: string): PermissionDecision | undefined;
+  /**
+   * 挂一个审计记录器（审计中心）。
+   *
+   * 工具门判定（`evaluate`）与审批入口（`checkToolPolicy`）各记一条；
+   * 记录器由插件在挂载时接上（落库），缺席时判定照常、不记流水。
+   * 只记结论与命中的规则来源，**不记工具参数**。
+   */
+  setAuditSink(sink: ((record: PermissionAuditRecord) => void) | null): void;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
   listApprovedForever(): string[];
@@ -243,6 +272,27 @@ export function createPermissionService(
   // approve(forever) 增补后由调用方经 tier-store 写穿持久化）。
   const foreverApproved = new Set<string>(settings.approvedForever);
   const threadApproved = new Set<string>();
+  let auditSink: ((record: PermissionAuditRecord) => void) | null = null;
+
+  /** 记一条审计流水：记录器抛错不能影响判定（审计是旁路，不是判定的一环）。 */
+  const audit = (
+    toolName: string,
+    decision: PermissionDecision,
+  ): PermissionDecision => {
+    if (!auditSink) return decision;
+    try {
+      auditSink({
+        toolName,
+        decision: decision.decision,
+        source: decision.source,
+        blocked: decision.blocked === true,
+        reason: decision.reason,
+      });
+    } catch {
+      // 审计失败静默：判定的正确性优先于记账
+    }
+    return decision;
+  };
 
   /** 场景对应的档位：自动化任务用 automationTier（线程显式设过档的优先）。 */
   const tierFor = (
@@ -271,11 +321,15 @@ export function createPermissionService(
       return {
         decision: "deny",
         blocked: true,
+        source: "disabled",
         reason: `工具 ${toolName} 已在「设置 → 权限 → 工具管控」里被禁用`,
       };
     }
-    const toolDecision = triStateDecision(policy.rules, toolName, (rule) =>
-      matchesPermissionRule(rule.pattern, toolName),
+    const toolDecision = triStateDecision(
+      policy.rules,
+      (rule) => rule.pattern,
+      (rule) => matchesPermissionRule(rule.pattern, toolName),
+      "tool-rule",
     );
     if (toolDecision) return toolDecision;
 
@@ -284,8 +338,9 @@ export function createPermissionService(
     if (targetPath) {
       const pathDecision = triStateDecision(
         policy.pathRules,
-        targetPath,
+        (rule) => rule.path,
         (rule) => withinPathPrefix(targetPath, rule.path),
+        "path-rule",
       );
       if (pathDecision) return pathDecision;
     }
@@ -293,8 +348,9 @@ export function createPermissionService(
     if (command) {
       const commandDecision = triStateDecision(
         policy.commandRules,
-        command,
+        (rule) => rule.prefix,
         (rule) => command.startsWith(rule.prefix),
+        "command-rule",
       );
       if (commandDecision) return commandDecision;
     }
@@ -328,19 +384,79 @@ export function createPermissionService(
     }
     const host = parsed.hostname.toLowerCase();
     const port = parsed.port;
-    return triStateDecision(rules, host, (rule) =>
-      matchesPermissionDomain(rule.domain, host, port),
+    return triStateDecision(
+      rules,
+      (rule) => rule.domain,
+      (rule) => matchesPermissionDomain(rule.domain, host, port),
+      "domain-rule",
     );
+  };
+
+  /** 工具门的判定本体（`evaluate` 包一层审计后再暴露）。 */
+  const evaluateDecision = ({
+    toolName,
+    threadId,
+    scenario = "interactive",
+    access,
+    args,
+  }: Parameters<PermissionService["evaluate"]>[0]): PermissionDecision => {
+    const tier = tierFor(threadId, scenario);
+    // 工具策略优先于档位：禁用清单是硬拒绝（完全访问档也拦），
+    // 三态规则按表内顺序取第一条命中。这两项是 WorkBuddy 安全中心的口径，
+    // 与档位正交——「完全访问」放开的是审批，不该放开用户明确禁用的工具。
+    const policyDecision = policyDecisionFor(toolName, args);
+    if (policyDecision) return policyDecision;
+    if (tier === "full-access") {
+      return { decision: "allow", source: "tier" };
+    }
+    // 第 4 档：自定义规则优先，且**拒绝优先**（放行表写宽了也不至于把危险工具带出去）
+    if (tier === "custom") {
+      const rules: PermissionRules = settings.rules;
+      if (anyPermissionRuleMatches(rules.deny, toolName)) {
+        return {
+          decision: "deny",
+          source: "custom-rules",
+          reason: `工具 ${toolName} 命中自定义规则里的拒绝项（设置 → 权限 → 自定义）`,
+        };
+      }
+      if (anyPermissionRuleMatches(rules.allow, toolName)) {
+        return { decision: "allow", source: "custom-rules" };
+      }
+      // 都没命中 → 回落 default 档的判定
+    }
+    if (!isDangerousCall({ toolName, ...(access ? { access } : {}) })) {
+      return { decision: "allow", source: "tier" };
+    }
+    if (tier === "auto-approve") {
+      return { decision: "allow", source: "tier" };
+    }
+    // default（或 custom 未命中规则）：危险工具需要审批记忆
+    if (foreverApproved.has(toolName)) {
+      return { decision: "allow", source: "approval-memory" };
+    }
+    if (threadId && threadApproved.has(`${threadId}:${toolName}`)) {
+      return { decision: "allow", source: "approval-memory" };
+    }
+    return {
+      decision: "deny",
+      source: "tier",
+      reason: `工具 ${toolName} 属危险操作，需在「设置 → 权限 → 工具审批」批准（${TIER_LABELS[tier]}）`,
+    };
   };
 
   const service: PermissionService = {
     ...createCodeApprovalService(options),
     checkToolPolicy(toolName, args) {
-      return policyDecisionFor(toolName, args);
+      const decision = policyDecisionFor(toolName, args);
+      // 只在真的命中规则时记一条：未命中说明还要走档位判定，不在这一层下结论。
+      return decision ? audit(toolName, decision) : undefined;
     },
     checkUrlPolicy(url) {
       const policy = settings.policy ?? EMPTY_PERMISSION_POLICY;
       return domainDecisionFor(url, policy.domainRules);
+    },
+    setAuditSink(sink) {
+      auditSink = sink;
     },
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;
@@ -362,47 +478,9 @@ export function createPermissionService(
       for (const toolName of next.approvedForever)
         foreverApproved.add(toolName);
     },
-    evaluate({ toolName, threadId, scenario = "interactive", access, args }) {
-      const tier = tierFor(threadId, scenario);
-      // 工具策略优先于档位：禁用清单是硬拒绝（完全访问档也拦），
-      // 三态规则按表内顺序取第一条命中。这两项是 WorkBuddy 安全中心的口径，
-      // 与档位正交——「完全访问」放开的是审批，不该放开用户明确禁用的工具。
-      const policyDecision = policyDecisionFor(toolName, args);
-      if (policyDecision) return policyDecision;
-      if (tier === "full-access") {
-        return { decision: "allow" };
-      }
-      // 第 4 档：自定义规则优先，且**拒绝优先**（放行表写宽了也不至于把危险工具带出去）
-      if (tier === "custom") {
-        const rules: PermissionRules = settings.rules;
-        if (anyPermissionRuleMatches(rules.deny, toolName)) {
-          return {
-            decision: "deny",
-            reason: `工具 ${toolName} 命中自定义规则里的拒绝项（设置 → 权限 → 自定义）`,
-          };
-        }
-        if (anyPermissionRuleMatches(rules.allow, toolName)) {
-          return { decision: "allow" };
-        }
-        // 都没命中 → 回落 default 档的判定
-      }
-      if (!isDangerousCall({ toolName, ...(access ? { access } : {}) })) {
-        return { decision: "allow" };
-      }
-      if (tier === "auto-approve") {
-        return { decision: "allow" };
-      }
-      // default（或 custom 未命中规则）：危险工具需要审批记忆
-      if (foreverApproved.has(toolName)) {
-        return { decision: "allow" };
-      }
-      if (threadId && threadApproved.has(`${threadId}:${toolName}`)) {
-        return { decision: "allow" };
-      }
-      return {
-        decision: "deny",
-        reason: `工具 ${toolName} 属危险操作，需在「设置 → 权限 → 工具审批」批准（${TIER_LABELS[tier]}）`,
-      };
+    evaluate(input) {
+      // 工具门是「最终结论」，每条都进审计（含放行）——用户可以看见 AI 都跑了什么。
+      return audit(input.toolName, evaluateDecision(input));
     },
     approve(toolName, approval) {
       if (approval.scope === "once") {
