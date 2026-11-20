@@ -1192,8 +1192,9 @@ function PermissionPolicySection() {
           </Button>
         </div>
         {/* 安全网关与传输加密：如实显示**当前连接的实际状态**。
-            - 安全网关：服务端只监听回环（`serverHost` 缺省 127.0.0.1），出入流量不出本机；
-              自托管/局域网部署由用户自己的反向代理承担这层。
+            - 安全网关：入站由「回环监听 + CORS 白名单 + 每路由本机鉴权」收口，
+              出站由域名规则（工具门 / 服务端出口 / HTTP MCP / 沙箱网络白名单）收口。
+              自托管/局域网部署的 TLS 终结由用户自己的反向代理承担。
             - 传输加密：按页面协议判断——自托管配了 KENFUTWORK_TLS_CERT_PATH /
               KENFUTWORK_TLS_KEY_PATH 就是 https/wss；本机回环是 http + 本机凭据。 */}
         <div className="space-y-1 border-t border-border pt-4">
@@ -1201,7 +1202,9 @@ function PermissionPolicySection() {
             <span className="text-ui-base font-medium text-foreground">
               安全网关
             </span>
-            <span className="text-ui-sm text-foreground-subtle">本机回环</span>
+            <span className="text-ui-sm text-foreground-subtle">
+              出入站均收口
+            </span>
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="text-ui-base font-medium text-foreground">
