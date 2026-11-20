@@ -1,7 +1,9 @@
 import {
   anyPermissionRuleMatches,
   EMPTY_PERMISSION_POLICY,
+  matchesPermissionDomain,
   matchesPermissionRule,
+  type PermissionDomainRule,
   type PermissionRuleAction,
   type PermissionRules,
   type PermissionScenario,
@@ -69,6 +71,20 @@ export function commandArgument(
 ): string | null {
   if (!args) return null;
   for (const key of ["command", "cmd"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/** 从工具参数里取要访问的网址（`browser_open` 等用 `url`）。 */
+export function urlArgument(
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!args) return null;
+  for (const key of ["url", "href"]) {
     const value = args[key];
     if (typeof value === "string" && value.trim().length > 0) {
       return value.trim();
@@ -205,6 +221,14 @@ export interface PermissionService extends CodeApprovalService {
     toolName: string,
     args?: Record<string, unknown>,
   ): PermissionDecision | undefined;
+  /**
+   * 只检查网络访问规则（网络安全：域名三态表），不看档位。
+   *
+   * 服务端替用户访问任意地址的出口（`fetchPageSnapshot`）在抓取前调用它：
+   * 命中「拒绝」直接抛可读原因，命中「允许」放行，未命中返回 `undefined`
+   * 让调用方按原行为继续。与工具策略同理，完全访问档也拦不住用户显式拒绝的域名。
+   */
+  checkUrlPolicy(url: string): PermissionDecision | undefined;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
   listApprovedForever(): string[];
@@ -274,13 +298,49 @@ export function createPermissionService(
       );
       if (commandDecision) return commandDecision;
     }
+    const target = urlArgument(args);
+    if (target) {
+      const domainDecision = domainDecisionFor(target, policy.domainRules);
+      if (domainDecision) return domainDecision;
+    }
     return undefined;
+  };
+
+  /**
+   * 域名规则判定（网络安全）。
+   *
+   * 与工具/路径/命令规则同一套三态语义，只是主体换成了 URL 的主机名：
+   * 工具参数里带 `url`（`browser_open`）时按它判，命中即返回。
+   * 非 http/https（含解析不出的地址）不参与：域名规则管的是网络访问。
+   */
+  const domainDecisionFor = (
+    url: string,
+    rules: readonly PermissionDomainRule[],
+  ): PermissionDecision | undefined => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return undefined;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return undefined;
+    }
+    const host = parsed.hostname.toLowerCase();
+    const port = parsed.port;
+    return triStateDecision(rules, host, (rule) =>
+      matchesPermissionDomain(rule.domain, host, port),
+    );
   };
 
   const service: PermissionService = {
     ...createCodeApprovalService(options),
     checkToolPolicy(toolName, args) {
       return policyDecisionFor(toolName, args);
+    },
+    checkUrlPolicy(url) {
+      const policy = settings.policy ?? EMPTY_PERMISSION_POLICY;
+      return domainDecisionFor(url, policy.domainRules);
     },
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;

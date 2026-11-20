@@ -41,6 +41,7 @@ type PolicySettings = {
     disabledTools: string[];
     pathRules: Array<{ path: string; action: RuleAction }>;
     commandRules: Array<{ prefix: string; action: RuleAction }>;
+    domainRules: Array<{ domain: string; action: RuleAction }>;
   };
   browserControlEnabled: boolean;
   browserAutoScreenshot: boolean;
@@ -59,6 +60,7 @@ const EMPTY_SETTINGS: PolicySettings = {
     disabledTools: [],
     pathRules: [],
     commandRules: [],
+    domainRules: [],
   },
   browserControlEnabled: false,
   browserAutoScreenshot: false,
@@ -134,6 +136,7 @@ it("读回已保存的三张规则表与禁用清单", async () => {
       disabledTools: ["shell_*"],
       pathRules: [{ path: "D:\\项目\\密钥", action: "ask" }],
       commandRules: [{ prefix: "rm -rf", action: "deny" }],
+      domainRules: [],
     },
   });
 
@@ -163,6 +166,7 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
       disabledTools: [],
       pathRules: [{ path: "C:\\机密", action: "ask" }],
       commandRules: [{ prefix: "git push", action: "ask" }],
+      domainRules: [],
     },
   });
   expect(await screen.findByText("已保存")).toBeInTheDocument();
@@ -177,6 +181,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       disabledTools: [],
       pathRules: [],
       commandRules: [],
+      domainRules: [],
     },
   });
 
@@ -195,6 +200,43 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       disabledTools: [],
       pathRules: [],
       commandRules: [],
+      domainRules: [],
+    },
+  });
+});
+
+it("域名规则（网络安全）读得回、存得出", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [{ domain: "*.internal.example", action: "deny" }],
+    },
+  });
+
+  expect(await screen.findByLabelText("域名")).toHaveValue(
+    "*.internal.example",
+  );
+  await user.click(screen.getByRole("button", { name: "添加域名规则" }));
+  const inputs = screen.getAllByLabelText("域名");
+  await user.type(inputs[1] as HTMLElement, "docs.example.com");
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  expect(tierPuts[0]).toEqual({
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [
+        { domain: "*.internal.example", action: "deny" },
+        { domain: "docs.example.com", action: "ask" },
+      ],
     },
   });
 });

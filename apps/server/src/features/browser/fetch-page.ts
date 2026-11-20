@@ -52,20 +52,32 @@ export interface PageSnapshot {
  * `browser_open` 工具直接用 `fetchPageSnapshot`；面板数据面走 `cdp` 会话。
  */
 export interface BrowserService {
-  /** 静态快照（无需浏览器）：抓 HTML 提元素。 */
-  snapshot(
-    url: string,
-    options?: { elementLimit?: number },
-  ): Promise<PageSnapshot>;
+  /**
+   * 静态快照（无需浏览器）：抓 HTML 提元素。
+   *
+   * 选项与 `fetchPageSnapshot` 同一形状。`hostPolicy` 由服务构造方注入，
+   * 调用方不需要也不应该自己传。
+   */
+  snapshot(url: string, options?: FetchPageOptions): Promise<PageSnapshot>;
   /** CDP 会话（「连接到 Chrome」/「自动截图」/ 元素选择器的执行面；未连接时各方法抛可读错误）。 */
   cdp: import("./cdp-session.js").CdpBrowserSession;
 }
 
+/**
+ * 浏览器服务：`snapshot` 是服务端替用户访问任意地址的唯一出口，
+ * 因此网络安全规则（`hostPolicy`）由构造方注入，所有消费方（`browser_open`、
+ * `web_search` 网页通道）自动同一条裁决，不需要各自接一遍。
+ */
 export function createBrowserService(
   cdp: import("./cdp-session.js").CdpBrowserSession,
+  hostPolicy?: FetchPageOptions["hostPolicy"],
 ): BrowserService {
   return {
-    snapshot: (url, options) => fetchPageSnapshot(url, options ?? {}),
+    snapshot: (url, options) =>
+      fetchPageSnapshot(url, {
+        ...(options ?? {}),
+        ...(hostPolicy ? { hostPolicy } : {}),
+      }),
     cdp,
   };
 }
@@ -243,8 +255,26 @@ export interface FetchPageOptions {
    * （2026-09-20 实测：`web_search` 网页通道恒返回 0 条）。搜索通道因此要显式调大。
    */
   elementLimit?: number;
+  /**
+   * 域名规则裁决（网络安全，参考 WorkBuddy 安全中心）。
+   *
+   * 这里是服务端替用户访问任意地址的**唯一出口**（`browser_open` 与 `web_search`
+   * 的网页通道都走它），所以网络访问规则必须在抓取之前判。裁决由 permissions 插件
+   * 提供（`checkUrlPolicy`），返回 `undefined` 表示规则未命中、按原行为放行。
+   */
+  hostPolicy?: (
+    url: URL,
+  ) => { decision: "allow" } | { decision: "deny"; reason: string } | undefined;
   /** 测试注入。 */
   fetchImpl?: typeof fetch;
+}
+
+/** 网络规则拒绝时抛的错误码（与 URL 本身的非法/被拦区分开）。 */
+export class BrowserPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowserPolicyError";
+  }
 }
 
 /**
@@ -269,6 +299,11 @@ export async function fetchPageSnapshot(
       "blocked_host",
       "这是云元数据地址（169.254.169.254 一类），不抓取。",
     );
+  }
+  // 网络访问规则（设置 → 权限 → 网络安全）：用户配的域名三态规则先于抓取。
+  const policy = options.hostPolicy?.(url);
+  if (policy?.decision === "deny") {
+    throw new BrowserPolicyError(policy.reason);
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;

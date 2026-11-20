@@ -131,12 +131,30 @@ export const permissionCommandRuleSchema = z
 export type PermissionCommandRule = z.infer<typeof permissionCommandRuleSchema>;
 
 /**
- * 工具策略：三态规则表 + 禁用清单 + 路径/命令规则。
+ * 网络规则：按**域名**配三态动作（与 WorkBuddy 的「网络安全」同口径）。
+ *
+ * 匹配口径（自上而下，第一条命中生效）：
+ * - `*.example.com`：所有子域，不含 `example.com` 本身；
+ * - `example.com`：该域名本身**及其所有子域**（实际用途上「整站」比「只这一层」常见）；
+ * - `example.com:8080`：带端口的写法只匹配该端口。
+ *
+ * 不写通配符前缀之外的形式：`*example.com` 这类会让「管到哪些域名」无法解释。
+ */
+export const permissionDomainRuleSchema = z
+  .object({
+    domain: z.string().min(1).max(253),
+    action: permissionRuleActionSchema,
+  })
+  .strict();
+export type PermissionDomainRule = z.infer<typeof permissionDomainRuleSchema>;
+
+/**
+ * 工具策略：三态规则表 + 禁用清单 + 路径/命令/域名规则。
  *
  * 判定顺序（拒绝优先，全部在档位之前）：
  * 1. 命中禁用清单 → 硬拒绝；
  * 2. 工具三态规则按表内顺序取第一条命中；
- * 3. 文件/命令规则按表内顺序取第一条命中（前缀匹配）；
+ * 3. 文件/命令/域名规则按表内顺序取第一条命中（前缀匹配）；
  * 4. 都没命中 → 回落档位判定（与改造前完全一致）。
  */
 export const permissionPolicySchema = z.object({
@@ -144,6 +162,7 @@ export const permissionPolicySchema = z.object({
   disabledTools: permissionDisabledToolsSchema,
   pathRules: z.array(permissionPathRuleSchema).max(500).default([]),
   commandRules: z.array(permissionCommandRuleSchema).max(500).default([]),
+  domainRules: z.array(permissionDomainRuleSchema).max(500).default([]),
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 
@@ -152,7 +171,32 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   disabledTools: [],
   pathRules: [],
   commandRules: [],
+  domainRules: [],
 };
+
+/** 域名规则是否命中：`*.example.com` 只吃子域，`example.com` 吃本身与全部子域。 */
+export function matchesPermissionDomain(
+  rule: string,
+  hostname: string,
+  port = "",
+): boolean {
+  const normalizedRule = rule.trim().toLowerCase();
+  const host = hostname.trim().toLowerCase();
+  if (!normalizedRule || !host) return false;
+  // 带端口的规则：先比端口，再按域名口径比主机。
+  const rulePort = normalizedRule.includes(":")
+    ? normalizedRule.slice(normalizedRule.lastIndexOf(":") + 1)
+    : "";
+  const ruleHost = rulePort
+    ? normalizedRule.slice(0, normalizedRule.lastIndexOf(":"))
+    : normalizedRule;
+  if (rulePort && rulePort !== port) return false;
+  if (ruleHost.startsWith("*.")) {
+    const base = ruleHost.slice(2);
+    return host.endsWith(`.${base}`);
+  }
+  return host === ruleHost || host.endsWith(`.${ruleHost}`);
+}
 
 /** 规则是否命中工具名（精确或「前缀 *」）。 */
 export function matchesPermissionRule(rule: string, toolName: string): boolean {

@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { createPermissionService } from "../permissions/permission-service.js";
+import {
+  DEFAULT_PERMISSION_SETTINGS,
+  type PermissionSettings,
+} from "../permissions/tier-store.js";
 
 import {
   BrowserFetchError,
+  createBrowserService,
   decodeEntities,
   extractElements,
   extractTitle,
@@ -107,5 +113,110 @@ describe("受控网页抓取", () => {
     );
     expect(error).toBeInstanceOf(BrowserFetchError);
     expect((error as BrowserFetchError).code).toBe("blocked_host");
+  });
+
+  it("网络安全：域名规则拒绝时不发请求（这是唯一的出站出口）", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<html></html>"));
+    await expect(
+      fetchPageSnapshot("https://blocked.example.com/x", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        hostPolicy: () => ({ decision: "deny", reason: "域名被拒绝" }),
+      }),
+    ).rejects.toThrow(/域名被拒绝/);
+    // 关键：规则命中时请求根本没发出去
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("网络安全：裁决器拿到的是解析后的 URL，未命中照常抓取", async () => {
+    const seen: string[] = [];
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          "<html><head><title>ok</title></head><body></body></html>",
+        ),
+    );
+    await fetchPageSnapshot("https://example.com/a?b=1", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      hostPolicy: (url) => {
+        seen.push(url.hostname);
+        return undefined;
+      },
+    });
+    expect(seen).toEqual(["example.com"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 整链：真实的 permissions 服务 + 真实的 browser 服务。
+ *
+ * 单测分别锁了「域名匹配」与「出口在规则命中时不发请求」，这里串起来证一遍
+ * **用户配置真的生效**——这正是「设置里写了但根本不起作用」这类问题的防线。
+ */
+describe("网络安全整链（permissions → browser 服务出口）", () => {
+  const withPolicy = (settings: Partial<PermissionSettings>) => {
+    const permissions = createPermissionService();
+    permissions.applySettings({ ...DEFAULT_PERMISSION_SETTINGS, ...settings });
+    return permissions;
+  };
+
+  it("域名「拒绝」拦住 browser 服务抓取，可读原因给出设置位置", async () => {
+    const permissions = withPolicy({
+      policy: {
+        ...DEFAULT_PERMISSION_SETTINGS.policy,
+        domainRules: [{ domain: "blocked.example", action: "deny" }],
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response("<html><title>不该到这里</title></html>"),
+    );
+    const browser = createBrowserService({} as never, (url) => {
+      const decision = permissions.checkUrlPolicy(url.toString());
+      if (!decision) return undefined;
+      return decision.decision === "allow"
+        ? { decision: "allow" }
+        : { decision: "deny", reason: decision.reason ?? "域名被拒绝" };
+    });
+
+    await expect(
+      browser.snapshot("https://blocked.example/x", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow(/拒绝/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("域名「允许」越过档位；未命中域名照常抓取", async () => {
+    const permissions = withPolicy({
+      policy: {
+        ...DEFAULT_PERMISSION_SETTINGS.policy,
+        domainRules: [{ domain: "docs.example", action: "allow" }],
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          "<html><head><title>通</title></head><body></body></html>",
+        ),
+    );
+    const browser = createBrowserService({} as never, (url) => {
+      const decision = permissions.checkUrlPolicy(url.toString());
+      if (!decision) return undefined;
+      return decision.decision === "allow"
+        ? { decision: "allow" }
+        : { decision: "deny", reason: decision.reason ?? "域名被拒绝" };
+    });
+
+    await expect(
+      browser.snapshot("https://docs.example/guide", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).resolves.toMatchObject({ title: "通" });
+    await expect(
+      browser.snapshot("https://other.example/", {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).resolves.toMatchObject({ title: "通" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

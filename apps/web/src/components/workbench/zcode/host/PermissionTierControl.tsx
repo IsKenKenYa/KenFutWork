@@ -397,6 +397,7 @@ function PermissionPolicySection() {
   const [toolRules, setToolRules] = useState<EditableRule[]>([]);
   const [pathRules, setPathRules] = useState<EditableRule[]>([]);
   const [commandRules, setCommandRules] = useState<EditableRule[]>([]);
+  const [domainRules, setDomainRules] = useState<EditableRule[]>([]);
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -409,6 +410,7 @@ function PermissionPolicySection() {
         disabledTools?: string[];
         pathRules?: Array<{ path: string; action: PolicyRule["action"] }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
+        domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
       };
     }>("/api/permissions/tier")
       .then((view) => {
@@ -429,6 +431,12 @@ function PermissionPolicySection() {
         setCommandRules(
           (view.policy?.commandRules ?? []).map((rule) => ({
             value: rule.prefix,
+            action: rule.action,
+          })),
+        );
+        setDomainRules(
+          (view.policy?.domainRules ?? []).map((rule) => ({
+            value: rule.domain,
             action: rule.action,
           })),
         );
@@ -465,6 +473,10 @@ function PermissionPolicySection() {
             })),
             commandRules: trimmed(commandRules).map((row) => ({
               prefix: row.value,
+              action: row.action,
+            })),
+            domainRules: trimmed(domainRules).map((row) => ({
+              domain: row.value,
               action: row.action,
             })),
           },
@@ -520,6 +532,20 @@ function PermissionPolicySection() {
             placeholder="rm -rf"
             ariaLabel="命令前缀"
             emptyLabel="没有命令规则"
+            disabled={saving}
+          />
+        </div>
+        <div className="space-y-2 border-t border-border pt-4">
+          <div className="text-ui-base font-medium text-foreground">
+            域名规则
+          </div>
+          <RuleTable
+            rows={domainRules}
+            onChange={setDomainRules}
+            addLabel="添加域名规则"
+            placeholder="*.example.com"
+            ariaLabel="域名"
+            emptyLabel="没有域名规则"
             disabled={saving}
           />
         </div>

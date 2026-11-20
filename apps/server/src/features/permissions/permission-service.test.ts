@@ -454,4 +454,60 @@ describe("工具策略：三态规则与禁用清单", () => {
         .decision,
     ).toBe("allow");
   });
+
+  it("域名规则拦下指定站点，allow 规则可越过档位", () => {
+    const svc = withPolicy(
+      {
+        domainRules: [
+          { domain: "*.internal.example", action: "deny" },
+          { domain: "docs.example.com", action: "allow" },
+        ],
+      },
+      "default",
+    );
+
+    // 工具门：browser_open 带 url，按域名判
+    const denied = svc.evaluate({
+      toolName: "browser_open",
+      args: { url: "https://secret.internal.example/wiki" },
+    });
+    expect(denied.decision).toBe("deny");
+    expect(denied.blocked).toBe(true);
+
+    // 放行域名在默认档也放行（策略先于档位）
+    expect(
+      svc.evaluate({
+        toolName: "browser_open",
+        args: { url: "https://docs.example.com/guide" },
+      }).decision,
+    ).toBe("allow");
+
+    // 未命中规则的地址按档位判（默认档下 browser_open 走浏览器控制门，不看这里）
+    expect(
+      svc.evaluate({
+        toolName: "browser_open",
+        args: { url: "https://elsewhere.example.org" },
+      }).blocked,
+    ).toBeUndefined();
+  });
+
+  it("checkUrlPolicy 只报域名命中；非 http(s) 与解析不出的地址不参与", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "example.com", action: "deny" }],
+    });
+    expect(svc.checkUrlPolicy("https://example.com/x")?.blocked).toBe(true);
+    expect(svc.checkUrlPolicy("https://sub.example.com/x")?.blocked).toBe(true);
+    expect(svc.checkUrlPolicy("https://other.com")).toBeUndefined();
+    expect(svc.checkUrlPolicy("file:///C:/x")).toBeUndefined();
+    expect(svc.checkUrlPolicy("不是地址")).toBeUndefined();
+  });
+
+  it("域名「询问」不硬拦，交给审批链路", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "example.com", action: "ask" }],
+    });
+    const decision = svc.checkUrlPolicy("https://example.com");
+    expect(decision?.decision).toBe("deny");
+    expect(decision?.blocked).toBeUndefined();
+  });
 });
