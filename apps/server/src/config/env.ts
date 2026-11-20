@@ -131,6 +131,15 @@ export type ServerEnv = {
   autoCompactTriggerTokens?: number;
   /** HTTP监听地址（HOST）；本期只提供回环本机接入。 */
   serverHost?: string;
+  /**
+   * TLS 证书与私钥路径（自托管/局域网部署的传输加密）。
+   *
+   * 两项**必须同时配置**才启用 HTTPS（`wss://` 一并生效：WS 与 HTTP 共用同一个
+   * 监听端口）。只配一项是明确错误——启动期报错，不静默退回明文。
+   * 桌面与本机回环形态不需要：那里通信不出本机。
+   */
+  tlsCertificatePath?: string;
+  tlsKeyPath?: string;
   /** 队列形态：`pgmq`（服务端/自托管，默认）/ `in-process`（桌面，FORM-2）。 */
   queueDriver?: string;
   /** 桌面应用数据目录（`KENFUTWORK_DATA_DIR`）；缺省按平台惯例解析（FORM-2）。 */
@@ -402,6 +411,7 @@ export function loadServerEnv(
     port:
       overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,
+    ...resolveTlsOptions(overrides, source),
     version: overrides.version ?? readServerVersion(),
     webOrigin:
       overrides.webOrigin ?? source.KENFUTWORK_WEB_ORIGIN ?? DEFAULT_WEB_ORIGIN,
@@ -618,6 +628,30 @@ function parsePort(rawPort: string | undefined) {
   }
 
   return port;
+}
+
+/**
+ * TLS 证书与私钥（自托管 / 局域网部署的传输加密）。
+ *
+ * 两项**必须成对**：只配一项是配置错误，启动期报错而不是静默退回明文——
+ * 用户以为开了 HTTPS 而实际是 http，比直接报错危险得多。
+ */
+function resolveTlsOptions(
+  overrides: { tlsCertificatePath?: string; tlsKeyPath?: string },
+  source: Record<string, string | undefined>,
+): { tlsCertificatePath?: string; tlsKeyPath?: string } {
+  const certificatePath = normalizeOptionalString(
+    overrides.tlsCertificatePath ?? source.KENFUTWORK_TLS_CERT_PATH,
+  );
+  const keyPath = normalizeOptionalString(
+    overrides.tlsKeyPath ?? source.KENFUTWORK_TLS_KEY_PATH,
+  );
+  if (Boolean(certificatePath) !== Boolean(keyPath))
+    throw new Error(
+      "TLS 需要同时配置 KENFUTWORK_TLS_CERT_PATH 与 KENFUTWORK_TLS_KEY_PATH（只配一项无法启动 HTTPS）。",
+    );
+  if (!certificatePath || !keyPath) return {};
+  return { tlsCertificatePath: certificatePath, tlsKeyPath: keyPath };
 }
 
 /** 布尔开关：`1`/`true`/`yes`/`on` 为真，其余视为未设置（fail loud 落在使用处）。 */

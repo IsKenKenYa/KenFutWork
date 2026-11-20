@@ -77,6 +77,18 @@ function readableError(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "保存失败";
 }
 
+/**
+ * 当前连接是否走加密传输。
+ *
+ * 只看页面协议：自托管/局域网部署配了
+ * `KENFUTWORK_TLS_CERT_PATH` + `KENFUTWORK_TLS_KEY_PATH` 后整站是 https，
+ * WS 升级走同一端口因此也是 wss。本机回环形态是 http + 本机凭据。
+ * 不额外问服务端：页面能打开就说明协议已经定了，多一次请求只会更不确定。
+ */
+function secureTransportActive(): boolean {
+  return window.location.protocol === "https:";
+}
+
 /** 读取当前默认档；端点不可用时返回 null（调用方隐藏控件）。 */
 export function usePermissionTier() {
   const [tier, setTier] = useState<PermissionTier | null>(null);
@@ -1179,8 +1191,11 @@ function PermissionPolicySection() {
             添加敏感规则
           </Button>
         </div>
-        {/* 安全网关与传输加密：本仓库的形态是「服务端只监听回环 + 本机凭据」，
-            没有独立的流量网关层。如实写明，不摆开关。 */}
+        {/* 安全网关与传输加密：如实显示**当前连接的实际状态**。
+            - 安全网关：服务端只监听回环（`serverHost` 缺省 127.0.0.1），出入流量不出本机；
+              自托管/局域网部署由用户自己的反向代理承担这层。
+            - 传输加密：按页面协议判断——自托管配了 KENFUTWORK_TLS_CERT_PATH /
+              KENFUTWORK_TLS_KEY_PATH 就是 https/wss；本机回环是 http + 本机凭据。 */}
         <div className="space-y-1 border-t border-border pt-4">
           <div className="flex items-center justify-between gap-3">
             <span className="text-ui-base font-medium text-foreground">
@@ -1192,7 +1207,9 @@ function PermissionPolicySection() {
             <span className="text-ui-base font-medium text-foreground">
               传输加密
             </span>
-            <span className="text-ui-sm text-foreground-subtle">本机凭据</span>
+            <span className="text-ui-sm text-foreground-subtle">
+              {secureTransportActive() ? "HTTPS + WSS" : "本机凭据"}
+            </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">

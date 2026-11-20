@@ -317,3 +317,37 @@ it.each(["KENFUTWORK_FLOW_GATEWAY_URL", "KENFUTWORK_FLOW_FRONTEND_URL"])(
     expect(failure.message).not.toContain("credential-marker");
   },
 );
+
+/**
+ * 传输加密（自托管 / 局域网部署）：TLS 证书与私钥必须成对配置。
+ *
+ * 只配一项时启动期直接报错——用户以为开了 HTTPS 而实际跑明文，比启动失败危险。
+ */
+describe("TLS 配置", () => {
+  it("证书与私钥成对配置才算启用", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        KENFUTWORK_TLS_CERT_PATH: " /etc/tls/cert.pem ",
+        KENFUTWORK_TLS_KEY_PATH: "/etc/tls/key.pem",
+      },
+    );
+    expect(env.tlsCertificatePath).toBe("/etc/tls/cert.pem");
+    expect(env.tlsKeyPath).toBe("/etc/tls/key.pem");
+  });
+
+  it("两项都没配置时保持明文（桌面与本机回环形态）", () => {
+    const env = loadServerEnv({}, {});
+    expect(env.tlsCertificatePath).toBeUndefined();
+    expect(env.tlsKeyPath).toBeUndefined();
+  });
+
+  it("只配一项直接报错，不静默退回明文", () => {
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_TLS_CERT_PATH: "/etc/tls/cert.pem" }),
+    ).toThrow(/同时配置/u);
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_TLS_KEY_PATH: "/etc/tls/key.pem" }),
+    ).toThrow(/同时配置/u);
+  });
+});
