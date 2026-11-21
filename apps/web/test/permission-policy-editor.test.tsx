@@ -33,7 +33,7 @@ if (!Element.prototype.scrollIntoView) {
  */
 
 type RuleAction = "allow" | "ask" | "deny";
-/** 「规则与放行」卡片提交的策略形状（不含内置运行时——那属于沙箱安全卡片）。 */
+/** 服务端策略里界面会读写的字段（规则卡片 + 数据安全卡片）。 */
 type PolicyDraft = {
   rules: Array<{ pattern: string; action: RuleAction }>;
   disabledTools: string[];
@@ -51,7 +51,7 @@ type PolicyDraft = {
   };
   sensitiveProtection: { enabled: boolean; patterns: string[] };
 };
-/** 服务端读回的完整策略：比提交形状多内置运行时与沙箱总开关。 */
+/** 服务端读回的完整策略：比规则字段多内置运行时、沙箱总开关与 AI 安全防护。 */
 type FetchedPolicy = PolicyDraft & {
   bundledRuntimes: { enabled: boolean };
   sandbox: { enabled: boolean };
@@ -71,9 +71,10 @@ type PolicySettings = {
 };
 
 /**
- * 「规则与放行」卡片保存时带的数据安全字段（与界面缺省一致）。
+ * 数据安全的缺省值（`permissionPolicySchema` 的缺省，与界面读回一致）。
  *
- * `bundledRuntimes` 不在这里：它属于「沙箱安全」卡片，单独提交，规则卡片不会带它。
+ * 规则卡片读回整份策略再合并，所以这些字段会原样再提交回去——断言里用同一份，
+ * 就能同时证明「没把别人刚改的字段冲掉」。
  */
 const DEFAULT_DATA_SAFETY = {
   deleteProtection: {
@@ -84,7 +85,7 @@ const DEFAULT_DATA_SAFETY = {
   sensitiveProtection: { enabled: true, patterns: [] },
 };
 
-/** 服务端读回时的完整策略：比规则卡片多内置运行时与沙箱总开关。 */
+/** 服务端读回时的完整策略：除规则字段外还有内置运行时、沙箱总开关与 AI 安全防护。 */
 const FETCHED_POLICY_DEFAULTS = {
   ...DEFAULT_DATA_SAFETY,
   bundledRuntimes: { enabled: true },
@@ -183,10 +184,14 @@ it("读回已保存的三张规则表与禁用清单", async () => {
     },
   });
 
-  expect(await screen.findByLabelText("工具名或前缀")).toHaveValue("mcp__*");
+  // 禁用清单读回时折成排在最前的「工具规则 + 拦截」：两条都在同一张工具规则表里
+  const toolInputs = await screen.findAllByLabelText("工具名或前缀");
+  expect(toolInputs.map((input) => (input as HTMLInputElement).value)).toEqual([
+    "shell_*",
+    "mcp__*",
+  ]);
   expect(screen.getByLabelText("路径前缀")).toHaveValue("D:\\项目\\密钥");
   expect(screen.getByLabelText("命令前缀")).toHaveValue("rm -rf");
-  expect(screen.getByLabelText("禁用工具名或前缀")).toHaveValue("shell_*");
 });
 
 it("新增路径与命令规则后保存，空白行不落库", async () => {
@@ -200,9 +205,10 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
   // 多加一行但不填：保存时必须被剔除，空规则会命中一切。
   await user.click(screen.getByRole("button", { name: "添加工具规则" }));
 
-  await user.click(screen.getByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
+  // 规则卡片读回整份策略再合并：其它分组的字段原样带回，禁用清单清空（已并入工具规则）。
   expect(tierPuts[0]).toEqual({
     policy: {
       rules: [],
@@ -210,7 +216,7 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
       pathRules: [{ path: "C:\\机密", operation: "read", action: "ask" }],
       commandRules: [{ prefix: "git push", action: "ask" }],
       domainRules: [],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
   expect(await screen.findByText("已保存")).toBeInTheDocument();
@@ -236,7 +242,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
   act(() => within(ruleRow).getByRole("combobox", { name: "动作" }).focus());
   await userEvent.keyboard("[Space]");
   await userEvent.keyboard("[Home][Enter]");
-  await user.click(screen.getByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   expect(tierPuts[0]).toEqual({
@@ -246,7 +252,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
 });
@@ -271,7 +277,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
   await user.click(screen.getByRole("button", { name: "添加域名规则" }));
   const inputs = screen.getAllByLabelText("域名");
   await user.type(inputs[1] as HTMLElement, "docs.example.com");
-  await user.click(screen.getByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   expect(tierPuts[0]).toEqual({
@@ -284,7 +290,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
         { domain: "*.internal.example", action: "deny" },
         { domain: "docs.example.com", action: "ask" },
       ],
-      ...DEFAULT_DATA_SAFETY,
+      ...FETCHED_POLICY_DEFAULTS,
     },
   });
 });
@@ -327,9 +333,10 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
   fireEvent.change(patterns[1] as HTMLElement, {
     target: { value: "token-[0-9]{8}" },
   });
-  await user.click(screen.getByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存敏感规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
+  // 数据安全卡片读回整份策略再合并：四张规则表与沙箱/AI 设置原样带回。
   expect(tierPuts[0]).toEqual({
     policy: {
       rules: [],
@@ -346,7 +353,49 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
         enabled: true,
         patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],
       },
+      bundledRuntimes: { enabled: true },
+      sandbox: { enabled: true },
+      aiSafety: { injectionGuard: false, approvalReview: false },
     },
+  });
+});
+
+it("数据安全：开关点了立刻落库，不留「看着是开的、实际没存」的状态", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
+  /** 第 n 次提交带上去的删除保护（其余字段不在这里判）。 */
+  const submittedDeleteProtection = (index: number) =>
+    (tierPuts[index] as { policy: { deleteProtection: unknown } }).policy
+      .deleteProtection;
+
+  // 删除保护关着时阈值与回收站开关不可用，先打开它。
+  await user.click(await screen.findByLabelText("删除保护"));
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  expect(submittedDeleteProtection(0)).toEqual({
+    enabled: true,
+    batchThreshold: 50,
+    trashFirst: false,
+  });
+
+  // 回收站开关同样立即提交，且带上刚打开的删除保护。
+  await user.click(screen.getByLabelText("删除前先移到回收站"));
+  await waitFor(() => expect(tierPuts).toHaveLength(2));
+  expect(submittedDeleteProtection(1)).toEqual({
+    enabled: true,
+    batchThreshold: 50,
+    trashFirst: true,
+  });
+
+  // 阈值离开输入框才提交：填到一半的「5」不会被当成最终值。
+  const threshold = screen.getByLabelText("批量删除审批阈值");
+  fireEvent.change(threshold, { target: { value: "80" } });
+  expect(tierPuts).toHaveLength(2);
+  fireEvent.blur(threshold);
+  await waitFor(() => expect(tierPuts).toHaveLength(3));
+  expect(submittedDeleteProtection(2)).toEqual({
+    enabled: true,
+    batchThreshold: 80,
+    trashFirst: true,
   });
 });
 
@@ -405,7 +454,7 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
     await user.click(option);
   }
 
-  await user.click(screen.getByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   const body = tierPuts[0] as {

@@ -168,14 +168,14 @@ function triStateDecision<T extends { action: PermissionRuleAction }>(
         decision: "deny",
         blocked: true,
         source,
-        reason: `命中「拒绝」规则 ${label(rule)}`,
+        reason: `命中「拦截」规则 ${label(rule)}`,
       };
     }
     // ask：交给审批，不给记忆（每次都要人点）
     return {
       decision: "deny",
       source,
-      reason: `命中「询问」规则 ${label(rule)}，需你确认`,
+      reason: `命中「每次询问」规则 ${label(rule)}，需你确认`,
     };
   }
   return undefined;

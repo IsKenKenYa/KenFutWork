@@ -277,6 +277,10 @@ export function PermissionTierSection() {
         <ToolApprovalSection />
       </section>
       <section className="min-w-0 space-y-3">
+        <SettingsSubheading>数据安全</SettingsSubheading>
+        <DataSafetySection />
+      </section>
+      <section className="min-w-0 space-y-3">
         <SettingsSubheading>AI 安全防护</SettingsSubheading>
         <AiSafetySection />
       </section>
@@ -328,40 +332,50 @@ function PermissionTierSelect({
   );
 }
 
-/** 规则动作的三个选项（工具、路径、命令三张表共用一套措辞）。 */
+/**
+ * 一条规则的动作（四类规则共用一套措辞）。
+ *
+ * 用「放行 / 每次询问 / 拦截」而不是「允许 / 询问 / 拒绝」：这三个词直接说出这次调用会
+ * 发生什么——放过去、每次都要你点同意、直接挡住不许执行。「询问」本身不说明要不要记住，
+ * 用户看不出它和「允许」的区别。
+ */
 const RULE_ACTIONS: ReadonlyArray<{
   value: PolicyRule["action"];
   label: string;
 }> = [
-  { value: "allow", label: "允许" },
-  { value: "ask", label: "询问" },
-  { value: "deny", label: "拒绝" },
+  { value: "allow", label: "放行" },
+  { value: "ask", label: "每次询问" },
+  { value: "deny", label: "拦截" },
 ];
 
 /**
- * 一张三态规则表：每行「匹配值 + 动作 + 删除」，底部添加按钮。
+ * 一组三态规则：标题与「添加」按钮同行，下面列出各条规则。
  *
- * 三张表（工具 / 路径 / 命令）形状一致，只差占位提示与说明；
- * 抽成一个组件是为了让「按顺序匹配 首个命中生效」这句话只有一份。
+ * 四组（工具 / 文件路径 / 命令 / 域名）形状一致，只差标题、占位提示与是否显示「操作」列。
+ * 标题直接用**匹配对象**命名（「文件路径规则」而不是「路径规则」）：用户看标题就知道
+ * 这一组拦的是什么东西，不需要另一行解释。空组不写「没有…规则」——四组各一句同样的
+ * 空态会变成一堵看不出区别的墙，标题加右侧的添加按钮已经把「这里是空的」说清楚了。
  */
-function RuleTable({
+function RuleGroup({
+  title,
+  hint,
   rows,
   onChange,
   addLabel,
   placeholder,
   ariaLabel,
-  emptyLabel,
   disabled,
   showOperation = false,
 }: {
+  title: string;
+  hint: string;
   rows: EditableRule[];
   onChange: (next: EditableRule[]) => void;
   addLabel: string;
   placeholder: string;
   ariaLabel: string;
-  emptyLabel: string;
   disabled: boolean;
-  /** 路径规则表额外显示「操作」列（读 / 写 / 删分别配）。 */
+  /** 文件路径规则额外显示「操作」列（读 / 写 / 删分别配）。 */
   showOperation?: boolean;
 }) {
   const update = (index: number, patch: Partial<EditableRule>) => {
@@ -370,90 +384,102 @@ function RuleTable({
 
   return (
     <div className="space-y-2">
-      {rows.length === 0 ? (
-        <p className="text-ui-sm text-foreground-subtle">{emptyLabel}</p>
-      ) : (
-        rows.map((row, index) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
-            key={index}
-            className="flex flex-wrap items-center gap-2"
-          >
-            <Input
-              aria-label={ariaLabel}
-              placeholder={placeholder}
-              value={row.value}
-              onChange={(event) => update(index, { value: event.target.value })}
-              className="min-w-0 flex-1 font-mono text-ui-sm"
-            />
-            {showOperation ? (
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 text-ui-base font-medium text-foreground">
+            {title}
+          </span>
+          <span className="truncate text-ui-sm text-foreground-subtle">
+            {hint}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => onChange([...rows, { value: "", action: "ask" }])}
+        >
+          {addLabel}
+        </Button>
+      </div>
+      {rows.length === 0 ? null : (
+        <div className="space-y-2">
+          {rows.map((row, index) => (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
+              key={index}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <Input
+                aria-label={ariaLabel}
+                placeholder={placeholder}
+                value={row.value}
+                onChange={(event) =>
+                  update(index, { value: event.target.value })
+                }
+                className="min-w-0 flex-1 font-mono text-ui-sm"
+              />
+              {showOperation ? (
+                <Select
+                  value={row.operation ?? "read"}
+                  onValueChange={(next) =>
+                    update(index, {
+                      operation: next as NonNullable<EditableRule["operation"]>,
+                    })
+                  }
+                >
+                  <SelectTrigger
+                    size="lg"
+                    aria-label="操作"
+                    className="w-24 shrink-0"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FILE_OPERATIONS.map((entry) => (
+                      <SelectItem key={entry.value} value={entry.value}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
               <Select
-                value={row.operation ?? "read"}
+                value={row.action}
                 onValueChange={(next) =>
-                  update(index, {
-                    operation: next as NonNullable<EditableRule["operation"]>,
-                  })
+                  update(index, { action: next as PolicyRule["action"] })
                 }
               >
                 <SelectTrigger
                   size="lg"
-                  aria-label="操作"
-                  className="w-24 shrink-0"
+                  aria-label="动作"
+                  className="w-28 shrink-0"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {FILE_OPERATIONS.map((entry) => (
+                  {RULE_ACTIONS.map((entry) => (
                     <SelectItem key={entry.value} value={entry.value}>
                       {entry.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            ) : null}
-            <Select
-              value={row.action}
-              onValueChange={(next) =>
-                update(index, { action: next as PolicyRule["action"] })
-              }
-            >
-              <SelectTrigger
-                size="lg"
-                aria-label="动作"
-                className="w-28 shrink-0"
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="删除这条规则"
+                disabled={disabled}
+                onClick={() => onChange(rows.filter((_, i) => i !== index))}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RULE_ACTIONS.map((entry) => (
-                  <SelectItem key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="删除这条规则"
-              disabled={disabled}
-              onClick={() => onChange(rows.filter((_, i) => i !== index))}
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
-          </div>
-        ))
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
       )}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={disabled}
-        onClick={() => onChange([...rows, { value: "", action: "ask" }])}
-      >
-        {addLabel}
-      </Button>
     </div>
   );
 }
@@ -805,26 +831,26 @@ function SandboxSecuritySection() {
 }
 
 /**
- * 工具策略：工具规则、路径规则、命令规则与禁用清单。
+ * 规则与放行：四类三态规则（工具 / 文件 / 命令 / 网络）。
  *
- * 四块合成一次保存——它们同属一个策略对象，分四次提交会让「先存了规则、后存失败」
- * 留下半套配置。空白匹配值在提交前剔除：空规则会命中一切，绝不能静默存下去。
+ * 每类规则的匹配对象不同，所以每组都直接写出「按什么匹配」——用户不必猜
+ * 「路径规则」和「命令规则」差在哪。四组按**服务的判定顺序**排列（工具 → 路径 →
+ * 命令 → 域名），因此卡片顶部那句「从上往下匹配」对用户来说是成立的。
+ *
+ * 四组合成一次保存——它们同属一个策略对象，分四次提交会让「先存了规则、后存失败」
+ * 留下半套配置。提交前读回整份策略再合并：PUT 收的是完整 policy，漏传的字段会被
+ * 服务端缺省值冲掉（曾经把沙箱总开关、自动备份与 AI 安全防护一并重置）。
+ * 空白匹配值在提交前剔除：空规则会命中一切，绝不能静默存下去。
+ *
+ * 旧的「禁用工具」清单不再单列：它与「工具规则 + 拒绝」的判定完全一致（都是硬拒绝、
+ * 不给审批机会），两处并存只会让用户以为它们是两种不同的东西。读回时把清单里的
+ * 匹配式折成排在**最前**的工具拒绝规则——保持原来「禁用先判」的先后关系。
  */
 function PermissionPolicySection() {
   const [toolRules, setToolRules] = useState<EditableRule[]>([]);
   const [pathRules, setPathRules] = useState<EditableRule[]>([]);
   const [commandRules, setCommandRules] = useState<EditableRule[]>([]);
   const [domainRules, setDomainRules] = useState<EditableRule[]>([]);
-  const [disabledTools, setDisabledTools] = useState<string[]>([]);
-  const [deleteProtection, setDeleteProtection] = useState({
-    enabled: false,
-    batchThreshold: 50,
-    trashFirst: false,
-  });
-  const [sensitiveProtection, setSensitiveProtection] = useState({
-    enabled: true,
-    patterns: [] as string[],
-  });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -841,23 +867,22 @@ function PermissionPolicySection() {
         }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
         domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
-        deleteProtection?: {
-          enabled?: boolean;
-          batchThreshold?: number;
-          trashFirst?: boolean;
-        };
-        sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
       };
     }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
-        setToolRules(
-          (view.policy?.rules ?? []).map((rule) => ({
+        // 禁用清单折成排在最前的「工具规则 + 拒绝」：两者判定相同（硬拒绝、不了审批），
+        // 排在前面保持原本「禁用先判」的先后关系。
+        setToolRules([
+          ...(view.policy?.disabledTools ?? []).map((pattern) => ({
+            value: pattern,
+            action: "deny" as const,
+          })),
+          ...(view.policy?.rules ?? []).map((rule) => ({
             value: rule.pattern,
             action: rule.action,
           })),
-        );
-        setDisabledTools(view.policy?.disabledTools ?? []);
+        ]);
         setPathRules(
           (view.policy?.pathRules ?? []).map((rule) => ({
             value: rule.path,
@@ -877,15 +902,6 @@ function PermissionPolicySection() {
             action: rule.action,
           })),
         );
-        setDeleteProtection({
-          enabled: view.policy?.deleteProtection?.enabled === true,
-          batchThreshold: view.policy?.deleteProtection?.batchThreshold ?? 50,
-          trashFirst: view.policy?.deleteProtection?.trashFirst === true,
-        });
-        setSensitiveProtection({
-          enabled: view.policy?.sensitiveProtection?.enabled !== false,
-          patterns: view.policy?.sensitiveProtection?.patterns ?? [],
-        });
       })
       .catch(() => {});
     return () => {
@@ -905,18 +921,23 @@ function PermissionPolicySection() {
             ...(row.operation ? { operation: row.operation } : {}),
           }))
           .filter((row) => row.value.length > 0);
+      // 读回整份策略再合并：PUT 收的是完整 policy，只送四张规则表会把沙箱总开关、
+      // 自动备份、AI 安全防护一并冲回缺省值。
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
       await surfaceJson("/api/permissions/tier", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           policy: {
+            ...(view.policy ?? {}),
             rules: trimmed(toolRules).map((row) => ({
               pattern: row.value,
               action: row.action,
             })),
-            disabledTools: disabledTools
-              .map((pattern) => pattern.trim())
-              .filter((pattern) => pattern.length > 0),
+            // 禁用清单已并入工具规则（「拒绝」），这里清空：否则读回时会被再展开一遍。
+            disabledTools: [],
             pathRules: trimmed(pathRules).map((row) => ({
               path: row.value,
               operation: row.operation ?? "read",
@@ -930,20 +951,6 @@ function PermissionPolicySection() {
               domain: row.value,
               action: row.action,
             })),
-            deleteProtection: {
-              enabled: deleteProtection.enabled,
-              batchThreshold: Math.max(
-                1,
-                Math.round(deleteProtection.batchThreshold),
-              ),
-              trashFirst: deleteProtection.trashFirst,
-            },
-            sensitiveProtection: {
-              enabled: sensitiveProtection.enabled,
-              patterns: sensitiveProtection.patterns
-                .map((pattern) => pattern.trim())
-                .filter((pattern) => pattern.length > 0),
-            },
           },
         }),
       });
@@ -957,263 +964,53 @@ function PermissionPolicySection() {
 
   return (
     <SettingsGroupCard>
-      <div className="space-y-4 p-4">
-        <div className="space-y-2">
-          <div className="text-ui-base font-medium text-foreground">
-            工具规则
-          </div>
-          <RuleTable
-            rows={toolRules}
-            onChange={setToolRules}
-            addLabel="添加工具规则"
-            placeholder="mcp__fs__*"
-            ariaLabel="工具名或前缀"
-            emptyLabel="没有工具规则"
-            disabled={saving}
-          />
-        </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <div className="text-ui-base font-medium text-foreground">
-            路径规则
-          </div>
-          <RuleTable
+      <div className="space-y-5 p-4">
+        <RuleGroup
+          title="工具规则"
+          hint="按工具名或前缀"
+          rows={toolRules}
+          onChange={setToolRules}
+          addLabel="添加工具规则"
+          placeholder="mcp__fs__*"
+          ariaLabel="工具名或前缀"
+          disabled={saving}
+        />
+        <div className="border-t border-border pt-4">
+          <RuleGroup
+            title="文件路径规则"
+            hint="按路径前缀 读写删分别配"
             rows={pathRules}
             onChange={setPathRules}
             addLabel="添加路径规则"
             placeholder="D:\\项目\\敏感目录"
             ariaLabel="路径前缀"
-            emptyLabel="没有路径规则"
             disabled={saving}
             showOperation
           />
         </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <div className="text-ui-base font-medium text-foreground">
-            命令规则
-          </div>
-          <RuleTable
+        <div className="border-t border-border pt-4">
+          <RuleGroup
+            title="命令规则"
+            hint="按命令开头"
             rows={commandRules}
             onChange={setCommandRules}
             addLabel="添加命令规则"
             placeholder="rm -rf"
             ariaLabel="命令前缀"
-            emptyLabel="没有命令规则"
             disabled={saving}
           />
         </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <div className="text-ui-base font-medium text-foreground">
-            域名规则
-          </div>
-          <RuleTable
+        <div className="border-t border-border pt-4">
+          <RuleGroup
+            title="网络域名规则"
+            hint="按域名或子域"
             rows={domainRules}
             onChange={setDomainRules}
             addLabel="添加域名规则"
             placeholder="*.example.com"
             ariaLabel="域名"
-            emptyLabel="没有域名规则"
             disabled={saving}
           />
-        </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <div className="text-ui-base font-medium text-foreground">
-            禁用工具
-          </div>
-          {disabledTools.length === 0 ? (
-            <p className="text-ui-sm text-foreground-subtle">没有禁用的工具</p>
-          ) : (
-            <div className="space-y-2">
-              {disabledTools.map((pattern, index) => (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 禁用清单允许重复，索引是唯一稳定键。
-                  key={index}
-                  className="flex items-center gap-2"
-                >
-                  <Input
-                    aria-label="禁用工具名或前缀"
-                    value={pattern}
-                    onChange={(event) =>
-                      setDisabledTools((current) =>
-                        current.map((item, i) =>
-                          i === index ? event.target.value : item,
-                        ),
-                      )
-                    }
-                    className="min-w-0 flex-1 font-mono text-ui-sm"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="移出禁用清单"
-                    disabled={saving}
-                    onClick={() =>
-                      setDisabledTools((current) =>
-                        current.filter((_, i) => i !== index),
-                      )
-                    }
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={saving}
-            onClick={() => setDisabledTools((current) => [...current, ""])}
-          >
-            添加禁用项
-          </Button>
-        </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <label className="flex items-center justify-between gap-3 text-ui-base font-medium text-foreground">
-            删除保护
-            <input
-              type="checkbox"
-              aria-label="删除保护"
-              checked={deleteProtection.enabled}
-              onChange={(event) =>
-                setDeleteProtection((current) => ({
-                  ...current,
-                  enabled: event.target.checked,
-                }))
-              }
-              className="size-4"
-            />
-          </label>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ui-sm text-foreground-subtle">
-              批量删除审批阈值
-            </span>
-            <Input
-              aria-label="批量删除审批阈值"
-              type="number"
-              min={1}
-              max={10000}
-              disabled={!deleteProtection.enabled || saving}
-              value={deleteProtection.batchThreshold}
-              onChange={(event) =>
-                setDeleteProtection((current) => ({
-                  ...current,
-                  batchThreshold: Number(event.target.value) || 1,
-                }))
-              }
-              className="w-24"
-            />
-          </div>
-          <label className="flex items-center justify-between gap-3 text-ui-sm text-foreground-subtle">
-            删除前先移到回收站
-            <input
-              type="checkbox"
-              aria-label="删除前先移到回收站"
-              checked={deleteProtection.trashFirst}
-              disabled={!deleteProtection.enabled || saving}
-              onChange={(event) =>
-                setDeleteProtection((current) => ({
-                  ...current,
-                  trashFirst: event.target.checked,
-                }))
-              }
-              className="size-4"
-            />
-          </label>
-        </div>
-        <div className="space-y-2 border-t border-border pt-4">
-          <label className="flex items-center justify-between gap-3 text-ui-base font-medium text-foreground">
-            敏感保护
-            <input
-              type="checkbox"
-              aria-label="敏感保护"
-              checked={sensitiveProtection.enabled}
-              onChange={(event) =>
-                setSensitiveProtection((current) => ({
-                  ...current,
-                  enabled: event.target.checked,
-                }))
-              }
-              className="size-4"
-            />
-          </label>
-          {sensitiveProtection.patterns.map((pattern, index) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 自定义正则可以重复，索引是唯一稳定键。
-              key={index}
-              className="flex items-center gap-2"
-            >
-              <Input
-                aria-label="自定义敏感规则"
-                placeholder="内部工号\\s*\\d{6}"
-                disabled={!sensitiveProtection.enabled || saving}
-                value={pattern}
-                onChange={(event) =>
-                  setSensitiveProtection((current) => ({
-                    ...current,
-                    patterns: current.patterns.map((item, i) =>
-                      i === index ? event.target.value : item,
-                    ),
-                  }))
-                }
-                className="min-w-0 flex-1 font-mono text-ui-sm"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="删除这条敏感规则"
-                disabled={saving}
-                onClick={() =>
-                  setSensitiveProtection((current) => ({
-                    ...current,
-                    patterns: current.patterns.filter((_, i) => i !== index),
-                  }))
-                }
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!sensitiveProtection.enabled || saving}
-            onClick={() =>
-              setSensitiveProtection((current) => ({
-                ...current,
-                patterns: [...current.patterns, ""],
-              }))
-            }
-          >
-            添加敏感规则
-          </Button>
-        </div>
-        {/* 安全网关与传输加密：如实显示**当前连接的实际状态**。
-            - 安全网关：入站由「回环监听 + CORS 白名单 + 每路由本机鉴权」收口，
-              出站由域名规则（工具门 / 服务端出口 / HTTP MCP / 沙箱网络白名单）收口。
-              自托管/局域网部署的 TLS 终结由用户自己的反向代理承担。
-            - 传输加密：按页面协议判断——自托管配了 KENFUTWORK_TLS_CERT_PATH /
-              KENFUTWORK_TLS_KEY_PATH 就是 https/wss；本机回环是 http + 本机凭据。 */}
-        <div className="space-y-1 border-t border-border pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ui-base font-medium text-foreground">
-              安全网关
-            </span>
-            <span className="text-ui-sm text-foreground-subtle">
-              出入站均收口
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ui-base font-medium text-foreground">
-              传输加密
-            </span>
-            <span className="text-ui-sm text-foreground-subtle">
-              {secureTransportActive() ? "HTTPS + WSS" : "本机凭据"}
-            </span>
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <Button
@@ -1223,10 +1020,10 @@ function PermissionPolicySection() {
             disabled={saving}
             onClick={() => void savePolicy()}
           >
-            保存
+            保存规则
           </Button>
           <span className="text-ui-sm text-foreground-subtle">
-            按顺序匹配 首个命中生效
+            从上往下匹配 第一条命中生效
           </span>
           {message ? (
             <span role="status" className="text-ui-sm text-foreground-subtle">
@@ -1244,6 +1041,304 @@ const APPROVAL_SCOPES = [
   { value: "thread", label: "本会话" },
   { value: "forever", label: "永久" },
 ] as const;
+
+/**
+ * 数据安全：删除保护与敏感保护，外加两项如实状态（安全网关 / 传输加密）。
+ *
+ * 单独一张卡片：这几项管的是「数据会不会丢、凭据会不会被发出去」，与工具 / 路径 /
+ * 命令 / 域名那四组规则不是一个判断维度；混在规则卡片里，用户既找不到它们，
+ * 也看不出它们与规则无关。
+ *
+ * 开关与阈值立即提交（与本页其它开关一致：界面上是开的，服务端就必须已经存了），
+ * 敏感规则是文本编辑，由「保存敏感规则」按钮提交——逐字提交会把半截正则写进策略。
+ * 提交前读回整份策略再合并，只替换本卡片负责的两个字段。
+ */
+function DataSafetySection() {
+  const [deleteProtection, setDeleteProtection] = useState({
+    enabled: false,
+    batchThreshold: 50,
+    trashFirst: false,
+  });
+  const [sensitiveProtection, setSensitiveProtection] = useState({
+    enabled: true,
+    patterns: [] as string[],
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<{
+      policy?: {
+        deleteProtection?: {
+          enabled?: boolean;
+          batchThreshold?: number;
+          trashFirst?: boolean;
+        };
+        sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
+      };
+    }>("/api/permissions/tier")
+      .then((view) => {
+        if (cancelled) return;
+        setDeleteProtection({
+          enabled: view.policy?.deleteProtection?.enabled === true,
+          batchThreshold: view.policy?.deleteProtection?.batchThreshold ?? 50,
+          trashFirst: view.policy?.deleteProtection?.trashFirst === true,
+        });
+        setSensitiveProtection({
+          enabled: view.policy?.sensitiveProtection?.enabled !== false,
+          patterns: view.policy?.sensitiveProtection?.patterns ?? [],
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * 提交：读回整份策略再合并，只替换本卡片负责的两个字段。
+   *
+   * 开关立即提交（与本页其它开关一致，避免出现「看着是开的、实际没存」的假状态）；
+   * 敏感规则是文本编辑，逐字提交会把半截正则写进策略，所以由「保存敏感规则」按钮触发。
+   */
+  const save = async (next: {
+    deleteProtection: {
+      enabled: boolean;
+      batchThreshold: number;
+      trashFirst: boolean;
+    };
+    sensitiveProtection: { enabled: boolean; patterns: string[] };
+  }) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = { deleteProtection, sensitiveProtection };
+    setDeleteProtection(next.deleteProtection);
+    setSensitiveProtection(next.sensitiveProtection);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: {
+            ...(view.policy ?? {}),
+            deleteProtection: {
+              enabled: next.deleteProtection.enabled,
+              batchThreshold: Math.max(
+                1,
+                Math.round(next.deleteProtection.batchThreshold),
+              ),
+              trashFirst: next.deleteProtection.trashFirst,
+            },
+            sensitiveProtection: {
+              enabled: next.sensitiveProtection.enabled,
+              patterns: next.sensitiveProtection.patterns
+                .map((pattern) => pattern.trim())
+                .filter((pattern) => pattern.length > 0),
+            },
+          },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setDeleteProtection(previous.deleteProtection);
+      setSensitiveProtection(previous.sensitiveProtection);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroupCard>
+      <SettingsRow
+        label="删除保护"
+        description="删除前先问我"
+        control={
+          <input
+            type="checkbox"
+            aria-label="删除保护"
+            checked={deleteProtection.enabled}
+            disabled={saving}
+            onChange={(event) =>
+              void save({
+                deleteProtection: {
+                  ...deleteProtection,
+                  enabled: event.target.checked,
+                },
+                sensitiveProtection,
+              })
+            }
+            className="size-4"
+          />
+        }
+      />
+      <SettingsRow
+        label="批量删除审批"
+        description="一次删到这么多先问我"
+        control={
+          <Input
+            aria-label="批量删除审批阈值"
+            type="number"
+            min={1}
+            max={10000}
+            disabled={!deleteProtection.enabled || saving}
+            value={deleteProtection.batchThreshold}
+            onChange={(event) =>
+              setDeleteProtection((current) => ({
+                ...current,
+                batchThreshold: Number(event.target.value) || 1,
+              }))
+            }
+            // 数字输入在每次按键后提交会把「5」当最终值存下去（想填 50 的人先存了个 5）；
+            // 离开输入框时才提交，改动内容一次落库。
+            onBlur={() => void save({ deleteProtection, sensitiveProtection })}
+            className="w-24"
+          />
+        }
+      />
+      <SettingsRow
+        label="删除前先移到回收站"
+        description="文件工具删除时先移入回收站"
+        control={
+          <input
+            type="checkbox"
+            aria-label="删除前先移到回收站"
+            checked={deleteProtection.trashFirst}
+            disabled={!deleteProtection.enabled || saving}
+            onChange={(event) =>
+              void save({
+                deleteProtection: {
+                  ...deleteProtection,
+                  trashFirst: event.target.checked,
+                },
+                sensitiveProtection,
+              })
+            }
+            className="size-4"
+          />
+        }
+      />
+      <SettingsRow
+        label="敏感保护"
+        description="参数里出现凭据格式就拦下"
+        control={
+          <input
+            type="checkbox"
+            aria-label="敏感保护"
+            checked={sensitiveProtection.enabled}
+            disabled={saving}
+            onChange={(event) =>
+              void save({
+                deleteProtection,
+                sensitiveProtection: {
+                  ...sensitiveProtection,
+                  enabled: event.target.checked,
+                },
+              })
+            }
+            className="size-4"
+          />
+        }
+      />
+      <div className="space-y-2 border-t border-border px-4 py-3">
+        {sensitiveProtection.patterns.map((pattern, index) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: 自定义正则可以重复，索引是唯一稳定键。
+            key={index}
+            className="flex items-center gap-2"
+          >
+            <Input
+              aria-label="自定义敏感规则"
+              placeholder="内部工号\\s*\\d{6}"
+              disabled={!sensitiveProtection.enabled || saving}
+              value={pattern}
+              onChange={(event) =>
+                setSensitiveProtection((current) => ({
+                  ...current,
+                  patterns: current.patterns.map((item, i) =>
+                    i === index ? event.target.value : item,
+                  ),
+                }))
+              }
+              className="min-w-0 flex-1 font-mono text-ui-sm"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="删除这条敏感规则"
+              disabled={saving}
+              onClick={() =>
+                setSensitiveProtection((current) => ({
+                  ...current,
+                  patterns: current.patterns.filter((_, i) => i !== index),
+                }))
+              }
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!sensitiveProtection.enabled || saving}
+            onClick={() =>
+              setSensitiveProtection((current) => ({
+                ...current,
+                patterns: [...current.patterns, ""],
+              }))
+            }
+          >
+            添加敏感规则
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            onClick={() => void save({ deleteProtection, sensitiveProtection })}
+          >
+            保存敏感规则
+          </Button>
+          {message ? (
+            <span role="status" className="text-ui-sm text-foreground-subtle">
+              {message}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {/* 安全网关与传输加密：如实显示**当前连接的实际状态**。
+          - 安全网关：入站由「回环监听 + CORS 白名单 + 每路由本机鉴权」收口，
+            出站由域名规则（工具门 / 服务端出口 / HTTP MCP / 沙箱网络白名单）收口。
+            自托管/局域网部署的 TLS 终结由用户自己的反向代理承担。
+          - 传输加密：按页面协议判断——自托管配了 KENFUTWORK_TLS_CERT_PATH /
+            KENFUTWORK_TLS_KEY_PATH 就是 https/wss；本机回环是 http + 本机凭据。 */}
+      <SettingsRow
+        label="安全网关"
+        control={
+          <span className="text-ui-sm text-foreground-subtle">
+            出入站均收口
+          </span>
+        }
+      />
+      <SettingsRow
+        label="传输加密"
+        control={
+          <span className="text-ui-sm text-foreground-subtle">
+            {secureTransportActive() ? "HTTPS + WSS" : "本机凭据"}
+          </span>
+        }
+      />
+    </SettingsGroupCard>
+  );
+}
 
 /** 人工放行某个工具（agent 没有自我授权路径，只能由这里批准）。 */
 function ToolApprovalSection() {
@@ -1298,57 +1393,67 @@ function ToolApprovalSection() {
   };
 
   return (
-    <section className="min-w-0 space-y-3">
-      <SettingsGroupCard>
-        <div className="space-y-3 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              aria-label="工具名"
-              placeholder="如 mcp__fs__write"
-              value={toolName}
-              onChange={(event) => setToolName(event.target.value)}
-              className="min-w-0 flex-1"
-            />
-            <Select
-              value={scope}
-              onValueChange={(next) =>
-                setScope(next as (typeof APPROVAL_SCOPES)[number]["value"])
-              }
-            >
-              <SelectTrigger aria-label="批准范围" className="w-28 shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {APPROVAL_SCOPES.map((entry) => (
-                  <SelectItem key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving}
-              onClick={() => void approve()}
-            >
-              批准
-            </Button>
-          </div>
-          {approvedForever.length > 0 ? (
-            <p className="text-ui-sm text-foreground-subtle">
-              已永久批准：{approvedForever.join("、")}
-            </p>
-          ) : null}
-          {message ? (
-            <p role="status" className="text-ui-sm text-foreground-subtle">
-              {message}
-            </p>
-          ) : null}
+    <SettingsGroupCard>
+      <div className="space-y-3 p-4">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 text-ui-base font-medium text-foreground">
+            手动放行工具
+          </span>
+          <span className="truncate text-ui-sm text-foreground-subtle">
+            立刻放行 不用等弹窗
+          </span>
         </div>
-      </SettingsGroupCard>
-    </section>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label="工具名"
+            placeholder="如 mcp__fs__write"
+            value={toolName}
+            onChange={(event) => setToolName(event.target.value)}
+            className="min-w-0 flex-1 font-mono text-ui-sm"
+          />
+          <Select
+            value={scope}
+            onValueChange={(next) =>
+              setScope(next as (typeof APPROVAL_SCOPES)[number]["value"])
+            }
+          >
+            <SelectTrigger
+              size="lg"
+              aria-label="批准范围"
+              className="w-28 shrink-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {APPROVAL_SCOPES.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            onClick={() => void approve()}
+          >
+            批准
+          </Button>
+        </div>
+        {approvedForever.length > 0 ? (
+          <p className="text-ui-sm text-foreground-subtle">
+            已永久批准：{approvedForever.join("、")}
+          </p>
+        ) : null}
+        {message ? (
+          <p role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </SettingsGroupCard>
   );
 }
 

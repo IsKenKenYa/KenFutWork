@@ -191,7 +191,7 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
     await kernel.dispose();
   });
 
-  it("策略「拒绝」硬拦、「询问」交给人审、「允许」越过档位", async () => {
+  it("策略「拦截」硬拦、「每次询问」交给人审、「放行」越过档位", async () => {
     const { app, kernel, tools } = assembly();
     const loaded = await registerBundleTools(tools);
     const permissions = kernel.get("permissions");
@@ -216,10 +216,12 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
     });
 
     try {
-      // 「拒绝」= 硬拦：理由是策略命中，不是「危险操作需审批」。
-      await expect(tools.execute("device_read", {})).rejects.toThrow(/拒绝/);
-      // 「询问」不能被当成硬拦：理由要让人去确认，而不是说工具已被禁用。
-      await expect(tools.execute("device_write", {})).rejects.toThrow(/询问/);
+      // 「拦截」= 硬拦：理由是策略命中，不是「危险操作需审批」。
+      await expect(tools.execute("device_read", {})).rejects.toThrow(/拦截/);
+      // 「每次询问」不能被当成硬拦：理由要让人去确认，而不是说工具已被禁用。
+      await expect(tools.execute("device_write", {})).rejects.toThrow(
+        /每次询问/,
+      );
       // 「允许」在默认档下也放行（策略先于档位）。
       await expect(tools.execute("strategy_allowed", {})).resolves.toBe(
         "allowed",
@@ -258,7 +260,7 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
     try {
       await expect(
         tools.execute("file_writer", { file_path: "/protected/secret.txt" }),
-      ).rejects.toThrow(/拒绝/);
+      ).rejects.toThrow(/拦截/);
       await expect(
         tools.execute("file_writer", { file_path: "/open/readme.txt" }),
       ).resolves.toBe("wrote /open/readme.txt");

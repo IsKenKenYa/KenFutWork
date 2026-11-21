@@ -164,10 +164,17 @@ export function SettingsRow({
   );
 }
 
-/** 设置页分组标题：与设置页其他分区同级（14px / 中等粗细）。 */
+/**
+ * 设置页分组标题：与设置页其他分区同级（14px / 中等粗细 / 次要色）。
+ *
+ * 颜色用 `foreground-subtle`：浏览器控制页的分组标题就是这个色（60% 灰），
+ * 标题比行标签（`foreground`）低一档，用户视线才先落在配置行上。
+ */
 export function SettingsSubheading({ children }: { children: ReactNode }) {
   return (
-    <h3 className="text-ui-base font-medium text-foreground">{children}</h3>
+    <h3 className="text-ui-base font-medium text-foreground-subtle">
+      {children}
+    </h3>
   );
 }
 
