@@ -1,11 +1,4 @@
 import { Button } from "@zui/components/ui/button.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu.js";
 import { Input } from "@zui/components/ui/input.js";
 import {
   Select,
@@ -20,7 +13,7 @@ import {
   SettingsRow,
   SettingsSubheading,
 } from "@zui/settings/SettingsPageParts.js";
-import { ChevronDownIcon, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
@@ -57,6 +50,8 @@ const FILE_OPERATIONS: ReadonlyArray<{
  */
 
 type PermissionTier = "default" | "auto-approve" | "full-access" | "custom";
+
+export type { PermissionTier };
 
 interface TierView {
   tier: PermissionTier;
@@ -129,12 +124,12 @@ export function usePermissionTier() {
 }
 
 /**
- * composer 的权限档 chip：只列三档，名称与说明对齐产品口径。
+ * composer 会话设置的权限三档（与设置页同一套措辞）。
  *
  * `custom`（自定义规则表）不在此出现——它只在设置页的权限分区里编辑，
  * 聊天框摆一个出来会多一个档位却无从配置。
  */
-const CHIP_TIERS: ReadonlyArray<{
+export const PERMISSION_MENU_TIERS: ReadonlyArray<{
   value: PermissionTier;
   label: string;
   hint: string;
@@ -143,59 +138,6 @@ const CHIP_TIERS: ReadonlyArray<{
   { value: "auto-approve", label: "自动编辑", hint: "自动修改文件" },
   { value: "full-access", label: "完全访问", hint: "访问本机文件与网络" },
 ];
-
-export function PermissionTierChip() {
-  const { tier, save } = usePermissionTier();
-  const [busy, setBusy] = useState(false);
-
-  if (!tier) return null;
-  // custom 档不在三档里：菜单仍显示它最接近的语义，避免按钮空白。
-  const fallback = CHIP_TIERS[0];
-  const current = CHIP_TIERS.find((entry) => entry.value === tier) ?? fallback;
-  if (!current) return null;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 rounded-lg px-2 text-ui-base"
-          disabled={busy}
-          aria-label="权限"
-          data-testid="permission-tier-chip"
-        >
-          <span>{current.label}</span>
-          <ChevronDownIcon className="size-3.5 text-foreground-subtle" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" sideOffset={4} className="w-64">
-        <DropdownMenuRadioGroup
-          value={tier}
-          onValueChange={(next) => {
-            setBusy(true);
-            void save(next as PermissionTier).finally(() => setBusy(false));
-          }}
-        >
-          {CHIP_TIERS.map((entry) => (
-            <DropdownMenuRadioItem
-              key={entry.value}
-              value={entry.value}
-              className="min-h-13 items-start gap-3 py-2"
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span>{entry.label}</span>
-                <span className="text-ui-sm text-foreground-subtle">
-                  {entry.hint}
-                </span>
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 /** 设置页「权限」分区：档位、规则与审批三块，控件与全站一致。 */
 export function PermissionTierSection() {

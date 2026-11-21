@@ -22,7 +22,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 type ModeOption = { id: ExecutionMode; label: string };
-const executionModeIcons: Partial<Record<ExecutionMode, LucideIcon>> = {
+/** 执行方式 → 图标（composer 合并菜单与独立 chip 共用一张表）。 */
+export const executionModeIcons: Partial<Record<ExecutionMode, LucideIcon>> = {
   agent: BotIcon,
   plan: LightbulbIcon,
   solo: MessageSquareIcon,

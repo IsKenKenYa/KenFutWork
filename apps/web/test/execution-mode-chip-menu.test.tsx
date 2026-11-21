@@ -11,6 +11,20 @@ vi.mock("@zui/host/surfaceApi.js", () => ({
 const { ExecutionModeChipProbe: ExecutionModeChip, readyComposerModeTrigger } =
   await import("./setup/execution-mode-chip.js");
 
+/** 合并后的菜单同时读写权限档；各用例只关心执行方式端点，这里补默认 tier。 */
+function withPermissionTier(
+  inner: (path: string, init?: RequestInit) => Promise<unknown>,
+) {
+  return async (path: string, init?: RequestInit): Promise<unknown> => {
+    if (path === "/api/permissions/tier") {
+      if (init?.method === "PUT")
+        return { tier: JSON.parse(String(init.body)).tier };
+      return { tier: "default", automationTier: "default" };
+    }
+    return inner(path, init);
+  };
+}
+
 const MODES = {
   modes: [
     { id: "agent", label: "自主" },
@@ -20,8 +34,9 @@ const MODES = {
   ],
 };
 
+/** 合并后只剩一个触发器：权限档与执行方式同在这个按钮下。 */
 async function openModeMenu(user: ReturnType<typeof userEvent.setup>) {
-  const trigger = screen.getByTestId("execution-mode-chip");
+  const trigger = screen.getByTestId("chat-mode-select-trigger");
   await waitFor(() =>
     expect(trigger.getAttribute("aria-expanded")).toBe("false"),
   );
@@ -44,11 +59,13 @@ afterEach(() => {
 
 test("离开计划策略只关闭规划开关，保留原基础权限", async () => {
   const user = userEvent.setup();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes") return MODES;
-    if (init?.method === "PUT") return JSON.parse(String(init.body));
-    return { mode: "plan" };
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes") return MODES;
+      if (init?.method === "PUT") return JSON.parse(String(init.body));
+      return { mode: "plan" };
+    }),
+  );
   const onSwitchMode = vi.fn();
   render(
     <ExecutionModeChip
@@ -67,16 +84,18 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
   const user = userEvent.setup();
   const onExecutionModeChange = vi.fn();
   let putFails = false;
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes") return MODES;
-    if (init?.method === "PUT") {
-      if (putFails) throw new Error("denied");
-      return {
-        mode: (JSON.parse(String(init.body)) as { mode: string }).mode,
-      };
-    }
-    return { mode: "agent" };
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes") return MODES;
+      if (init?.method === "PUT") {
+        if (putFails) throw new Error("denied");
+        return {
+          mode: (JSON.parse(String(init.body)) as { mode: string }).mode,
+        };
+      }
+      return { mode: "agent" };
+    }),
+  );
   const onSwitchMode = vi.fn();
   render(
     <ExecutionModeChip
@@ -87,7 +106,8 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
     />,
   );
   const chip = await readyComposerModeTrigger();
-  expect(chip.textContent).toContain("自主");
+  // 触发器文案是权限档（执行方式在同一菜单里，不再单独占一个按钮）。
+  expect(chip.textContent).toContain("变更前确认");
 
   // 创造：PUT 生效，不干预 ZCode 协作档
   await user.click(chip);
@@ -124,20 +144,24 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
     ),
   );
   await waitFor(() =>
-    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
-      "计划",
-    ),
+    expect(
+      screen
+        .getByTestId("chat-mode-select-trigger")
+        .getAttribute("data-execution-mode"),
+    ).toBe("plan"),
   );
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 });
 
-test("权限与执行方式各自一个入口，并排出现，权限只用文字不带图标", async () => {
+test("权限与执行方式并在同一个菜单里，权限只用文字不带图标", async () => {
   const user = userEvent.setup();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes") return MODES;
-    if (init?.method === "PUT") return JSON.parse(String(init.body));
-    return { mode: "agent" };
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes") return MODES;
+      if (init?.method === "PUT") return JSON.parse(String(init.body));
+      return { mode: "agent" };
+    }),
+  );
   const onSwitchMode = vi.fn();
   render(
     <ExecutionModeChip
@@ -147,16 +171,25 @@ test("权限与执行方式各自一个入口，并排出现，权限只用文�
     />,
   );
   await readyComposerModeTrigger();
-  const permissionTrigger = screen.getByTestId("chat-mode-select-trigger");
+  // 合并后只有一个入口：权限档与执行方式是同一个面板的两组选项。
+  const trigger = screen.getByTestId("chat-mode-select-trigger");
   expect(screen.getAllByTestId("chat-mode-select-trigger")).toHaveLength(1);
+  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
   // 权限按钮只写文字，不再带手形/盾牌图标（用户口径：最左边这个手去掉）。
-  expect(permissionTrigger.textContent).toContain("完全访问");
-  expect(permissionTrigger.querySelector("svg.lucide-hand")).toBeNull();
-  expect(permissionTrigger.querySelector("svg.lucide-shield-alert")).toBeNull();
+  expect(trigger.textContent).toContain("变更前确认");
+  expect(trigger.querySelector("svg.lucide-hand")).toBeNull();
+  expect(trigger.querySelector("svg.lucide-shield-alert")).toBeNull();
 
-  // 执行方式独立成块：菜单里只有执行方式一档，不再混入权限组。
   await openModeMenu(user);
+  // 两组并列在同一面板：都能找到，且各自只列自己那一项。
+  const permissions = screen.getByRole("group", { name: "权限" });
   const executionModes = screen.getByRole("group", { name: "执行方式" });
+  expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
+  expect(
+    permissions.contains(
+      screen.getByRole("menuitemradio", { name: /^变更前确认/ }),
+    ),
+  ).toBe(true);
   for (const [label, icon] of [
     ["自主", "bot"],
     ["计划", "lightbulb"],
@@ -167,26 +200,52 @@ test("权限与执行方式各自一个入口，并排出现，权限只用文�
     expect(item.querySelector(`svg.lucide-${icon}`)).not.toBeNull();
     expect(executionModes.contains(item)).toBe(true);
   }
-  expect(screen.queryByRole("group", { name: "权限" })).toBeNull();
-  await user.keyboard("[Escape]");
 
-  // 权限菜单仍然只管权限档。
-  await user.click(permissionTrigger);
-  const permissions = screen.getByRole("group", { name: "权限" });
-  expect(screen.queryByRole("group", { name: "执行方式" })).toBeNull();
-  expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
-  expect(
-    permissions.contains(
-      screen.getByRole("menuitemradio", { name: /^变更前确认/ }),
-    ),
-  ).toBe(true);
-  await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
-  expect(onSwitchMode).toHaveBeenLastCalledWith("build");
-  expect(permissionTrigger.textContent).toContain("变更前确认");
-  await user.click(permissionTrigger);
+  // 改权限档写服务端 tier（不再走协作模式回调）。
   await user.click(screen.getByRole("menuitemradio", { name: /^完全访问/ }));
-  expect(onSwitchMode).toHaveBeenLastCalledWith("yolo");
-  expect(
-    surfaceJson.mock.calls.some(([, init]) => init?.method === "PUT"),
-  ).toBe(false);
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/permissions/tier",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ tier: "full-access" }),
+      }),
+    ),
+  );
+  expect(onSwitchMode).not.toHaveBeenCalled();
+});
+
+test("权限档保存失败时回滚触发器的文案", async () => {
+  const user = userEvent.setup();
+  let putFails = false;
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/permissions/tier") {
+      if (init?.method === "PUT") {
+        if (putFails) throw new Error("denied");
+        return { tier: JSON.parse(String(init.body)).tier };
+      }
+      return { tier: "default", automationTier: "default" };
+    }
+    if (path === "/api/execution-modes") return MODES;
+    return { mode: "agent" };
+  });
+  render(<ExecutionModeChip sessionId="tier-fail" disabled={false} />);
+  await readyComposerModeTrigger();
+  await openModeMenu(user);
+  await user.click(screen.getByRole("menuitemradio", { name: /^完全访问/ }));
+  await waitFor(() =>
+    expect(
+      screen.getByTestId("chat-mode-select-trigger").textContent,
+    ).toContain("完全访问"),
+  );
+
+  putFails = true;
+  await openModeMenu(user);
+  await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
+  // 保存失败回滚到**上一次成功的档位**（完全访问），不是更早的初值。
+  await waitFor(() =>
+    expect(
+      screen.getByTestId("chat-mode-select-trigger").textContent,
+    ).toContain("完全访问"),
+  );
 });
