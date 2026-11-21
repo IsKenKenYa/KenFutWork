@@ -55,7 +55,7 @@ import { SettingsResourceGroupHeader } from "@zui/settings/SettingsResourceGroup
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 import { SettingsBreadcrumbReporter } from "@zui/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
-import { AgentsInstructionRow, resolveAgentsInstructionPath } from "@zui/settings/AgentsInstructionRow.js";
+import { AgentsInstructionInline, resolveAgentsInstructionPath } from "@zui/settings/AgentsInstructionRow.js";
 import { AgentsInstructionEditor } from "@zui/settings/AgentsInstructionEditor.js";
 import {
   SubagentReasoningField,
@@ -1752,14 +1752,7 @@ export function SubagentsSection({
   const hasSearchResultEmpty = Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
-      {agentsInstructionFilePath ? (
-        <AgentsInstructionRow
-          filePath={agentsInstructionFilePath}
-          {...(canEditDefaultInstructions
-            ? { onEdit: () => setEditingInstructions(true) }
-            : {})}
-        />
-      ) : null}
+      {/* AGENTS.md 与作用域 + 搜索同一行（用户口径：它属于页头，不单独占一张卡）。 */}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1785,6 +1778,14 @@ export function SubagentsSection({
           })}
         />
       </div>
+      {agentsInstructionFilePath ? (
+        <AgentsInstructionInline
+          filePath={agentsInstructionFilePath}
+          {...(canEditDefaultInstructions
+            ? { onEdit: () => setEditingInstructions(true) }
+            : {})}
+        />
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">

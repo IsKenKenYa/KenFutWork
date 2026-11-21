@@ -8,7 +8,7 @@ import {
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import {
-  AgentsInstructionRow,
+  AgentsInstructionInline,
   resolveAgentsInstructionPath,
 } from "@zui/settings/AgentsInstructionRow";
 import { afterEach, expect, it, vi } from "vitest";
@@ -21,11 +21,12 @@ afterEach(() => {
   localStorage.clear();
 });
 
+/** 智能体页头那一段：页签 + 搜索同一行，不再独占一张卡。 */
 function renderRow(platform: RowPlatform, workspacePath: string) {
   render(
     <PlatformProvider platform={platform}>
       <ZCodeIntlProvider initialLocale="zh-CN">
-        <AgentsInstructionRow
+        <AgentsInstructionInline
           filePath={resolveAgentsInstructionPath(workspacePath)}
         />
       </ZCodeIntlProvider>
@@ -90,7 +91,7 @@ it("传入 onEdit 时出现页内编辑入口，未传则不出现", () => {
   render(
     <PlatformProvider platform={createWebPlatform()}>
       <ZCodeIntlProvider initialLocale="zh-CN">
-        <AgentsInstructionRow
+        <AgentsInstructionInline
           filePath="/home/me/proj/AGENTS.md"
           onEdit={onEdit}
         />
@@ -103,7 +104,7 @@ it("传入 onEdit 时出现页内编辑入口，未传则不出现", () => {
   render(
     <PlatformProvider platform={createWebPlatform()}>
       <ZCodeIntlProvider initialLocale="zh-CN">
-        <AgentsInstructionRow filePath="/home/me/proj/AGENTS.md" />
+        <AgentsInstructionInline filePath="/home/me/proj/AGENTS.md" />
       </ZCodeIntlProvider>
     </PlatformProvider>,
   );

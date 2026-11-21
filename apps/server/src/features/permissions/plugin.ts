@@ -4,6 +4,7 @@ import type { ApprovalReviewer } from "./approval-types.js";
 import { createPermissionAuditStore } from "./audit-store.js";
 import {
   createPermissionService,
+  commandArgument,
   type PermissionService,
 } from "./permission-service.js";
 import type { PermissionSettings } from "./tier-store.js";
@@ -27,6 +28,34 @@ export function approvalReviewEnabled(settings: PermissionSettings): boolean {
   return settings.policy.aiSafety.approvalReview === true;
 }
 
+/**
+ * 这次调用要不要交给审批模型审（用户口径的「命令执行前审查」三档）。
+ *
+ * - `off`：一律不审，审批交给人工；
+ * - `strict`：**每条**命令都审（含只读命令）；
+ * - `auto`：只有命令前缀命中用户的高危字典时才审——其余命令照常走档位，
+ *   不额外消耗一次模型调用。
+ *
+ * 与 `aiSafety.approvalReview` 的关系：命令审查是三档里的「要不要审」，
+ * 而 `approvalReview` 是这条审阅链路的总开关。两者都开才真的会请求模型；
+ * 命令审查为 `off` 时即便总开关开着也跳过（用户明确说了不审）。
+ */
+export function shouldReviewInvocation(
+  settings: PermissionSettings,
+  command: string | null | undefined,
+): boolean {
+  const mode = settings.policy.commandReview ?? "auto";
+  if (mode === "off") return false;
+  if (mode === "strict") return true;
+  const patterns = settings.policy.commandReviewPatterns ?? [];
+  if (!command) {
+    // 没有命令参数的调用（读写文件之外的工具）不在「命令审查」范围内：
+    // 它们由 `aiSafety.approvalReview` 的属主声明（reviewKind）决定。
+    return true;
+  }
+  return patterns.some((prefix) => prefix && command.startsWith(prefix));
+}
+
 export function createPermissionsPlugin(_deps: {
   events?: KernelEvents;
 }): PluginDefinition {
@@ -39,11 +68,16 @@ export function createPermissionsPlugin(_deps: {
        *
        * 开关打开时交给审批模型（`approvalReview`）：常规且有界的自动放行，可疑的
        * 交回人工。关掉后一律返回 `manual`——不经模型，人自己看。
+       * 「命令执行前审查」为 `off` 时不请求模型（用户明确说了不审）。
        */
-      const reviewIfEnabled: ApprovalReviewer = (input, signal) =>
-        approvalReviewEnabled(service.getSettings())
-          ? ctx.get("approvalReview").review(input, signal)
-          : Promise.resolve("manual");
+      const reviewIfEnabled: ApprovalReviewer = (input, signal) => {
+        const settings = service.getSettings();
+        if (!approvalReviewEnabled(settings)) return Promise.resolve("manual");
+        if (!shouldReviewInvocation(settings, commandArgument(input.args))) {
+          return Promise.resolve("manual");
+        }
+        return ctx.get("approvalReview").review(input, signal);
+      };
       // 先声明再赋值：上面的闭包要读 `service` 自己的设置（惰性调用，赋值已完成）。
       let service: PermissionService;
       service = createPermissionService({ review: reviewIfEnabled });

@@ -15,7 +15,11 @@ import {
 import { useProviderSettingsServiceView } from "@zui/hooks/useProviderSettingsView.js";
 import { useServices } from "@zui/hooks/useServices.js";
 import { projectProviderSettingsViewToFormProviders } from "@zui/lib/providerSettingsFormProjection.js";
-import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
+import {
+  SettingsGroupCard,
+  SettingsRow,
+  SettingsSubheading,
+} from "@zui/settings/SettingsPageParts.js";
 import { useEffect, useRef, useState } from "react";
 import { modelKind } from "./ModelSettingsSummary.js";
 
@@ -130,126 +134,134 @@ export function ModelDefaultsSection({
     : [];
   const kinds: readonly ("chat" | "approval" | "image" | "video")[] =
     approvalOnly ? ["approval"] : ["chat", "approval", "image", "video"];
+  /** 某一类可选的模型（启用供应商 + 该用途已启用的模型）。 */
+  const choicesFor = (kind: (typeof kinds)[number]) =>
+    providers
+      .filter(
+        (provider) =>
+          provider.enabled &&
+          (kind !== "approval" || provider.native?.protocol !== "dify-engine"),
+      )
+      .flatMap((provider) =>
+        provider.models
+          .filter(
+            (model) =>
+              model.config.enabled !== false &&
+              modelKind(model) === (kind === "approval" ? "chat" : kind),
+          )
+          .map((model) => ({
+            reference: {
+              providerId: provider.providerId,
+              modelId: model.modelId,
+            },
+            label: `${provider.providerName || provider.providerId} / ${model.native?.name || model.modelId}`,
+          })),
+      );
+  const currentValue = (kind: (typeof kinds)[number]) => {
+    const policy = defaults?.[kind];
+    const references =
+      kind === "chat" || kind === "approval"
+        ? defaults?.[kind]
+          ? [defaults[kind]]
+          : []
+        : policy && "mode" in policy && policy.mode === "manual"
+          ? policy.models
+          : [];
+    return {
+      references,
+      selected:
+        references.length > 1
+          ? "multiple"
+          : references[0]
+            ? referenceValue(references[0])
+            : "auto",
+    };
+  };
+
   return (
     <section
       aria-label={approvalOnly ? "审批" : "默认模型"}
-      className="space-y-3 rounded-xl border border-border bg-card p-3"
+      className="min-w-0 space-y-3"
     >
       {showHeading ? (
         <SettingsSubheading>
           {approvalOnly ? "审批" : "默认模型"}
         </SettingsSubheading>
       ) : null}
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
+      {/* 与权限页同一套行样式：标签在左、控件在右（用户口径：不要现在这样）。 */}
+      <SettingsGroupCard>
         {kinds.map((kind) => {
-          const policy = defaults?.[kind];
-          const references =
-            kind === "chat" || kind === "approval"
-              ? defaults?.[kind]
-                ? [defaults[kind]]
-                : []
-              : policy && "mode" in policy && policy.mode === "manual"
-                ? policy.models
-                : [];
-          const selected =
-            references.length > 1
-              ? "multiple"
-              : references[0]
-                ? referenceValue(references[0])
-                : "auto";
-          const choices = providers
-            .filter(
-              (provider) =>
-                provider.enabled &&
-                (kind !== "approval" ||
-                  provider.native?.protocol !== "dify-engine"),
-            )
-            .flatMap((provider) =>
-              provider.models
-                .filter(
-                  (model) =>
-                    model.config.enabled !== false &&
-                    modelKind(model) === (kind === "approval" ? "chat" : kind),
-                )
-                .map((model) => ({
-                  reference: {
-                    providerId: provider.providerId,
-                    modelId: model.modelId,
-                  },
-                  label: `${provider.providerName || provider.providerId} / ${model.native?.name || model.modelId}`,
-                })),
-            );
+          const { selected, references } = currentValue(kind);
+          const choices = choicesFor(kind);
           return (
-            <div
+            <SettingsRow
               key={kind}
-              className="flex min-w-56 flex-1 items-center justify-between gap-3"
-            >
-              <span className="shrink-0 text-ui-sm text-foreground-subtle">
-                {MODEL_DEFAULT_LABELS[kind]}
-              </span>
-              <Select
-                value={selected}
-                disabled={loading || saving || !defaults}
-                onValueChange={(value) => {
-                  const reference =
-                    choices.find(
-                      (choice) => referenceValue(choice.reference) === value,
-                    )?.reference ?? null;
-                  void save(kind, reference);
-                }}
-              >
-                <SelectTrigger
-                  aria-label={
-                    kind === "approval"
-                      ? "帮我批准模型"
-                      : `默认${MODEL_DEFAULT_LABELS[kind]}模型`
-                  }
-                  className="w-48 min-w-0"
+              label={MODEL_DEFAULT_LABELS[kind]}
+              control={
+                <Select
+                  value={selected}
+                  disabled={loading || saving || !defaults}
+                  onValueChange={(value) => {
+                    const reference =
+                      choices.find(
+                        (choice) => referenceValue(choice.reference) === value,
+                      )?.reference ?? null;
+                    void save(kind, reference);
+                  }}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">
-                    {kind === "approval" ? "人工审批" : "自动"}
-                  </SelectItem>
-                  {selected === "multiple" ? (
-                    <SelectItem value="multiple" disabled>
-                      多模型（{references.length}）
+                  <SelectTrigger
+                    size="lg"
+                    aria-label={
+                      kind === "approval"
+                        ? "帮我批准模型"
+                        : `默认${MODEL_DEFAULT_LABELS[kind]}模型`
+                    }
+                    className="w-56 min-w-0"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      {kind === "approval" ? "人工审批" : "自动"}
                     </SelectItem>
-                  ) : null}
-                  {references.length === 1 &&
-                  !choices.some(
-                    (choice) => referenceValue(choice.reference) === selected,
-                  ) ? (
-                    <SelectItem value={selected} disabled>
-                      模型不可用
-                    </SelectItem>
-                  ) : null}
-                  {choices.map((choice) => (
-                    <SelectItem
-                      key={referenceValue(choice.reference)}
-                      value={referenceValue(choice.reference)}
-                    >
-                      {choice.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                    {selected === "multiple" ? (
+                      <SelectItem value="multiple" disabled>
+                        多模型（{references.length}）
+                      </SelectItem>
+                    ) : null}
+                    {references.length === 1 &&
+                    !choices.some(
+                      (choice) => referenceValue(choice.reference) === selected,
+                    ) ? (
+                      <SelectItem value={selected} disabled>
+                        模型不可用
+                      </SelectItem>
+                    ) : null}
+                    {choices.map((choice) => (
+                      <SelectItem
+                        key={referenceValue(choice.reference)}
+                        value={referenceValue(choice.reference)}
+                      >
+                        {choice.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+            />
           );
         })}
-      </div>
-      {error ? (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 text-ui-sm text-destructive"
-        >
-          <span>{error}</span>
-          <Button size="sm" variant="ghost" onClick={retry}>
-            重试
-          </Button>
-        </div>
-      ) : null}
+        {error ? (
+          <div role="alert" className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-ui-sm text-destructive">
+              <span>{error}</span>
+              <Button size="sm" variant="ghost" onClick={retry}>
+                重试
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </SettingsGroupCard>
     </section>
   );
 }

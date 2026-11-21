@@ -12,6 +12,30 @@ export function modelKind(model: ProviderSettingsFormModel): ModelKind {
   return capability === "image-edit" ? "image" : capability;
 }
 
+/**
+ * 模型配置的两大类（用户口径）：文字模型 vs 图片视频模型。
+ *
+ * 为什么按两类而不是四类：音频与图片/视频在配置面上都是「非文字生成」——
+ * 需要宽高、时长、参考图这类字段，而文字模型只需要上下文窗口与输出上限。
+ * 分成四个页签时每个都只有一两条，用户要在四个空页签之间点来点去。
+ */
+export const MODEL_GROUPS = {
+  text: {
+    label: "文字模型",
+    kinds: ["chat"] as const satisfies readonly ModelKind[],
+    hint: "对话与推理",
+  },
+  media: {
+    label: "图片视频模型",
+    kinds: ["image", "video", "audio"] as const satisfies readonly ModelKind[],
+    hint: "生成图片、视频与音频",
+  },
+} as const;
+export type ModelGroup = keyof typeof MODEL_GROUPS;
+export function modelGroup(model: ProviderSettingsFormModel): ModelGroup {
+  return modelKind(model) === "chat" ? "text" : "media";
+}
+
 export function modelCapabilitySummary(
   model: ProviderSettingsFormModel,
 ): string {

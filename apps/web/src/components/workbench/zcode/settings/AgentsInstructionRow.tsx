@@ -3,10 +3,7 @@ import {
   FileDisplayIcon,
   resolveFileDisplayDescriptor,
 } from "@zui/lib/fileDisplay.js";
-import {
-  SettingsGroupCard,
-  SettingsRow,
-} from "@zui/settings/SettingsPageParts.js";
+import { SettingsRow } from "@zui/settings/SettingsPageParts.js";
 import { WorkspaceEditorButtonGroup } from "@zui/WorkspaceEditorButtonGroup.js";
 
 /**
@@ -21,6 +18,47 @@ export function resolveAgentsInstructionPath(workspacePath: string): string {
   return `${trimmed}${separator}AGENTS.md`;
 }
 
+/**
+ * 智能体页顶部的 AGENTS.md 入口：与页签 + 搜索并在同一行。
+ *
+ * 为什么不再是整张卡片：它是全页唯一的「全局文件」，独占一整行会让下面的
+ * 作用域筛选与搜索被顶到第二屏；把它压成行内一段（图标 + 文件名 + 编辑），
+ * 与页签同一行时用户仍能一眼看到它在哪、点得到编辑。
+ */
+export function AgentsInstructionInline({
+  filePath,
+  onEdit,
+}: {
+  filePath: string;
+  onEdit?: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+      <FileDisplayIcon
+        src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
+        size={16}
+        className="size-4 shrink-0"
+      />
+      <span className="shrink-0 text-ui-base font-medium text-foreground">
+        AGENTS.md
+      </span>
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-ui-sm text-foreground-subtle"
+        title={filePath}
+      >
+        {filePath}
+      </span>
+      {onEdit ? (
+        <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+          编辑
+        </Button>
+      ) : null}
+      <WorkspaceEditorButtonGroup workspaceAbsPath={filePath} />
+    </div>
+  );
+}
+
+/** 设置项表单里的 AGENTS.md 行（卡片形态；保留给需要独立分组的调用方）。 */
 export function AgentsInstructionRow({
   filePath,
   onEdit,
@@ -29,41 +67,32 @@ export function AgentsInstructionRow({
   onEdit?: () => void;
 }) {
   return (
-    <SettingsGroupCard>
-      <SettingsRow
-        label={
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface">
-              <FileDisplayIcon
-                src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
-                size={16}
-                className="size-4 shrink-0"
-              />
-            </span>
-            <span className="truncate">AGENTS.md</span>
+    <SettingsRow
+      label={
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface">
+            <FileDisplayIcon
+              src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
+              size={16}
+              className="size-4 shrink-0"
+            />
           </span>
-        }
-        description={
-          <span className="block truncate font-mono text-ui-sm">
-            {filePath}
-          </span>
-        }
-        control={
-          <span className="flex items-center gap-2">
-            {onEdit ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onEdit}
-              >
-                编辑
-              </Button>
-            ) : null}
-            <WorkspaceEditorButtonGroup workspaceAbsPath={filePath} />
-          </span>
-        }
-      />
-    </SettingsGroupCard>
+          <span className="truncate">AGENTS.md</span>
+        </span>
+      }
+      description={
+        <span className="block truncate font-mono text-ui-sm">{filePath}</span>
+      }
+      control={
+        <span className="flex items-center gap-2">
+          {onEdit ? (
+            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+              编辑
+            </Button>
+          ) : null}
+          <WorkspaceEditorButtonGroup workspaceAbsPath={filePath} />
+        </span>
+      }
+    />
   );
 }

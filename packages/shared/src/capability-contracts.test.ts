@@ -173,19 +173,25 @@ describe("敏感数据检测", () => {
     expect(findSensitiveData("内部工号 123456", ["([未闭合"])).toBeNull();
   });
 
-  it("缺省策略：敏感保护默认开、删除保护默认关、内置运行时默认开", () => {
+  it("缺省策略：敏感保护默认开、删除模式默认询问、内置运行时默认开", () => {
     expect(EMPTY_PERMISSION_POLICY.sensitiveProtection.enabled).toBe(true);
-    expect(EMPTY_PERMISSION_POLICY.deleteProtection.enabled).toBe(false);
+    expect(EMPTY_PERMISSION_POLICY.deleteMode).toBe("ask");
     expect(EMPTY_PERMISSION_POLICY.bundledRuntimes.enabled).toBe(true);
+    expect(EMPTY_PERMISSION_POLICY.commandReview).toBe("auto");
+    expect(EMPTY_PERMISSION_POLICY.autoBackup.maxSnapshots).toBe(50);
     // 旧数据解析后新字段都补齐
     const parsed = permissionPolicySchema.parse({
       rules: [{ pattern: "mcp__*", action: "deny" }],
     });
+    expect(parsed.deleteMode).toBe("ask");
     expect(parsed.deleteProtection).toEqual({
-      enabled: false,
+      enabled: true,
       batchThreshold: 50,
-      trashFirst: false,
     });
+    expect(parsed.commandReview).toBe("auto");
+    // 高危命令字典非空：`auto` 档要有东西可判
+    expect(parsed.commandReviewPatterns.length).toBeGreaterThan(10);
+    expect(parsed.autoBackup).toEqual({ enabled: true, maxSnapshots: 50 });
     expect(parsed.sensitiveProtection).toEqual({ enabled: true, patterns: [] });
     expect(parsed.bundledRuntimes).toEqual({ enabled: true });
     // AI 安全防护整组默认关闭（与 WorkBuddy 同口径）：旧数据字段缺席时补成 false

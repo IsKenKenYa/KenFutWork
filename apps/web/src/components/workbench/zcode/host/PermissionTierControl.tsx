@@ -177,11 +177,13 @@ export function PermissionTierSection() {
 
   return (
     <div className="space-y-6">
+      {/* 基础配置：每项都直接决定「AI 能做什么、做之前要不要问、出事能不能找回」。
+          顺序按用户的关注点在前面：先权限模式与隔离，再删除与命令审查，最后备份。 */}
       <section className="min-w-0 space-y-3">
-        <SettingsSubheading>权限模式</SettingsSubheading>
+        <SettingsSubheading>基础配置</SettingsSubheading>
         <SettingsGroupCard>
           <SettingsRow
-            label="常规任务"
+            label="默认权限模式"
             description="改文件 / 跑命令前先问我"
             control={
               <PermissionTierSelect
@@ -208,27 +210,22 @@ export function PermissionTierSection() {
             }
           />
         </SettingsGroupCard>
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>沙箱安全</SettingsSubheading>
         <SandboxSecuritySection />
+        <DeleteModeSection />
+        <CommandReviewSection />
+        <AutoBackupSection />
       </section>
+      {/* 规则与放行：四张表都是「命中就按动作办」，所以合成一个分组。
+          组首那句「没命中就按权限模式走」是这张卡片的全局前提，只说一次。 */}
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>规则与放行</SettingsSubheading>
         <PermissionPolicySection />
         <ToolApprovalSection />
       </section>
       <section className="min-w-0 space-y-3">
-        <SettingsSubheading>数据安全</SettingsSubheading>
-        <DataSafetySection />
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>AI 安全防护</SettingsSubheading>
+        <SettingsSubheading>安全防护</SettingsSubheading>
         <AiSafetySection />
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>自动备份</SettingsSubheading>
-        <AutoBackupSection />
+        <DataSafetySection />
       </section>
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>审批模型</SettingsSubheading>
@@ -431,20 +428,23 @@ function RuleGroup({
  *
  * 本仓库的对应实现是检查点：每个轮次边界在私有目录做一次 git 快照，可在时间线上
  * 回看与恢复。开关只控制**轮次前**那道；关掉后不再产生新的 pre 快照，已有快照仍可用。
+ * 「保留上限」控制每个工作区最多留多少轮次快照，超出按时间删最旧（0 = 不设上限）。
  */
 function AutoBackupSection() {
   const [enabled, setEnabled] = useState(true);
+  const [maxSnapshots, setMaxSnapshots] = useState(50);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    surfaceJson<{ policy?: { autoBackup?: { enabled?: boolean } } }>(
-      "/api/permissions/tier",
-    )
+    surfaceJson<{
+      policy?: { autoBackup?: { enabled?: boolean; maxSnapshots?: number } };
+    }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
         setEnabled(view.policy?.autoBackup?.enabled !== false);
+        setMaxSnapshots(view.policy?.autoBackup?.maxSnapshots ?? 50);
       })
       .catch(() => {});
     return () => {
@@ -452,11 +452,13 @@ function AutoBackupSection() {
     };
   }, []);
 
-  const save = async (next: boolean) => {
+  /** 读回整份策略再合并，只替换 autoBackup 一项（开关与上限同属它）。 */
+  const save = async (next: { enabled: boolean; maxSnapshots: number }) => {
     setSaving(true);
     setMessage(null);
-    const previous = enabled;
-    setEnabled(next);
+    const previous = { enabled, maxSnapshots };
+    setEnabled(next.enabled);
+    setMaxSnapshots(next.maxSnapshots);
     try {
       const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
         "/api/permissions/tier",
@@ -465,12 +467,19 @@ function AutoBackupSection() {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          policy: { ...(view.policy ?? {}), autoBackup: { enabled: next } },
+          policy: {
+            ...(view.policy ?? {}),
+            autoBackup: {
+              enabled: next.enabled,
+              maxSnapshots: Math.max(0, Math.round(next.maxSnapshots)),
+            },
+          },
         }),
       });
       setMessage("已保存");
     } catch (error) {
-      setEnabled(previous);
+      setEnabled(previous.enabled);
+      setMaxSnapshots(previous.maxSnapshots);
       setMessage(readableError(error));
     } finally {
       setSaving(false);
@@ -480,19 +489,393 @@ function AutoBackupSection() {
   return (
     <SettingsGroupCard>
       <SettingsRow
-        label="轮次前自动备份"
-        description="改动文件前留快照"
+        label="自动备份"
+        description="每轮改动前留快照"
         control={
           <input
             type="checkbox"
-            aria-label="轮次前自动备份"
+            aria-label="自动备份"
             checked={enabled}
             disabled={saving}
-            onChange={(event) => void save(event.target.checked)}
+            onChange={(event) =>
+              void save({ enabled: event.target.checked, maxSnapshots })
+            }
             className="size-4"
           />
         }
       />
+      <SettingsRow
+        label="备份保留上限"
+        description="超出删最旧 0 为不限"
+        control={
+          <Input
+            aria-label="备份保留上限"
+            type="number"
+            min={0}
+            max={10000}
+            disabled={!enabled || saving}
+            value={maxSnapshots}
+            onChange={(event) =>
+              setMaxSnapshots(Math.max(0, Number(event.target.value) || 0))
+            }
+            onBlur={() => void save({ enabled, maxSnapshots })}
+            className="w-24"
+          />
+        }
+      />
+      {message ? (
+        <div className="px-4 pb-3">
+          <span role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </span>
+        </div>
+      ) : null}
+    </SettingsGroupCard>
+  );
+}
+
+/** 删除模式的四个档（与 `permissionPolicySchema.deleteMode` 一一对应）。 */
+const DELETE_MODES: ReadonlyArray<{
+  value: "ask" | "auto-approve" | "trash" | "permanent";
+  label: string;
+  hint: string;
+}> = [
+  { value: "ask", label: "删除前询问", hint: "每次删除都问我" },
+  { value: "auto-approve", label: "自动审批", hint: "符合规则就自动批准" },
+  { value: "trash", label: "先移到回收站", hint: "删前移到回收站可找回" },
+  { value: "permanent", label: "完全删除", hint: "不进回收站直接删" },
+];
+
+/**
+ * 删除模式 + 批量删除审批阈值。
+ *
+ * 为什么合成一行下拉而不是两个开关：四种模式本来就互斥，用两个布尔量表达
+ * （是否保护 + 是否进回收站）会出现「不开保护却要求进回收站」这种没有意义的组合。
+ */
+function DeleteModeSection() {
+  const [mode, setMode] = useState<
+    "ask" | "auto-approve" | "trash" | "permanent"
+  >("ask");
+  const [batchEnabled, setBatchEnabled] = useState(true);
+  const [batchThreshold, setBatchThreshold] = useState(50);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<{
+      policy?: {
+        deleteMode?: "ask" | "auto-approve" | "trash" | "permanent";
+        deleteProtection?: { enabled?: boolean; batchThreshold?: number };
+      };
+    }>("/api/permissions/tier")
+      .then((view) => {
+        if (cancelled) return;
+        setMode(view.policy?.deleteMode ?? "ask");
+        setBatchEnabled(view.policy?.deleteProtection?.enabled !== false);
+        setBatchThreshold(view.policy?.deleteProtection?.batchThreshold ?? 50);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async (next: {
+    deleteMode: typeof mode;
+    batchEnabled: boolean;
+    batchThreshold: number;
+  }) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = { mode, batchEnabled, batchThreshold };
+    setMode(next.deleteMode);
+    setBatchEnabled(next.batchEnabled);
+    setBatchThreshold(next.batchThreshold);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: {
+            ...(view.policy ?? {}),
+            deleteMode: next.deleteMode,
+            deleteProtection: {
+              enabled: next.batchEnabled,
+              batchThreshold: Math.max(1, Math.round(next.batchThreshold)),
+            },
+          },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setMode(previous.mode);
+      setBatchEnabled(previous.batchEnabled);
+      setBatchThreshold(previous.batchThreshold);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroupCard>
+      <SettingsRow
+        label="删除模式"
+        description={DELETE_MODES.find((entry) => entry.value === mode)?.hint}
+        control={
+          <Select
+            value={mode}
+            onValueChange={(next) =>
+              void save({
+                deleteMode: next as typeof mode,
+                batchEnabled,
+                batchThreshold,
+              })
+            }
+            disabled={saving}
+          >
+            <SelectTrigger size="lg" aria-label="删除模式" className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DELETE_MODES.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
+      <SettingsRow
+        label="批量删除审批"
+        description="一次删到这么多先问我"
+        control={
+          <span className="flex items-center gap-2">
+            <Input
+              aria-label="批量删除审批阈值"
+              type="number"
+              min={1}
+              max={10000}
+              disabled={!batchEnabled || saving}
+              value={batchThreshold}
+              onChange={(event) =>
+                setBatchThreshold(Math.max(1, Number(event.target.value) || 1))
+              }
+              onBlur={() =>
+                void save({ deleteMode: mode, batchEnabled, batchThreshold })
+              }
+              className="w-24"
+            />
+            <input
+              type="checkbox"
+              aria-label="批量删除审批"
+              checked={batchEnabled}
+              disabled={saving}
+              onChange={(event) =>
+                void save({
+                  deleteMode: mode,
+                  batchEnabled: event.target.checked,
+                  batchThreshold,
+                })
+              }
+              className="size-4"
+            />
+          </span>
+        }
+      />
+      {message ? (
+        <div className="px-4 pb-3">
+          <span role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </span>
+        </div>
+      ) : null}
+    </SettingsGroupCard>
+  );
+}
+
+/** 命令执行前审查的三档（与 `permissionPolicySchema.commandReview` 对应）。 */
+const COMMAND_REVIEW_MODES: ReadonlyArray<{
+  value: "auto" | "strict" | "off";
+  label: string;
+  hint: string;
+}> = [
+  { value: "auto", label: "自动", hint: "只审查高危命令" },
+  { value: "strict", label: "严格", hint: "每条命令都审查" },
+  { value: "off", label: "关闭", hint: "不审查" },
+];
+
+/**
+ * 命令执行前审查：命令跑起来之前先用审批模型过一遍。
+ *
+ * - 自动：只对命中**高危字典**的命令审查（字典可改），普通命令不额外花模型调用；
+ * - 严格：每条命令都审，含只读命令；
+ * - 关闭：只走权限模式与规则表。
+ */
+function CommandReviewSection() {
+  const [mode, setMode] = useState<"auto" | "strict" | "off">("auto");
+  const [patterns, setPatterns] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<{
+      policy?: {
+        commandReview?: "auto" | "strict" | "off";
+        commandReviewPatterns?: string[];
+      };
+    }>("/api/permissions/tier")
+      .then((view) => {
+        if (cancelled) return;
+        setMode(view.policy?.commandReview ?? "auto");
+        setPatterns(view.policy?.commandReviewPatterns ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async (next: { mode: typeof mode; patterns: string[] }) => {
+    setSaving(true);
+    setMessage(null);
+    const previous = { mode, patterns };
+    setMode(next.mode);
+    setPatterns(next.patterns);
+    try {
+      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
+        "/api/permissions/tier",
+      );
+      await surfaceJson("/api/permissions/tier", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          policy: {
+            ...(view.policy ?? {}),
+            commandReview: next.mode,
+            // 空前缀会命中一切，提交前剔除。
+            commandReviewPatterns: next.patterns
+              .map((pattern) => pattern.trim())
+              .filter((pattern) => pattern.length > 0),
+          },
+        }),
+      });
+      setMessage("已保存");
+    } catch (error) {
+      setMode(previous.mode);
+      setPatterns(previous.patterns);
+      setMessage(readableError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroupCard>
+      <SettingsRow
+        label="命令执行前审查"
+        description={
+          COMMAND_REVIEW_MODES.find((entry) => entry.value === mode)?.hint
+        }
+        control={
+          <Select
+            value={mode}
+            onValueChange={(next) =>
+              void save({ mode: next as typeof mode, patterns })
+            }
+            disabled={saving}
+          >
+            <SelectTrigger
+              size="lg"
+              aria-label="命令执行前审查"
+              className="w-56"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMMAND_REVIEW_MODES.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
+      {/* 严格档不看字典，此时列出条目只会让人以为它们也生效。 */}
+      {mode === "strict" ? null : (
+        <div className="space-y-2 border-t border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-ui-base font-medium text-foreground">
+              高危命令
+            </span>
+            <span className="text-ui-sm text-foreground-subtle">
+              {mode === "off" ? "关闭时不审查" : "仅审查这些前缀"}
+            </span>
+          </div>
+          {patterns.map((pattern, index) => (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
+              key={index}
+              className="flex items-center gap-2"
+            >
+              <Input
+                aria-label="高危命令前缀"
+                disabled={mode === "off" || saving}
+                value={pattern}
+                onChange={(event) =>
+                  setPatterns((current) =>
+                    current.map((item, i) =>
+                      i === index ? event.target.value : item,
+                    ),
+                  )
+                }
+                className="min-w-0 flex-1 font-mono text-ui-sm"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="删除这条高危命令"
+                disabled={saving}
+                onClick={() =>
+                  setPatterns((current) =>
+                    current.filter((_, i) => i !== index),
+                  )
+                }
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={mode === "off" || saving}
+              onClick={() => setPatterns((current) => [...current, ""])}
+            >
+              添加高危命令
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => void save({ mode, patterns })}
+            >
+              保存高危命令
+            </Button>
+          </div>
+        </div>
+      )}
       {message ? (
         <div className="px-4 pb-3">
           <span role="status" className="text-ui-sm text-foreground-subtle">
@@ -720,12 +1103,12 @@ function SandboxSecuritySection() {
   return (
     <SettingsGroupCard>
       <SettingsRow
-        label="执行隔离"
+        label="沙箱隔离"
         description="命令在进程沙箱内运行"
         control={
           <input
             type="checkbox"
-            aria-label="沙箱安全"
+            aria-label="沙箱隔离"
             checked={sandboxEnabled}
             disabled={saving}
             onChange={(event) => void saveSandbox(event.target.checked)}
@@ -907,6 +1290,11 @@ function PermissionPolicySection() {
   return (
     <SettingsGroupCard>
       <div className="space-y-5 p-4">
+        {/* 整张卡片的全局前提：四组规则是「例外表」，没命中就回落到权限模式。
+            不写这一句时用户会以为规则表决定一切、模式是另一套机制。 */}
+        <p className="text-ui-sm text-foreground-subtle">
+          命中就按规则办 没命中按权限模式办
+        </p>
         <RuleGroup
           title="工具规则"
           hint="按工具名或前缀"
@@ -985,22 +1373,15 @@ const APPROVAL_SCOPES = [
 ] as const;
 
 /**
- * 数据安全：删除保护与敏感保护，外加两项如实状态（安全网关 / 传输加密）。
+ * 安全防护：敏感保护（凭据不外发）+ 两项如实状态（安全网关 / 传输加密）。
  *
- * 单独一张卡片：这几项管的是「数据会不会丢、凭据会不会被发出去」，与工具 / 路径 /
- * 命令 / 域名那四组规则不是一个判断维度；混在规则卡片里，用户既找不到它们，
- * 也看不出它们与规则无关。
+ * 删除相关项已移到「基础配置 · 删除模式」——它们属于「删除要不要问、删了能不能找回」，
+ * 与「凭据会不会被发出去」不是同一件事，混在一张卡里两次被判为看不懂。
  *
- * 开关与阈值立即提交（与本页其它开关一致：界面上是开的，服务端就必须已经存了），
- * 敏感规则是文本编辑，由「保存敏感规则」按钮提交——逐字提交会把半截正则写进策略。
- * 提交前读回整份策略再合并，只替换本卡片负责的两个字段。
+ * 开关与规则文本都由「保存」按钮提交：规则是逐字编辑，逐字提交会把半截正则写进去。
+ * 提交前读回整份策略再合并，只替换本卡片负责的字段。
  */
 function DataSafetySection() {
-  const [deleteProtection, setDeleteProtection] = useState({
-    enabled: false,
-    batchThreshold: 50,
-    trashFirst: false,
-  });
   const [sensitiveProtection, setSensitiveProtection] = useState({
     enabled: true,
     patterns: [] as string[],
@@ -1012,21 +1393,11 @@ function DataSafetySection() {
     let cancelled = false;
     surfaceJson<{
       policy?: {
-        deleteProtection?: {
-          enabled?: boolean;
-          batchThreshold?: number;
-          trashFirst?: boolean;
-        };
         sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
       };
     }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
-        setDeleteProtection({
-          enabled: view.policy?.deleteProtection?.enabled === true,
-          batchThreshold: view.policy?.deleteProtection?.batchThreshold ?? 50,
-          trashFirst: view.policy?.deleteProtection?.trashFirst === true,
-        });
         setSensitiveProtection({
           enabled: view.policy?.sensitiveProtection?.enabled !== false,
           patterns: view.policy?.sensitiveProtection?.patterns ?? [],
@@ -1038,25 +1409,9 @@ function DataSafetySection() {
     };
   }, []);
 
-  /**
-   * 提交：读回整份策略再合并，只替换本卡片负责的两个字段。
-   *
-   * 开关立即提交（与本页其它开关一致，避免出现「看着是开的、实际没存」的假状态）；
-   * 敏感规则是文本编辑，逐字提交会把半截正则写进策略，所以由「保存敏感规则」按钮触发。
-   */
-  const save = async (next: {
-    deleteProtection: {
-      enabled: boolean;
-      batchThreshold: number;
-      trashFirst: boolean;
-    };
-    sensitiveProtection: { enabled: boolean; patterns: string[] };
-  }) => {
+  const save = async () => {
     setSaving(true);
     setMessage(null);
-    const previous = { deleteProtection, sensitiveProtection };
-    setDeleteProtection(next.deleteProtection);
-    setSensitiveProtection(next.sensitiveProtection);
     try {
       const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
         "/api/permissions/tier",
@@ -1067,17 +1422,9 @@ function DataSafetySection() {
         body: JSON.stringify({
           policy: {
             ...(view.policy ?? {}),
-            deleteProtection: {
-              enabled: next.deleteProtection.enabled,
-              batchThreshold: Math.max(
-                1,
-                Math.round(next.deleteProtection.batchThreshold),
-              ),
-              trashFirst: next.deleteProtection.trashFirst,
-            },
             sensitiveProtection: {
-              enabled: next.sensitiveProtection.enabled,
-              patterns: next.sensitiveProtection.patterns
+              enabled: sensitiveProtection.enabled,
+              patterns: sensitiveProtection.patterns
                 .map((pattern) => pattern.trim())
                 .filter((pattern) => pattern.length > 0),
             },
@@ -1086,8 +1433,6 @@ function DataSafetySection() {
       });
       setMessage("已保存");
     } catch (error) {
-      setDeleteProtection(previous.deleteProtection);
-      setSensitiveProtection(previous.sensitiveProtection);
       setMessage(readableError(error));
     } finally {
       setSaving(false);
@@ -1096,74 +1441,6 @@ function DataSafetySection() {
 
   return (
     <SettingsGroupCard>
-      <SettingsRow
-        label="删除保护"
-        description="删除前先问我"
-        control={
-          <input
-            type="checkbox"
-            aria-label="删除保护"
-            checked={deleteProtection.enabled}
-            disabled={saving}
-            onChange={(event) =>
-              void save({
-                deleteProtection: {
-                  ...deleteProtection,
-                  enabled: event.target.checked,
-                },
-                sensitiveProtection,
-              })
-            }
-            className="size-4"
-          />
-        }
-      />
-      <SettingsRow
-        label="批量删除审批"
-        description="一次删到这么多先问我"
-        control={
-          <Input
-            aria-label="批量删除审批阈值"
-            type="number"
-            min={1}
-            max={10000}
-            disabled={!deleteProtection.enabled || saving}
-            value={deleteProtection.batchThreshold}
-            onChange={(event) =>
-              setDeleteProtection((current) => ({
-                ...current,
-                batchThreshold: Number(event.target.value) || 1,
-              }))
-            }
-            // 数字输入在每次按键后提交会把「5」当最终值存下去（想填 50 的人先存了个 5）；
-            // 离开输入框时才提交，改动内容一次落库。
-            onBlur={() => void save({ deleteProtection, sensitiveProtection })}
-            className="w-24"
-          />
-        }
-      />
-      <SettingsRow
-        label="删除前先移到回收站"
-        description="文件工具删除时先移入回收站"
-        control={
-          <input
-            type="checkbox"
-            aria-label="删除前先移到回收站"
-            checked={deleteProtection.trashFirst}
-            disabled={!deleteProtection.enabled || saving}
-            onChange={(event) =>
-              void save({
-                deleteProtection: {
-                  ...deleteProtection,
-                  trashFirst: event.target.checked,
-                },
-                sensitiveProtection,
-              })
-            }
-            className="size-4"
-          />
-        }
-      />
       <SettingsRow
         label="敏感保护"
         description="参数里出现凭据格式就拦下"
@@ -1174,13 +1451,10 @@ function DataSafetySection() {
             checked={sensitiveProtection.enabled}
             disabled={saving}
             onChange={(event) =>
-              void save({
-                deleteProtection,
-                sensitiveProtection: {
-                  ...sensitiveProtection,
-                  enabled: event.target.checked,
-                },
-              })
+              setSensitiveProtection((current) => ({
+                ...current,
+                enabled: event.target.checked,
+              }))
             }
             className="size-4"
           />
@@ -1245,7 +1519,7 @@ function DataSafetySection() {
             variant="outline"
             size="sm"
             disabled={saving}
-            onClick={() => void save({ deleteProtection, sensitiveProtection })}
+            onClick={() => void save()}
           >
             保存敏感规则
           </Button>

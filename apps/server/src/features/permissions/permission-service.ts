@@ -445,34 +445,56 @@ export function createPermissionService(
    * 服务端拿不到那些文件句柄，也无法在命令执行后恢复。如实拦下 + 给改写建议，
    * 用户能看见到底发生了什么，也不会以为「已经进了回收站」。
    */
+  /**
+   * 删除模式判定（ask / auto-approve / trash / permanent）。
+   *
+   * 四种模式的差别只有「要不要先过问」与「删掉后能不能找回」：
+   * - `auto-approve`：用户已经明确表达「不问」，直接放过去（批量阈值也不拦）；
+   * - `trash`：删除命令**没有**可移动的文件句柄，喊「已进回收站」是骗人——
+   *   如实拦下并给出 mv 改写建议；文件工具（`delete_path`）走真实移入回收站，
+   *   那条路径不经过这里；
+   * - `ask` / `permanent`：单目标也要过问（`permanent` 只是不留回收站，
+   *   不代表可以无声删掉）；达到批量阈值时理由里写明数量。
+   */
   const deleteProtectionFor = (
     args: Record<string, unknown> | undefined,
     policy: PermissionPolicy,
   ): PermissionDecision | undefined => {
-    if (!policy.deleteProtection.enabled) return undefined;
+    const mode = policy.deleteMode ?? "ask";
+    if (mode === "auto-approve") return undefined;
     const command = commandArgument(args);
     if (!command) return undefined;
     const match = detectDeleteCommand(command);
     if (!match) return undefined;
-    if (policy.deleteProtection.trashFirst) {
+    if (mode === "trash") {
       return {
         decision: "deny",
         blocked: true,
         source: "delete-protection",
-        reason: `删除命令 ${match.command} 被拦下：已开启「删除前先移到回收站」。请改用 mv 把目标移到项目里的备份目录，确认后再删。`,
+        reason: `删除命令 ${match.command} 被拦下：删除模式是「先移到回收站」。请改用 mv 把目标移到项目里的备份目录，确认后再删。`,
       };
     }
-    if (match.targets >= policy.deleteProtection.batchThreshold) {
+    if (
+      policy.deleteProtection.enabled &&
+      match.targets >= policy.deleteProtection.batchThreshold
+    ) {
       return {
         decision: "deny",
         source: "delete-protection",
         reason: `这次 ${match.command} 要删 ${match.targets} 个目标，达到批量删除阈值 ${policy.deleteProtection.batchThreshold}，需你确认`,
       };
     }
+    if (mode === "permanent") {
+      return {
+        decision: "deny",
+        source: "delete-protection",
+        reason: `删除模式是「完全删除」（不进回收站），${match.command} 删 ${match.targets} 个目标需你确认`,
+      };
+    }
     return {
       decision: "deny",
       source: "delete-protection",
-      reason: `删除保护已开启，${match.command} 删 ${match.targets} 个目标需你确认`,
+      reason: `删除模式是「删除前询问」，${match.command} 删 ${match.targets} 个目标需你确认`,
     };
   };
 

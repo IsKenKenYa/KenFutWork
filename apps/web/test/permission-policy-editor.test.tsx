@@ -33,7 +33,7 @@ if (!Element.prototype.scrollIntoView) {
  */
 
 type RuleAction = "allow" | "ask" | "deny";
-/** 服务端策略里界面会读写的字段（规则卡片 + 数据安全卡片）。 */
+/** 服务端策略里界面会读写的字段（规则卡片 + 基础配置 + 安全防护）。 */
 type PolicyDraft = {
   rules: Array<{ pattern: string; action: RuleAction }>;
   disabledTools: string[];
@@ -44,11 +44,10 @@ type PolicyDraft = {
   }>;
   commandRules: Array<{ prefix: string; action: RuleAction }>;
   domainRules: Array<{ domain: string; action: RuleAction }>;
-  deleteProtection: {
-    enabled: boolean;
-    batchThreshold: number;
-    trashFirst: boolean;
-  };
+  deleteMode: "ask" | "auto-approve" | "trash" | "permanent";
+  deleteProtection: { enabled: boolean; batchThreshold: number };
+  commandReview: "auto" | "strict" | "off";
+  commandReviewPatterns: string[];
   sensitiveProtection: { enabled: boolean; patterns: string[] };
 };
 /** 服务端读回的完整策略：比规则字段多内置运行时、沙箱总开关与 AI 安全防护。 */
@@ -77,11 +76,10 @@ type PolicySettings = {
  * 就能同时证明「没把别人刚改的字段冲掉」。
  */
 const DEFAULT_DATA_SAFETY = {
-  deleteProtection: {
-    enabled: false,
-    batchThreshold: 50,
-    trashFirst: false,
-  },
+  deleteMode: "ask" as const,
+  deleteProtection: { enabled: true, batchThreshold: 50 },
+  commandReview: "auto" as const,
+  commandReviewPatterns: ["rm "],
   sensitiveProtection: { enabled: true, patterns: [] },
 };
 
@@ -295,7 +293,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
   });
 });
 
-it("数据安全：删除保护与敏感保护读得回、存得出", async () => {
+it("安全防护：敏感保护读得回、存得出，且不动其它字段", async () => {
   const user = userEvent.setup();
   const { tierPuts } = openPermissionSection({
     ...EMPTY_SETTINGS,
@@ -305,24 +303,18 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      deleteProtection: {
-        enabled: true,
-        batchThreshold: 20,
-        trashFirst: false,
-      },
+      deleteMode: "ask",
+      deleteProtection: { enabled: true, batchThreshold: 20 },
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
+      commandReview: "auto",
+      commandReviewPatterns: ["rm "],
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
       aiSafety: { injectionGuard: false, approvalReview: false },
     },
   });
 
-  const deleteToggle = (await screen.findByLabelText(
-    "删除保护",
-  )) as HTMLInputElement;
-  expect(deleteToggle.checked).toBe(true);
-  expect(screen.getByLabelText("批量删除审批阈值")).toHaveValue(20);
-  expect(screen.getByLabelText("自定义敏感规则")).toHaveValue(
+  expect(await screen.findByLabelText("自定义敏感规则")).toHaveValue(
     "内部工号\\s*\\d{6}",
   );
 
@@ -336,7 +328,7 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
   await user.click(screen.getByRole("button", { name: "保存敏感规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
-  // 数据安全卡片读回整份策略再合并：四张规则表与沙箱/AI 设置原样带回。
+  // 安全防护卡片读回整份策略再合并：删除模式、四张规则表与沙箱/AI 设置原样带回。
   expect(tierPuts[0]).toEqual({
     policy: {
       rules: [],
@@ -344,11 +336,10 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
       pathRules: [],
       commandRules: [],
       domainRules: [],
-      deleteProtection: {
-        enabled: true,
-        batchThreshold: 20,
-        trashFirst: false,
-      },
+      deleteMode: "ask",
+      deleteProtection: { enabled: true, batchThreshold: 20 },
+      commandReview: "auto",
+      commandReviewPatterns: ["rm "],
       sensitiveProtection: {
         enabled: true,
         patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],
@@ -360,43 +351,110 @@ it("数据安全：删除保护与敏感保护读得回、存得出", async () =
   });
 });
 
-it("数据安全：开关点了立刻落库，不留「看着是开的、实际没存」的状态", async () => {
+it("删除模式：四选一写回 deleteMode，批量阈值同卡片提交", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      deleteMode: "ask",
+      deleteProtection: { enabled: true, batchThreshold: 50 },
+      sensitiveProtection: { enabled: true, patterns: [] },
+      commandReview: "auto",
+      commandReviewPatterns: ["rm "],
+      bundledRuntimes: { enabled: true },
+      sandbox: { enabled: true },
+      aiSafety: { injectionGuard: false, approvalReview: false },
+    },
+  });
+
+  const trigger = await screen.findByLabelText("删除模式");
+  expect(trigger.textContent).toContain("删除前询问");
+
+  // Base UI 的 Select 在 jsdom 下走键盘交互（与「改动作档」那条同一手法）。
+  act(() => trigger.focus());
+  await userEvent.keyboard("[Space]");
+  await user.click(await screen.findByRole("option", { name: "先移到回收站" }));
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  const body = tierPuts[0] as {
+    policy: { deleteMode: string; deleteProtection: unknown };
+  };
+  expect(body.policy.deleteMode).toBe("trash");
+  expect(body.policy.deleteProtection).toEqual({
+    enabled: true,
+    batchThreshold: 50,
+  });
+});
+
+it("命令执行前审查：三档写回，严格档不展示高危字典", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      deleteMode: "ask",
+      deleteProtection: { enabled: true, batchThreshold: 50 },
+      sensitiveProtection: { enabled: true, patterns: [] },
+      commandReview: "auto",
+      commandReviewPatterns: ["rm ", "sudo "],
+      bundledRuntimes: { enabled: true },
+      sandbox: { enabled: true },
+      aiSafety: { injectionGuard: false, approvalReview: false },
+    },
+  });
+
+  // 自动档展示字典（只有它按前缀筛）
+  expect(await screen.findAllByLabelText("高危命令前缀")).toHaveLength(2);
+
+  const trigger = await screen.findByLabelText("命令执行前审查");
+  act(() => trigger.focus());
+  await userEvent.keyboard("[Space]");
+  await user.click(await screen.findByRole("option", { name: "严格" }));
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  const body = tierPuts[0] as { policy: { commandReview: string } };
+  expect(body.policy.commandReview).toBe("strict");
+  // 严格档不看字典：条目不渲染（摆了会让人以为它们也生效）
+  await waitFor(() =>
+    expect(screen.queryAllByLabelText("高危命令前缀")).toHaveLength(0),
+  );
+});
+
+it("批量删除审批：关掉开关立刻落库，阈值离开输入框才提交", async () => {
   const user = userEvent.setup();
   const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
-  /** 第 n 次提交带上去的删除保护（其余字段不在这里判）。 */
-  const submittedDeleteProtection = (index: number) =>
+  /** 第 n 次提交带上去的批量删除审批（其余字段不在这里判）。 */
+  const submitted = (index: number) =>
     (tierPuts[index] as { policy: { deleteProtection: unknown } }).policy
       .deleteProtection;
 
-  // 删除保护关着时阈值与回收站开关不可用，先打开它。
-  await user.click(await screen.findByLabelText("删除保护"));
+  // 关掉批量审批：开关自身立即提交，阈值同时置灰。
+  await user.click(await screen.findByLabelText("批量删除审批"));
   await waitFor(() => expect(tierPuts).toHaveLength(1));
-  expect(submittedDeleteProtection(0)).toEqual({
-    enabled: true,
-    batchThreshold: 50,
-    trashFirst: false,
-  });
+  expect(submitted(0)).toEqual({ enabled: false, batchThreshold: 50 });
+  expect(screen.getByLabelText("批量删除审批阈值")).toBeDisabled();
 
-  // 回收站开关同样立即提交，且带上刚打开的删除保护。
-  await user.click(screen.getByLabelText("删除前先移到回收站"));
+  // 再打开：阈值恢复可编辑。
+  await user.click(screen.getByLabelText("批量删除审批"));
   await waitFor(() => expect(tierPuts).toHaveLength(2));
-  expect(submittedDeleteProtection(1)).toEqual({
-    enabled: true,
-    batchThreshold: 50,
-    trashFirst: true,
-  });
+  expect(submitted(1)).toEqual({ enabled: true, batchThreshold: 50 });
 
-  // 阈值离开输入框才提交：填到一半的「5」不会被当成最终值。
+  // 阈值离开输入框才提交：填到一半的「8」不会被当成最终值。
   const threshold = screen.getByLabelText("批量删除审批阈值");
   fireEvent.change(threshold, { target: { value: "80" } });
   expect(tierPuts).toHaveLength(2);
   fireEvent.blur(threshold);
   await waitFor(() => expect(tierPuts).toHaveLength(3));
-  expect(submittedDeleteProtection(2)).toEqual({
-    enabled: true,
-    batchThreshold: 80,
-    trashFirst: true,
-  });
+  expect(submitted(2)).toEqual({ enabled: true, batchThreshold: 80 });
 });
 
 it("沙箱安全：内置运行时开关读得回、单独保存时保留其它策略", async () => {

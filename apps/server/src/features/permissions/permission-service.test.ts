@@ -669,14 +669,12 @@ describe("审计中心：判定流水", () => {
   });
 });
 
-/** 数据安全：删除保护与敏感保护（参考 WorkBuddy 的「数据安全」）。 */
-describe("数据安全：删除保护", () => {
+/** 数据安全：删除模式（询问 / 自动审批 / 回收站 / 完全删除）。 */
+describe("数据安全：删除模式", () => {
   const withPolicy = (
-    deleteProtection: {
-      enabled: boolean;
-      batchThreshold?: number;
-      trashFirst?: boolean;
-    },
+    deleteMode: "ask" | "auto-approve" | "trash" | "permanent",
+    batchThreshold = 50,
+    batchEnabled = true,
     tier: "default" | "full-access" = "full-access",
   ) => {
     const svc = createPermissionService();
@@ -685,26 +683,31 @@ describe("数据安全：删除保护", () => {
       tier,
       policy: {
         ...EMPTY_PERMISSION_POLICY,
-        deleteProtection: {
-          enabled: deleteProtection.enabled,
-          batchThreshold: deleteProtection.batchThreshold ?? 50,
-          trashFirst: deleteProtection.trashFirst ?? false,
-        },
+        deleteMode,
+        deleteProtection: { enabled: batchEnabled, batchThreshold },
       },
     });
     return svc;
   };
 
-  it("关闭时不干预：完全访问档下删除直接放行", () => {
-    const svc = withPolicy({ enabled: false });
+  it("自动审批：删除命令直接放行，不再过问", () => {
+    const svc = withPolicy("auto-approve");
     expect(
       svc.evaluate({ toolName: "execute", args: { command: "rm -rf build" } })
         .decision,
     ).toBe("allow");
   });
 
-  it("开启后单目标删除要审批（完全访问档也拦），理由说明保护已开", () => {
-    const svc = withPolicy({ enabled: true });
+  it("自动审批下批量阈值也不拦：用户已明确表达「不问」", () => {
+    const svc = withPolicy("auto-approve", 2);
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm a b c" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("询问：单目标删除要审批（完全访问档也拦），理由点名删除模式", () => {
+    const svc = withPolicy("ask");
     const decision = svc.evaluate({
       toolName: "execute",
       args: { command: "rm build/out.log" },
@@ -713,11 +716,11 @@ describe("数据安全：删除保护", () => {
     expect(decision.source).toBe("delete-protection");
     // 不是硬拒绝：用户可以在审批里放行
     expect(decision.blocked).toBeUndefined();
-    expect(decision.reason).toMatch(/删除保护/);
+    expect(decision.reason).toMatch(/删除前询问/);
   });
 
   it("达到批量阈值时理由说明批量，与单目标区分开", () => {
-    const svc = withPolicy({ enabled: true, batchThreshold: 3 });
+    const svc = withPolicy("ask", 3);
     const decision = svc.evaluate({
       toolName: "execute",
       args: { command: "rm a.txt b.txt c.txt" },
@@ -726,8 +729,8 @@ describe("数据安全：删除保护", () => {
     expect(decision.reason).toMatch(/批量删除阈值 3/);
   });
 
-  it("trashFirst：删除命令硬拦并给出「先移到回收站」的改写建议", () => {
-    const svc = withPolicy({ enabled: true, trashFirst: true });
+  it("回收站：删除命令硬拦并给出「先移到回收站」的改写建议", () => {
+    const svc = withPolicy("trash");
     const decision = svc.evaluate({
       toolName: "execute",
       args: { command: "rm -rf build" },
@@ -739,12 +742,8 @@ describe("数据安全：删除保护", () => {
     expect(decision.reason).toMatch(/mv/);
   });
 
-  it("trashFirst 优先于批量阈值判定（两条同时开时按硬拦处理）", () => {
-    const svc = withPolicy({
-      enabled: true,
-      batchThreshold: 2,
-      trashFirst: true,
-    });
+  it("回收站优先于批量阈值判定（两条同时满足时按硬拦处理）", () => {
+    const svc = withPolicy("trash", 2);
     const decision = svc.evaluate({
       toolName: "execute",
       args: { command: "rm a b c" },
@@ -753,8 +752,18 @@ describe("数据安全：删除保护", () => {
     expect(decision.reason).toMatch(/移到回收站/);
   });
 
-  it("trashFirst 只影响删除命令；其它命令照常走档位", () => {
-    const svc = withPolicy({ enabled: true, trashFirst: true });
+  it("完全删除：仍要过问，理由说明不进回收站", () => {
+    const svc = withPolicy("permanent");
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm -rf dist" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.reason).toMatch(/完全删除/);
+  });
+
+  it("回收站模式只影响删除命令；其它命令照常走档位", () => {
+    const svc = withPolicy("trash");
     expect(
       svc.evaluate({ toolName: "execute", args: { command: "ls -la" } })
         .decision,
@@ -762,7 +771,7 @@ describe("数据安全：删除保护", () => {
   });
 
   it("识别常见删除命令；非删除命令不误拦", () => {
-    const svc = withPolicy({ enabled: true });
+    const svc = withPolicy("ask");
     for (const command of [
       "del old.txt",
       "rd /s build",
@@ -775,7 +784,7 @@ describe("数据安全：删除保护", () => {
       ).toBe("delete-protection");
     }
     for (const command of ["ls -la", "git status", "npm run build"]) {
-      // 未命中删除保护 → 落到档位判定（完全访问档 source=tier）
+      // 未命中删除模式 → 落到档位判定（完全访问档 source=tier）
       expect(
         svc.evaluate({ toolName: "execute", args: { command } }).source,
         command,

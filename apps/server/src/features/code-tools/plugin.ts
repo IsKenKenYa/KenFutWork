@@ -52,11 +52,10 @@ export function createCodeToolsPlugin(): PluginDefinition {
             image: false,
             pdf: false,
           },
-          // 删除保护（设置 → 权限 → 数据安全）：开启「先移到回收站」时，
-          // delete_path 把文件移到 `.kenfutwork-trash/<时间戳>/` 而不是直接删。
+          // 删除模式（设置 → 权限 → 基础配置）：`trash` 时 delete_path 把文件移到
+          // `.kenfutwork-trash/<时间戳>/` 而不是直接删；`permanent` 按系统删除。
           trashFirst:
-            ctx.tryGet("permissions")?.getSettings().policy.deleteProtection
-              .trashFirst === true,
+            ctx.tryGet("permissions")?.getSettings().policy.deleteMode === "trash",
         })
           .filter((tool) => !readonly || tool.access === "read")
           .map((tool) => ({ ...tool, scope: "shared" as const }));

@@ -212,6 +212,39 @@ export type PermissionAuditEntry = z.infer<typeof permissionAuditEntrySchema>;
 export const PERMISSION_AUDIT_LIMIT = 5000;
 
 /**
+ * 命令执行前审查的内置高危命令字典（用户可改）。
+ *
+ * 只收**真正危险**的前缀：破坏性删除、权限提升、外发数据、改系统配置、装包与改仓库。
+ * 普通读写命令、测试、构建不在里面——`commandReview = auto` 时它们不该触发模型调用。
+ */
+export const DEFAULT_COMMAND_REVIEW_PATTERNS: readonly string[] = [
+  "rm ",
+  "rmdir ",
+  "del ",
+  "format ",
+  "mkfs",
+  "dd ",
+  "shred ",
+  "sudo ",
+  "su ",
+  "chmod ",
+  "chown ",
+  "git push",
+  "git reset --hard",
+  "git clean -",
+  "npm publish",
+  "pip install",
+  "curl ",
+  "wget ",
+  "ssh ",
+  "scp ",
+  "Invoke-WebRequest",
+  "Remove-Item",
+  "shutdown",
+  "reboot",
+];
+
+/**
  * 工具策略：三态规则表 + 禁用清单 + 路径/命令/域名规则。
  *
  * 判定顺序（拒绝优先，全部在档位之前）：
@@ -227,34 +260,51 @@ export const permissionPolicySchema = z.object({
   commandRules: z.array(permissionCommandRuleSchema).max(500).default([]),
   domainRules: z.array(permissionDomainRuleSchema).max(500).default([]),
   /**
-   * 删除保护与批量删除审批（WorkBuddy「数据安全」）。
+   * 删除模式（用户口径的四选一，替代原来的「删除保护 + 回收站」两个开关）。
    *
-   * 删除有两条路径，`trashFirst` 对它们的作用不同：
-   * - **文件工具**（`delete_path`）：`trashFirst` 开启时把文件移到
-   *   `<授权根>/.kenfutwork-trash/<时间戳>/<相对路径>` 并回报位置；关闭时按系统删除。
-   *   这是真实的「先移入回收站」，文件仍可找回。
-   * - **`execute` 命令里的删除指令**：服务端拿不到那些文件句柄，也无法在命令执行后恢复，
-   *   所以 `trashFirst` 在这里是**拦下 + 给出 `mv` 改写建议**，不去猜测命令语义。
+   * 四种模式的差别只在「删除要不要先过问」与「删掉后还能不能找回」：
+   * - `ask`：每次删除前问我（默认档也会拦，完全访问档同样拦）；
+   * - `auto-approve`：按规则自动批准，不问；
+   * - `trash`：删除前先移到回收站（文件工具真实移动，命令走拦下 + mv 改写建议）；
+   * - `permanent`：完全删除，不留回收站。
    *
-   * 档位相关的判定：
-   * - `enabled` 关（缺省）：不额外干预，删除只走档位与命令规则；
-   * - `enabled` 开 + 单目标删除：仍需审批（默认档本来就拦，这里保证「完全访问」下也拦）；
-   * - 一批删除达到 `batchThreshold` 即需审批。
+   * `batchThreshold` 与模式正交：一次删到该数量时，除 `auto-approve` 外都要过问
+   * （`auto-approve` 已经明确表达了「不问」，再拦就是违背用户意图）。
    */
+  deleteMode: z
+    .enum(["ask", "auto-approve", "trash", "permanent"])
+    .default("ask"),
   deleteProtection: z
     .object({
-      enabled: z.boolean().default(false),
+      /** 批量删除审批开关（与模式正交；默认开，阈值见下）。 */
+      enabled: z.boolean().default(true),
       /** 一批删除的目标数达到该值即需审批（默认 50，与 WorkBuddy 一致）。 */
       batchThreshold: z.number().int().min(1).max(10_000).default(50),
-      /**
-       * 删除前先移入回收站目录。
-       *
-       * 文件工具走真实移动（可找回）；`execute` 的删除命令走「拦下 + 改写建议」
-       * （拿不到命令里的文件句柄，无法可靠移动）。
-       */
-      trashFirst: z.boolean().default(false),
     })
-    .default({ enabled: false, batchThreshold: 50, trashFirst: false }),
+    .default({ enabled: true, batchThreshold: 50 }),
+  /**
+   * 命令执行前审查（用户口径）：命令跑起来之前先过一遍危险命令判定。
+   *
+   * 三档语义：
+   * - `auto`（默认）：只把**内置高危字典**命中（以及工具属主明确声明为高风险）的命令
+   *   交给审批模型审一次，其余照常走权限档位——最省事、也最省模型调用；
+   * - `strict`：**每条**命令都交给审批模型审（含只读命令），可疑即拦；
+   * - `off`：不做命令级审查，命令只走权限档位与规则表。
+   *
+   * 与 `aiSafety.approvalReview` 是**两件事**：那一项管工具调用是否先过模型审，
+   * 这一项只管命令文本；两项同时关闭时审批一律走人工。
+   */
+  commandReview: z.enum(["auto", "strict", "off"]).default("auto"),
+  /**
+   * 命令执行前审查的高危命令前缀（用户可改）。
+   *
+   * `commandReview = auto` 时只对命中这些前缀的命令请求模型审查；`strict` 不看它。
+   * 空前缀会在保存时剔除（空前缀会命中一切）。
+   */
+  commandReviewPatterns: z
+    .array(z.string().min(1).max(500))
+    .max(500)
+    .default([...DEFAULT_COMMAND_REVIEW_PATTERNS]),
   /**
    * 敏感保护（WorkBuddy「数据安全」）：默认开。
    *
@@ -308,10 +358,16 @@ export const permissionPolicySchema = z.object({
    * 本仓库的对应实现是**检查点**（`features/checkpoints`：每个轮次边界在私有目录
    * 里做一次 git 快照，可在检查点时间线上回看与恢复）。这里只控制「轮次前」那道
    * 快照要不要做；关掉后不产生新的 pre 快照，已有快照不受影响。
+   *
+   * `maxSnapshots` 是**保留上限**：每个工作区只留最近这么多轮次的 pre 快照，
+   * 超出时按时间顺序删最旧的（回收区里的仍可在保留期内找回）。设 0 表示不设上限。
    */
   autoBackup: z
-    .object({ enabled: z.boolean().default(true) })
-    .default({ enabled: true }),
+    .object({
+      enabled: z.boolean().default(true),
+      maxSnapshots: z.number().int().min(0).max(10_000).default(50),
+    })
+    .default({ enabled: true, maxSnapshots: 50 }),
   /**
    * 沙箱安全总开关（WorkBuddy「沙箱安全」）。
    *
@@ -335,15 +391,17 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   pathRules: [],
   commandRules: [],
   domainRules: [],
+  deleteMode: "ask",
   deleteProtection: {
-    enabled: false,
+    enabled: true,
     batchThreshold: 50,
-    trashFirst: false,
   },
+  commandReview: "auto",
+  commandReviewPatterns: [...DEFAULT_COMMAND_REVIEW_PATTERNS],
   sensitiveProtection: { enabled: true, patterns: [] },
   bundledRuntimes: { enabled: true },
   aiSafety: { injectionGuard: false, approvalReview: false },
-  autoBackup: { enabled: true },
+  autoBackup: { enabled: true, maxSnapshots: 50 },
   sandbox: { enabled: true },
 };
 /**
