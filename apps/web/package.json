@@ -57,7 +57,7 @@
     "unified": "^11.0.5",
     "use-stick-to-bottom": "^1.1.6",
     "xlsx": "^0.18.5",
-    "zod": "^4.6.5",
+    "zod": "^4.6.7",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
