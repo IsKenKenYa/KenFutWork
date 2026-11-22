@@ -99,7 +99,7 @@ export function MemorySettingsViewer({
 
   if (catalogState === "loading" && workspaces.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-transparent px-4 py-8 text-center text-ui-base text-foreground-subtle">
+      <div className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-ui-base text-foreground-subtle">
         {intl.formatMessage({ id: "settings.memory.viewer.loading" })}
       </div>
     );
@@ -107,7 +107,7 @@ export function MemorySettingsViewer({
 
   if (!selectedWorkspace) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-transparent px-4 py-8 text-center text-ui-base text-foreground-subtle">
+      <div className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-ui-base text-foreground-subtle">
         {intl.formatMessage({ id: "settings.memory.viewer.empty" })}
       </div>
     );
@@ -258,7 +258,7 @@ export function MemorySettingsViewer({
             ))}
           </div>
           {previewState === "loading" ? (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
+            <div className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-ui-base text-foreground-subtle">
               {intl.formatMessage({ id: "settings.memory.viewer.fileLoading" })}
             </div>
           ) : previewError ? (
@@ -268,7 +268,7 @@ export function MemorySettingsViewer({
           ) : preview ? (
             <div
               data-testid={testId(TID_SETTINGS_MEMORY_PREVIEW, preview.fileName)}
-              className="overflow-hidden rounded-xl border border-border"
+              className="overflow-hidden rounded-xl border border-border bg-card"
             >
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
                 <h3 className="min-w-0 truncate text-ui-base font-medium text-foreground">

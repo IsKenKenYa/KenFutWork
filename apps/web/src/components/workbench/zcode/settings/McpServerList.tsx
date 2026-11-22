@@ -190,7 +190,7 @@ export function McpServerList({
 
   if (servers.length === 0) {
     return (
-      <div className="overflow-hidden rounded-xl border border-dashed border-border">
+      <div className="overflow-hidden rounded-xl border border-dashed border-border bg-card">
         <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
           <div className="space-y-1">
             <div className="text-ui-base font-medium text-foreground">{emptyTitle}</div>

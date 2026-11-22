@@ -151,7 +151,7 @@ export function CommandForm({
   );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border p-4">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="w-full min-w-0 space-y-1.5 md:w-48">
           <CommandFormFieldLabel>

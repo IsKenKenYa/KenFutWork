@@ -1137,7 +1137,7 @@ function SubagentForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-3 rounded-xl border border-border p-4"
+      className="space-y-3 rounded-xl border border-border bg-card p-4"
     >
       <div className="flex justify-end">
         <label className="flex min-w-0 flex-wrap items-center justify-end gap-2">

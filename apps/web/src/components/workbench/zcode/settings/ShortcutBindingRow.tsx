@@ -1,9 +1,9 @@
-import { Keyboard, Pencil, Trash2 } from "lucide-react";
 import type { ShortcutCommandEntry, ShortcutCommandId } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { Kbd, KbdGroup } from "@zui/components/ui/kbd.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { formatShortcutBindingLabelParts } from "@zui/shortcuts/label.js";
+import { Keyboard, Pencil, Trash2 } from "lucide-react";
 
 export interface RecordingState {
   commandId: ShortcutCommandId;
@@ -73,7 +73,8 @@ export function ShortcutBindingRow({
             tabIndex={-1}
             className="w-fit rounded-md bg-surface px-2 py-1 font-mono text-ui-sm outline-none"
           >
-            {recording?.preview ?? intl.formatMessage({ id: "settings.shortcuts.recording" })}
+            {recording?.preview ??
+              intl.formatMessage({ id: "settings.shortcuts.recording" })}
           </kbd>
         </span>
         {recording?.error ? (
@@ -125,7 +126,10 @@ export function ShortcutBindingRow({
         >
           <KbdGroup>
             {formatShortcutBindingLabelParts(binding).map((part, partIndex) => (
-              <Kbd key={`${part}-${partIndex}`} className={isOverridden ? "text-brand" : undefined}>
+              <Kbd
+                key={`${part}-${partIndex}`}
+                className={isOverridden ? "text-brand" : undefined}
+              >
                 {part}
               </Kbd>
             ))}
@@ -158,24 +162,29 @@ export function ShortcutBindingRow({
       </span>
       <span className="flex min-w-0 flex-col items-start gap-1.5">
         {bindings.map((binding, index) =>
-          isRecording && recording?.mode === "replace" && recording.bindingIndex === index
+          isRecording &&
+          recording?.mode === "replace" &&
+          recording.bindingIndex === index
             ? renderRecorder()
             : renderBinding(binding, index),
         )}
         {/* 未分配命令录第一条：bindings 为空时录制态占满键位单元格 */}
-        {isRecording && recording?.mode === "replace" && recording?.bindingIndex === null
+        {isRecording &&
+        recording?.mode === "replace" &&
+        recording?.bindingIndex === null
           ? renderRecorder()
           : null}
         {bindings.length === 0 && !isRecording ? (
           <button
             type="button"
-            disabled={menuChannelUnavailable}
             className="w-fit rounded-lg px-0 py-1 text-left focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-60"
             aria-label={intl.formatMessage(
               { id: "settings.shortcuts.rebindAria" },
               { command: commandLabel },
             )}
             data-testid={`settings-shortcut-bind-${entry.id}-unassigned`}
+            // 「未分配」必须始终可点：否则一旦清空就再也录不回来（用户反馈「编辑没用」）。
+            disabled={menuChannelUnavailable}
             onClick={() => onRecord(null)}
           >
             <Kbd>{intl.formatMessage({ id: "settings.shortcuts.notSet" })}</Kbd>

@@ -39,7 +39,7 @@ export function AgentsInstructionInline({
 }) {
   return (
     <div
-      className={`flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 ${className ?? ""}`}
+      className={`flex min-w-0 items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2.5 shadow-sm ${className ?? ""}`}
     >
       <FileDisplayIcon
         src={resolveFileDisplayDescriptor(filePath).fileIconSrc}

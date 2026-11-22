@@ -236,12 +236,13 @@ body {
   --color-context-breakdown-5: var(--color-sky-200);
   --color-context-breakdown-6: var(--color-sky-100);
   --color-context-breakdown-7: color-mix(in oklab, var(--color-sky-100) 72%, var(--color-white));
-  /*  热力图之前复用 brand 色，Zai 主题下 brand 是黑/白，无法保持 sky 语义。 */
-  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-500) 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-500) 18%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-500) 36%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-600) 58%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-700) 82%, var(--color-surface));
+  /*  热力图之前复用 brand 色，Zai 主题下 brand 是黑/白，无法保持 sky 语义。
+   *  混色基底用 card 而非 surface：热力图放在白卡里，空档位要与卡片同色（用户口径 2026-11-22）。 */
+  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-500) 0%, var(--color-card));
+  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-500) 18%, var(--color-card));
+  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-500) 36%, var(--color-card));
+  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-600) 58%, var(--color-card));
+  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-700) 82%, var(--color-card));
   --color-tab: var(--color-neutral-100);
   --color-tab-active: var(--color-white);
   --color-tab-border: var(--color-border);
@@ -414,11 +415,11 @@ body {
   --color-context-breakdown-5: color-mix(in oklab, var(--color-sky-200) 72%, var(--color-white));
   --color-context-breakdown-6: color-mix(in oklab, var(--color-sky-200) 60%, var(--color-white));
   --color-context-breakdown-7: color-mix(in oklab, var(--color-sky-200) 48%, var(--color-white));
-  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-400) 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-400) 24%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-400) 42%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-400) 62%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-300) 78%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-400) 0%, var(--color-card));
+  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-400) 24%, var(--color-card));
+  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-400) 42%, var(--color-card));
+  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-400) 62%, var(--color-card));
+  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-300) 78%, var(--color-card));
   --color-tab: var(--color-neutral-800);
   --color-tab-active: var(--color-neutral-950);
   --color-tab-border: var(--color-border);
@@ -564,11 +565,11 @@ body {
   --color-context-breakdown-5: #acd0ff;
   --color-context-breakdown-6: #c8ddff;
   --color-context-breakdown-7: #e0ecff;
-  --color-usage-heatmap-0: color-mix(in oklab, #0b7fff 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, #0b7fff 18%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, #0b7fff 36%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, #0b7fff 58%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, #0066dd 82%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(in oklab, #0b7fff 0%, var(--color-card));
+  --color-usage-heatmap-1: color-mix(in oklab, #0b7fff 18%, var(--color-card));
+  --color-usage-heatmap-2: color-mix(in oklab, #0b7fff 36%, var(--color-card));
+  --color-usage-heatmap-3: color-mix(in oklab, #0b7fff 58%, var(--color-card));
+  --color-usage-heatmap-4: color-mix(in oklab, #0066dd 82%, var(--color-card));
   --color-tab: #f0f0f0;
   --color-tab-active: #ffffff;
   --color-tab-border: var(--color-border);
@@ -709,11 +710,11 @@ body {
   --color-context-breakdown-5: #b9ddff;
   --color-context-breakdown-6: #d0e8ff;
   --color-context-breakdown-7: #e4f1ff;
-  --color-usage-heatmap-0: color-mix(in oklab, #4099ff 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, #4099ff 24%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, #4099ff 42%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, #4099ff 62%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, #80beff 78%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(in oklab, #4099ff 0%, var(--color-card));
+  --color-usage-heatmap-1: color-mix(in oklab, #4099ff 24%, var(--color-card));
+  --color-usage-heatmap-2: color-mix(in oklab, #4099ff 42%, var(--color-card));
+  --color-usage-heatmap-3: color-mix(in oklab, #4099ff 62%, var(--color-card));
+  --color-usage-heatmap-4: color-mix(in oklab, #80beff 78%, var(--color-card));
   --color-tab: #202020;
   --color-tab-active: #161616;
   --color-tab-border: var(--color-border);
