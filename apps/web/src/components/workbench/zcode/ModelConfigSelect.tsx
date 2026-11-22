@@ -23,7 +23,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { MenuGradientDivider } from "@zui/components/ui/menu-divider.js";
 import {
   Select,
   SelectContent,
@@ -162,18 +161,89 @@ function effortLevelLabel(value: string): string {
   return EFFORT_LEVEL_LABELS[normalized] ?? value;
 }
 
+/** 手柄直径（px）。设计稿里手柄略大于轨道，上下各露出一截——这是它的样子，保留。 */
+const EFFORT_KNOB = 36;
+
+/** 「关闭」一类的档位不参与配色渐变（设计稿里的 None 档：灰、无特效）。 */
+function isEffortPlainLevel(value: string): boolean {
+  return ["off", "none", "disable", "disabled"].includes(
+    value.trim().toLowerCase(),
+  );
+}
+
+/** 设计稿的档位配色：色相 160→228、饱和 82→100、亮度 45→64，绿→蓝。 */
+function effortLevelColor(index: number, count: number): string {
+  if (count <= 1) return hslToHex(160, 82, 45);
+  const t = index / (count - 1);
+  return hslToHex(160 + 68 * t, 82 + 18 * t, 45 + 19 * t);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return Math.round(
+      255 * (l / 100 - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)))),
+    );
+  };
+  return `#${f(0).toString(16).padStart(2, "0")}${f(8)
+    .toString(16)
+    .padStart(2, "0")}${f(4).toString(16).padStart(2, "0")}`;
+}
+
+/** 星星特效的落点（设计稿原样：大小、位置、错峰延迟）。 */
+const EFFORT_STARS: ReadonlyArray<{
+  left: string;
+  top: string;
+  size: number;
+  delay: number;
+}> = [
+  { left: "8%", top: "26%", size: 13, delay: 0 },
+  { left: "19%", top: "68%", size: 9, delay: 0.12 },
+  { left: "31%", top: "24%", size: 10, delay: 0.05 },
+  { left: "44%", top: "72%", size: 8, delay: 0.18 },
+  { left: "56%", top: "30%", size: 14, delay: 0.08 },
+  { left: "68%", top: "66%", size: 9, delay: 0.22 },
+  { left: "80%", top: "26%", size: 11, delay: 0.14 },
+  { left: "92%", top: "62%", size: 9, delay: 0.26 },
+];
+
+/** 滑块特效用的关键帧（组件级注入一次；WAAPI 不覆盖 infinite alternate 组合）。 */
+const EFFORT_KEYFRAMES = `
+@keyframes effort-glow {
+  0%, 100% { filter: brightness(1.03) saturate(1.02); }
+  50%      { filter: brightness(1.1) saturate(1.12); }
+}
+@keyframes effort-star-in {
+  0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
+  70%  { transform: translate(-50%,-50%) scale(1.35) rotate(8deg); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1) rotate(0deg); opacity: 1; }
+}
+@keyframes effort-star-twinkle {
+  from { opacity: .4; transform: translate(-50%,-50%) scale(.7) rotate(-25deg); }
+  to   { opacity: 1;  transform: translate(-50%,-50%) scale(1.2) rotate(25deg);  }
+}
+.effort-star { opacity: 0; }
+.effort-track-shine .effort-star {
+  animation:
+    effort-star-in .5s cubic-bezier(.34,1.56,.64,1) forwards,
+    effort-star-twinkle 1.4s ease-in-out infinite alternate;
+  animation-delay: var(--d, 0s), calc(var(--d, 0s) + .5s);
+}
+.effort-track-shine .effort-star:nth-child(even) {
+  animation-direction: normal, alternate-reverse;
+}
+`;
+
 /**
- * 思考强度滑块：档位吸附、拖动换档，与用户给定的设计稿同形。
+ * 思考强度滑块：按用户给定的设计稿实现（档位吸附 + 呼吸发光 + 双闪光扫过 +
+ * 最高档星星 + 手柄回弹），档位越高特效越强。
  *
  * 为什么是滑块而不是下拉：档位是**有序**的少量档（低→高），滑块让「现在偏哪一侧、
  * 还能往哪边推」一眼可见；下拉只给出当前值，要读完全部选项才知道位置。
  *
- * 交互要点：
- * - 拖动时按最近档位吸附（`setPointerCapture` 后 pointermove 持续更新），
- *   不是逐像素连续值——服务端只认离散档位；
- * - 键盘：`ArrowLeft`/`ArrowRight` 换档，`role="slider"` + `aria-valuenow`，
- *   读屏与自动化能读到当前档；
- * - 轨道用绿→蓝渐变填充到当前档位，档位圆点标记可落点。
+ * 几何口径：手柄圆心始终内缩手柄半径，落点圆点与手柄同位——推到两端时
+ * 手柄与圆点都不会伸出轨道（用户反馈「圆点溢出」）。
  */
 function EffortSlider({
   option,
@@ -200,17 +270,86 @@ function EffortSlider({
   // 档位标签**必须**查 `value`：上游把 `name` 原样填成 `"max"`/`"xhigh"`，
   // 用 name 会继续把原始值摆到界面上（用户口径：不露英文原始值）。
   const label = current ? effortLevelLabel(current.value) : "—";
+  const plain = current ? isEffortPlainLevel(current.value) : true;
+
+  // 各档位颜色：关闭档灰、其余按设计稿色相坡铺开；渐变stop落在手柄行程上。
+  const colored = levels.filter((level) => !isEffortPlainLevel(level.value));
+  const colorByValue = new Map<string, string>();
+  colored.forEach((level, index) => {
+    colorByValue.set(level.value, effortLevelColor(index, colored.length));
+  });
+  const stops = levels.map((level, index) => ({
+    value: level.value,
+    stop: last <= 0 ? 0 : index / last,
+    color: colorByValue.get(level.value) ?? null,
+  }));
+  const coloredStops = stops.filter((stop) => stop.color !== null);
+  const currentColor = colorByValue.get(current?.value ?? "") ?? null;
+  const isTop = currentIndex === last && last > 0 && !plain;
 
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const gradRef = useRef<HTMLDivElement | null>(null);
+  const shimmerFirstRef = useRef<HTMLDivElement | null>(null);
+  const shimmerSecondRef = useRef<HTMLDivElement | null>(null);
+  const knobRef = useRef<HTMLSpanElement | null>(null);
+  const knobBumpRef = useRef<Animation | null>(null);
+
+  // 闪光扫过（WAAPI）：速率随档位升高而加快，与设计稿同一手法。
+  useEffect(() => {
+    const flow = [
+      { transform: "translateX(-130%) skewX(-18deg)" },
+      { transform: "translateX(340%) skewX(-18deg)" },
+    ];
+    const first = shimmerFirstRef.current?.animate(flow, {
+      duration: 2400,
+      iterations: Infinity,
+      easing: "linear",
+    });
+    const second = shimmerSecondRef.current?.animate(flow, {
+      duration: 2400,
+      delay: -1200,
+      iterations: Infinity,
+      easing: "linear",
+    });
+    return () => {
+      first?.cancel();
+      second?.cancel();
+    };
+  }, []);
+
+  // 档位变化：特效强度与速率跟着档位走；手柄回弹一下（设计稿 bump）。
+  useEffect(() => {
+    const rate = 0.5 + 1.7 * ratio;
+    for (const animation of shimmerFirstRef.current?.getAnimations() ?? []) {
+      animation.playbackRate = rate;
+    }
+    for (const animation of shimmerSecondRef.current?.getAnimations() ?? []) {
+      animation.playbackRate = rate;
+    }
+    // 手柄回弹（设计稿 bump）：新一次回弹开始前取消上一次，避免叠帧。
+    if (knobRef.current) {
+      knobBumpRef.current?.cancel();
+      knobBumpRef.current = knobRef.current.animate(
+        [
+          { transform: "translate(-50%, -50%) scale(1)" },
+          { transform: "translate(-50%, -50%) scale(.85)" },
+          { transform: "translate(-50%, -50%) scale(1)" },
+        ],
+        { duration: 350, easing: "cubic-bezier(.34, 1.56, .64, 1)" },
+      );
+    }
+  }, [ratio]);
+
   const selectNearest = useCallback(
     (clientX: number) => {
       const element = trackRef.current;
       if (!element || levels.length === 0) return;
       const rect = element.getBoundingClientRect();
       if (rect.width <= 0) return;
+      const travel = rect.width - EFFORT_KNOB;
       const nextRatio = Math.min(
         1,
-        Math.max(0, (clientX - rect.left) / rect.width),
+        Math.max(0, (clientX - rect.left - EFFORT_KNOB / 2) / travel),
       );
       const nextIndex = Math.round(nextRatio * last);
       const next = levels[nextIndex];
@@ -230,12 +369,16 @@ function EffortSlider({
 
   return (
     <div className="mt-1 pb-1">
-      {/* 与两个菜单里其它分割线同一条渐隐线（用户口径：分割线统一）。 */}
-      <MenuGradientDivider />
-      <div className="px-2 pb-1 pt-2">
+      {/* 分割线与上下文容量面板同款：实线 border（用户口径 2026-11-22）。 */}
+      <style>{EFFORT_KEYFRAMES}</style>
+      <div className="h-px w-full bg-border" aria-hidden="true" />
+      <div className="px-2 pb-3 pt-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-ui-base text-foreground-subtle">思考强度</span>
-          <span className="text-ui-base tabular-nums text-foreground">
+          <span
+            className="text-ui-base font-semibold tabular-nums"
+            style={plain || !currentColor ? undefined : { color: currentColor }}
+          >
             {label}
           </span>
         </div>
@@ -250,7 +393,7 @@ function EffortSlider({
           aria-disabled={disabled}
           tabIndex={disabled ? -1 : 0}
           className={cn(
-            "relative mt-2 h-8 w-full cursor-pointer rounded-full bg-hover outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "relative mt-3 h-8 w-full cursor-pointer rounded-full bg-hover outline-none focus-visible:ring-2 focus-visible:ring-ring",
             disabled && "cursor-not-allowed opacity-50",
           )}
           onPointerDown={(event) => {
@@ -281,29 +424,96 @@ function EffortSlider({
             }
           }}
         >
-          {/* 已填充段：绿（低）→ 蓝（高），与用户给定的设计稿同一套色。
-            填充终点与手柄圆心对齐：手柄直径 24px，两端各内缩 12px，
-            手柄推到两端时不会再被菜单边缘裁掉（用户反馈「显示不全」）。 */}
+          {/* 渐变填充：按档位配色铺 stop，clip-path 裁到当前档位；整条做呼吸发光。 */}
+          <div
+            ref={gradRef}
+            aria-hidden="true"
+            className="absolute inset-0 rounded-full"
+            style={{
+              background:
+                coloredStops.length >= 2
+                  ? `linear-gradient(90deg, ${coloredStops
+                      .map(
+                        (stop) =>
+                          `${stop.color} calc(${EFFORT_KNOB / 2}px + ${stop.stop.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
+                      )
+                      .join(", ")})`
+                  : (coloredStops[0]?.color ?? "transparent"),
+              clipPath: `inset(0 calc((1 - ${ratio}) * (100% - ${EFFORT_KNOB}px)) 0 0 round 999px)`,
+              transition: "clip-path .3s cubic-bezier(.3, 1.2, .4, 1)",
+              animation: isTop
+                ? undefined
+                : "effort-glow 2.6s ease-in-out infinite",
+              filter: isTop ? "brightness(1.12) saturate(1.15)" : undefined,
+            }}
+          >
+            {/* 顶面高光（设计稿 rs-grad::after）。 */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 right-0 top-0 h-[52%] rounded-[999px_999px_40%_40%/999px_999px_70%_70%] bg-gradient-to-b from-white/30 to-transparent"
+            />
+            {/* 双闪光扫过：档位越高越亮、越快。 */}
+            <div
+              ref={shimmerFirstRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent"
+              style={{
+                opacity: plain ? 0 : Math.min(1, 0.06 + 0.165 * ratio),
+                transform: "translateX(-130%) skewX(-18deg)",
+              }}
+            />
+            <div
+              ref={shimmerSecondRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent"
+              style={{
+                opacity: plain ? 0 : Math.max(0, (ratio - 0.4) * 0.25),
+                transform: "translateX(-130%) skewX(-18deg)",
+              }}
+            />
+          </div>
+          {/* 最高档星星（设计稿 rs-stars）：只在顶档出现。 */}
           <div
             aria-hidden="true"
-            className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-[width] duration-300"
-            style={{ width: `calc(12px + ${ratio} * (100% - 24px))` }}
-          />
-          {levels.map((level, index) => {
-            const stop = last <= 0 ? 1 : index / last;
-            return (
+            className={cn(
+              "pointer-events-none absolute inset-0",
+              isTop && "effort-track-shine",
+            )}
+          >
+            {EFFORT_STARS.map((star, index) => (
               <span
-                key={level.value}
-                aria-hidden="true"
-                className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/85 shadow-sm"
-                style={{ left: `calc(12px + ${stop} * (100% - 24px))` }}
-              />
-            );
-          })}
+                // biome-ignore lint/suspicious/noArrayIndexKey: 星星是固定装饰表，位置稳定。
+                key={index}
+                className="effort-star absolute text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.9)]"
+                style={{
+                  left: star.left,
+                  top: star.top,
+                  fontSize: star.size,
+                  ["--d" as string]: `${star.delay}s`,
+                }}
+              >
+                ✦
+              </span>
+            ))}
+          </div>
+          {/* 档位落点圆点：与手柄同一条行程线，内缩手柄半径，不再溢出。 */}
+          {stops.map((stop) => (
+            <span
+              key={stop.value}
+              aria-hidden="true"
+              className="absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgba(31,45,61,0.28)]"
+              style={{
+                left: `calc(${EFFORT_KNOB / 2}px + ${stop.stop.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
+              }}
+            />
+          ))}
           <span
+            ref={knobRef}
             aria-hidden="true"
-            className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md transition-[left] duration-300"
-            style={{ left: `calc(12px + ${ratio} * (100% - 24px))` }}
+            className="pointer-events-none absolute top-1/2 z-[2] size-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)] transition-[left] duration-300"
+            style={{
+              left: `calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
+            }}
           />
         </div>
       </div>
@@ -816,7 +1026,10 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             <>
               {renderModelItems(leadingItems)}
               {hasSelectableModel ? (
-                <MenuGradientDivider className="my-1" />
+                <div
+                  className="my-1 h-px w-full bg-border"
+                  aria-hidden="true"
+                />
               ) : null}
             </>
           ) : null}
@@ -826,7 +1039,10 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   modelGroups[index - 1],
                   group,
                 ) ? (
-                  <MenuGradientDivider className="my-1" />
+                  <div
+                    className="my-1 h-px w-full bg-border"
+                    aria-hidden="true"
+                  />
                 ) : null;
                 if (group.directItems) {
                   return (
@@ -896,7 +1112,10 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           {renderedFooterActions.length > 0 ? (
             <div className="sticky bottom-0 z-10 bg-menu after:absolute after:left-0 after:top-full after:h-1 after:w-full after:bg-menu after:content-['']">
               {hasSelectableModel ? (
-                <MenuGradientDivider className="my-1" />
+                <div
+                  className="my-1 h-px w-full bg-border"
+                  aria-hidden="true"
+                />
               ) : null}
               {renderedFooterActions.map((action) => (
                 <DropdownMenuItem

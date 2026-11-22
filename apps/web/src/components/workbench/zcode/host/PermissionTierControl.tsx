@@ -160,7 +160,6 @@ export function PermissionTierSection() {
         <SettingsGroupCard>
           <SettingsRow
             label="默认权限模式"
-            description="改文件 / 跑命令前先问我"
             control={
               <PermissionTierSelect
                 ariaLabel="常规任务档位"
@@ -246,7 +245,6 @@ const RULE_ACTIONS: ReadonlyArray<{
  */
 function RuleGroup({
   title,
-  hint,
   rows,
   onChange,
   addLabel,
@@ -256,7 +254,6 @@ function RuleGroup({
   showOperation = false,
 }: {
   title: string;
-  hint: string;
   rows: EditableRule[];
   onChange: (next: EditableRule[]) => void;
   addLabel: string;
@@ -273,14 +270,9 @@ function RuleGroup({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 text-ui-base font-medium text-foreground">
-            {title}
-          </span>
-          <span className="truncate text-ui-sm text-foreground-subtle">
-            {hint}
-          </span>
-        </div>
+        <span className="shrink-0 text-ui-base font-medium text-foreground">
+          {title}
+        </span>
         <Button
           type="button"
           variant="outline"
@@ -439,7 +431,6 @@ function AutoBackupSection() {
     <SettingsGroupCard>
       <SettingsRow
         label="自动备份"
-        description="每轮改动前留快照"
         control={
           <input
             type="checkbox"
@@ -455,7 +446,6 @@ function AutoBackupSection() {
       />
       <SettingsRow
         label="备份保留上限"
-        description="超出删最旧 0 为不限"
         control={
           <Input
             aria-label="备份保留上限"
@@ -496,17 +486,14 @@ const DELETE_MODES: ReadonlyArray<{
 ];
 
 /**
- * 删除模式 + 批量删除审批阈值。
+ * 删除模式四档（用户口径：删除需要询问、自动审批、删除到回收站、完全删除）。
  *
- * 为什么合成一行下拉而不是两个开关：四种模式本来就互斥，用两个布尔量表达
- * （是否保护 + 是否进回收站）会出现「不开保护却要求进回收站」这种没有意义的组合。
+ * 批量删除审批阈值不在用户清单里，从本页移除；服务端字段保留，保存时原样带回。
  */
 function DeleteModeSection() {
   const [mode, setMode] = useState<
     "ask" | "auto-approve" | "trash" | "permanent"
   >("ask");
-  const [batchEnabled, setBatchEnabled] = useState(true);
-  const [batchThreshold, setBatchThreshold] = useState(50);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -515,14 +502,11 @@ function DeleteModeSection() {
     surfaceJson<{
       policy?: {
         deleteMode?: "ask" | "auto-approve" | "trash" | "permanent";
-        deleteProtection?: { enabled?: boolean; batchThreshold?: number };
       };
     }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
         setMode(view.policy?.deleteMode ?? "ask");
-        setBatchEnabled(view.policy?.deleteProtection?.enabled !== false);
-        setBatchThreshold(view.policy?.deleteProtection?.batchThreshold ?? 50);
       })
       .catch(() => {});
     return () => {
@@ -530,17 +514,11 @@ function DeleteModeSection() {
     };
   }, []);
 
-  const save = async (next: {
-    deleteMode: typeof mode;
-    batchEnabled: boolean;
-    batchThreshold: number;
-  }) => {
+  const save = async (next: typeof mode) => {
     setSaving(true);
     setMessage(null);
-    const previous = { mode, batchEnabled, batchThreshold };
-    setMode(next.deleteMode);
-    setBatchEnabled(next.batchEnabled);
-    setBatchThreshold(next.batchThreshold);
+    const previous = mode;
+    setMode(next);
     try {
       const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
         "/api/permissions/tier",
@@ -549,21 +527,12 @@ function DeleteModeSection() {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          policy: {
-            ...(view.policy ?? {}),
-            deleteMode: next.deleteMode,
-            deleteProtection: {
-              enabled: next.batchEnabled,
-              batchThreshold: Math.max(1, Math.round(next.batchThreshold)),
-            },
-          },
+          policy: { ...(view.policy ?? {}), deleteMode: next },
         }),
       });
       setMessage("已保存");
     } catch (error) {
-      setMode(previous.mode);
-      setBatchEnabled(previous.batchEnabled);
-      setBatchThreshold(previous.batchThreshold);
+      setMode(previous);
       setMessage(readableError(error));
     } finally {
       setSaving(false);
@@ -574,17 +543,10 @@ function DeleteModeSection() {
     <SettingsGroupCard>
       <SettingsRow
         label="删除模式"
-        description={DELETE_MODES.find((entry) => entry.value === mode)?.hint}
         control={
           <Select
             value={mode}
-            onValueChange={(next) =>
-              void save({
-                deleteMode: next as typeof mode,
-                batchEnabled,
-                batchThreshold,
-              })
-            }
+            onValueChange={(next) => void save(next as typeof mode)}
             disabled={saving}
           >
             <SelectTrigger size="lg" aria-label="删除模式" className="w-56">
@@ -598,43 +560,6 @@ function DeleteModeSection() {
               ))}
             </SelectContent>
           </Select>
-        }
-      />
-      <SettingsRow
-        label="批量删除审批"
-        description="一次删到这么多先问我"
-        control={
-          <span className="flex items-center gap-2">
-            <Input
-              aria-label="批量删除审批阈值"
-              type="number"
-              min={1}
-              max={10000}
-              disabled={!batchEnabled || saving}
-              value={batchThreshold}
-              onChange={(event) =>
-                setBatchThreshold(Math.max(1, Number(event.target.value) || 1))
-              }
-              onBlur={() =>
-                void save({ deleteMode: mode, batchEnabled, batchThreshold })
-              }
-              className="w-24"
-            />
-            <input
-              type="checkbox"
-              aria-label="批量删除审批"
-              checked={batchEnabled}
-              disabled={saving}
-              onChange={(event) =>
-                void save({
-                  deleteMode: mode,
-                  batchEnabled: event.target.checked,
-                  batchThreshold,
-                })
-              }
-              className="size-4"
-            />
-          </span>
         }
       />
       {message ? (
@@ -729,9 +654,6 @@ function CommandReviewSection() {
     <SettingsGroupCard>
       <SettingsRow
         label="命令执行前审查"
-        description={
-          COMMAND_REVIEW_MODES.find((entry) => entry.value === mode)?.hint
-        }
         control={
           <Select
             value={mode}
@@ -760,14 +682,9 @@ function CommandReviewSection() {
       {/* 严格档不看字典，此时列出条目只会让人以为它们也生效。 */}
       {mode === "strict" ? null : (
         <div className="space-y-2 border-t border-border px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-ui-base font-medium text-foreground">
-              高危命令
-            </span>
-            <span className="text-ui-sm text-foreground-subtle">
-              {mode === "off" ? "关闭时不审查" : "仅审查这些前缀"}
-            </span>
-          </div>
+          <span className="text-ui-base font-medium text-foreground">
+            高危命令
+          </span>
           {patterns.map((pattern, index) => (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
@@ -837,18 +754,13 @@ function CommandReviewSection() {
 }
 
 /**
- * 沙箱安全：如实说明执行隔离的**实际**状态，不摆开关。
+ * 沙箱隔离开关（用户口径 2026-11-22：基础配置第 2 项「打开或者关闭」）。
  *
- * 本仓库的命令执行已经跑在进程沙箱里（`features/process-sandbox`）：文件系统按 Task
- * 授权目录白名单、只读目录单独列出、网络走 `strictAllowlist` 白名单。这些不是可选项，
- * 所以这里不提供「开/关沙箱」——关掉它等于给 AI 完整的本机权限，那不是配置项，
- * 是权限档位（完全访问）已经在管的事。
- *
- * 界面因此只做**事实披露**：隔离生效在哪里、网络白名单从哪来。
+ * 文件访问 / 网络访问 / 内置运行时三行不在用户清单里，从本页移除；能力与
+ * 服务端字段保留，只是不再在这个页面配置。
  */
 function SandboxSecuritySection() {
   const [sandboxEnabled, setSandboxEnabled] = useState(true);
-  const [bundledRuntimes, setBundledRuntimes] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -856,13 +768,11 @@ function SandboxSecuritySection() {
     let cancelled = false;
     surfaceJson<{
       policy?: {
-        bundledRuntimes?: { enabled?: boolean };
         sandbox?: { enabled?: boolean };
       };
     }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
-        setBundledRuntimes(view.policy?.bundledRuntimes?.enabled !== false);
         setSandboxEnabled(view.policy?.sandbox?.enabled !== false);
       })
       .catch(() => {});
@@ -871,7 +781,7 @@ function SandboxSecuritySection() {
     };
   }, []);
 
-  /** 沙箱安全总开关：读回策略再合并提交（与内置运行时同一手法）。 */
+  /** 沙箱隔离开关：读回策略再合并提交，只替换 sandbox 一项。 */
   const saveSandbox = async (enabled: boolean) => {
     setSaving(true);
     setMessage(null);
@@ -897,42 +807,10 @@ function SandboxSecuritySection() {
     }
   };
 
-  /**
-   * 只改内置运行时一项：读回当前策略再合并提交。
-   *
-   * 不复用「规则与放行」的一次性保存——那个卡片持有全部规则表，两处各自提交
-   * 会把对方刚改的字段覆盖回旧值。
-   */
-  const saveBundledRuntimes = async (enabled: boolean) => {
-    setSaving(true);
-    setMessage(null);
-    const previous = bundledRuntimes;
-    setBundledRuntimes(enabled);
-    try {
-      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
-        "/api/permissions/tier",
-      );
-      await surfaceJson("/api/permissions/tier", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          policy: { ...(view.policy ?? {}), bundledRuntimes: { enabled } },
-        }),
-      });
-      setMessage("已保存");
-    } catch (error) {
-      setBundledRuntimes(previous);
-      setMessage(readableError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <SettingsGroupCard>
       <SettingsRow
         label="沙箱隔离"
-        description="命令在进程沙箱内运行"
         control={
           <input
             type="checkbox"
@@ -940,34 +818,6 @@ function SandboxSecuritySection() {
             checked={sandboxEnabled}
             disabled={saving}
             onChange={(event) => void saveSandbox(event.target.checked)}
-            className="size-4"
-          />
-        }
-      />
-      <SettingsRow
-        label="文件访问"
-        description="限 Task 授权目录"
-        control={
-          <span className="text-ui-sm text-foreground-subtle">白名单</span>
-        }
-      />
-      <SettingsRow
-        label="网络访问"
-        description="系统层只放行代理端口"
-        control={
-          <span className="text-ui-sm text-foreground-subtle">严格白名单</span>
-        }
-      />
-      <SettingsRow
-        label="内置运行时"
-        description="命令使用随包运行时"
-        control={
-          <input
-            type="checkbox"
-            aria-label="内置运行时"
-            checked={bundledRuntimes}
-            disabled={saving}
-            onChange={(event) => void saveBundledRuntimes(event.target.checked)}
             className="size-4"
           />
         }
@@ -1139,16 +989,11 @@ function PermissionPolicySection() {
   return (
     <SettingsGroupCard>
       <div className="space-y-5 p-4">
-        {/* 组首两行是这张卡片的整体口径：
-            ① 规则是「例外表」，没命中就回落到权限模式；
-            ② 放行策略决定「没命中任何规则时怎么办」——全部放行 / 自动审批 /
-            默认询问 / 白名单 / 黑名单。
-            自动审批与白名单这两种「没被审批过」的地址，仍会先问用户是否执行
-            （`auto` 回落档位审批、`whitelist` 硬拦在名单外，名单内命中即为用户
-            事先批准的显式放行）。 */}
+        {/* 放行策略：没命中任何规则时怎么办——全部放行 / 自动审批 / 默认询问 /
+            白名单 / 黑名单。自动审批与白名单里「没被审批过」的地址仍会先问
+            （`auto` 回落档位审批、`whitelist` 名单外硬拦）。 */}
         <SettingsRow
           label="放行策略"
-          description="没命中下面规则时怎么办"
           control={
             <Select
               value={networkPolicy.networkMode}
@@ -1173,12 +1018,8 @@ function PermissionPolicySection() {
             </Select>
           }
         />
-        <p className="text-ui-sm text-foreground-subtle">
-          命中就按规则办 没命中按放行策略办
-        </p>
         <RuleGroup
           title="工具规则"
-          hint="按工具名或前缀"
           rows={toolRules}
           onChange={setToolRules}
           addLabel="添加工具规则"
@@ -1189,7 +1030,6 @@ function PermissionPolicySection() {
         <div className="border-t border-border pt-4">
           <RuleGroup
             title="文件路径规则"
-            hint="按路径前缀 读写删分别配"
             rows={pathRules}
             onChange={setPathRules}
             addLabel="添加路径规则"
@@ -1202,7 +1042,6 @@ function PermissionPolicySection() {
         <div className="border-t border-border pt-4">
           <RuleGroup
             title="命令规则"
-            hint="按命令开头"
             rows={commandRules}
             onChange={setCommandRules}
             addLabel="添加命令规则"
@@ -1213,8 +1052,7 @@ function PermissionPolicySection() {
         </div>
         <div className="border-t border-border pt-4">
           <RuleGroup
-            title="网络域名规则"
-            hint="按域名或子域"
+            title="网络规则"
             rows={domainRules}
             onChange={setDomainRules}
             addLabel="添加域名规则"

@@ -363,7 +363,7 @@ it("规则与放行保存时原样带回敏感保护等其它字段，不把别�
   });
 });
 
-it("删除模式：四选一写回 deleteMode，批量阈值同卡片提交", async () => {
+it("删除模式：四选一写回 deleteMode，其它策略字段原样带回", async () => {
   const user = userEvent.setup();
   const { tierPuts } = openPermissionSection({
     ...EMPTY_SETTINGS,
@@ -402,10 +402,48 @@ it("删除模式：四选一写回 deleteMode，批量阈值同卡片提交", as
     policy: { deleteMode: string; deleteProtection: unknown };
   };
   expect(body.policy.deleteMode).toBe("trash");
+  // 批量删除审批不在权限页配置（用户口径 2026-11-22），保存时必须原样带回。
   expect(body.policy.deleteProtection).toEqual({
     enabled: true,
     batchThreshold: 50,
   });
+});
+
+it("批量删除审批与内置运行时不在权限页出现", async () => {
+  openPermissionSection(EMPTY_SETTINGS);
+  // 用户口径：基础配置只有清单里的五项，这两行随之移除。
+  expect(screen.queryByLabelText("批量删除审批")).toBeNull();
+  expect(screen.queryByLabelText("批量删除审批阈值")).toBeNull();
+  expect(screen.queryByLabelText("内置运行时")).toBeNull();
+  expect(screen.queryByLabelText("文件访问")).toBeNull();
+  expect(screen.queryByLabelText("网络访问")).toBeNull();
+  // 沙箱隔离仍在（清单第 2 项）。
+  expect(screen.getByLabelText("沙箱隔离")).toBeTruthy();
+});
+
+it("沙箱隔离开关读得回、保存时保留其它策略", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      rules: [{ pattern: "mcp__*", action: "deny" }],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [],
+      ...FETCHED_POLICY_DEFAULTS,
+    },
+  });
+
+  const toggle = (await screen.findByLabelText("沙箱隔离")) as HTMLInputElement;
+  expect(toggle.checked).toBe(true);
+  await user.click(toggle);
+
+  await waitFor(() => expect(tierPuts).toHaveLength(1));
+  const body = tierPuts[0] as { policy: Record<string, unknown> };
+  expect(body.policy.sandbox).toEqual({ enabled: false });
+  // 单独提交只改这一项：同卡片其它策略字段原样带回去
+  expect(body.policy.rules).toEqual([{ pattern: "mcp__*", action: "deny" }]);
 });
 
 it("命令执行前审查：三档写回，严格档不展示高危字典", async () => {
@@ -449,61 +487,6 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
   await waitFor(() =>
     expect(screen.queryAllByLabelText("高危命令前缀")).toHaveLength(0),
   );
-});
-
-it("批量删除审批：关掉开关立刻落库，阈值离开输入框才提交", async () => {
-  const user = userEvent.setup();
-  const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
-  /** 第 n 次提交带上去的批量删除审批（其余字段不在这里判）。 */
-  const submitted = (index: number) =>
-    (tierPuts[index] as { policy: { deleteProtection: unknown } }).policy
-      .deleteProtection;
-
-  // 关掉批量审批：开关自身立即提交，阈值同时置灰。
-  await user.click(await screen.findByLabelText("批量删除审批"));
-  await waitFor(() => expect(tierPuts).toHaveLength(1));
-  expect(submitted(0)).toEqual({ enabled: false, batchThreshold: 50 });
-  expect(screen.getByLabelText("批量删除审批阈值")).toBeDisabled();
-
-  // 再打开：阈值恢复可编辑。
-  await user.click(screen.getByLabelText("批量删除审批"));
-  await waitFor(() => expect(tierPuts).toHaveLength(2));
-  expect(submitted(1)).toEqual({ enabled: true, batchThreshold: 50 });
-
-  // 阈值离开输入框才提交：填到一半的「8」不会被当成最终值。
-  const threshold = screen.getByLabelText("批量删除审批阈值");
-  fireEvent.change(threshold, { target: { value: "80" } });
-  expect(tierPuts).toHaveLength(2);
-  fireEvent.blur(threshold);
-  await waitFor(() => expect(tierPuts).toHaveLength(3));
-  expect(submitted(2)).toEqual({ enabled: true, batchThreshold: 80 });
-});
-
-it("沙箱安全：内置运行时开关读得回、单独保存时保留其它策略", async () => {
-  const user = userEvent.setup();
-  const { tierPuts } = openPermissionSection({
-    ...EMPTY_SETTINGS,
-    policy: {
-      rules: [{ pattern: "mcp__*", action: "deny" }],
-      disabledTools: [],
-      pathRules: [],
-      commandRules: [],
-      domainRules: [],
-      ...FETCHED_POLICY_DEFAULTS,
-    },
-  });
-
-  const toggle = (await screen.findByLabelText(
-    "内置运行时",
-  )) as HTMLInputElement;
-  expect(toggle.checked).toBe(true);
-  await user.click(toggle);
-
-  await waitFor(() => expect(tierPuts).toHaveLength(1));
-  const body = tierPuts[0] as { policy: Record<string, unknown> };
-  expect(body.policy.bundledRuntimes).toEqual({ enabled: false });
-  // 单独提交只改这一项：同卡片其它策略字段原样带回去
-  expect(body.policy.rules).toEqual([{ pattern: "mcp__*", action: "deny" }]);
 });
 
 it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async () => {

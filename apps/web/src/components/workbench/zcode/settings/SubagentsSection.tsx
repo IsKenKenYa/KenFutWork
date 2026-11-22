@@ -1965,8 +1965,7 @@ export function SubagentsSection({
     Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
-      {/* 页头一行：作用域 · 数量 · AGENTS.md · 搜索（用户口径：AGENTS.md 放进这一行，
-          不单独占一层，否则筛选与搜索被顶到第二屏）。 */}
+      {/* 页头一行：作用域 · 数量 · 搜索。 */}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1988,15 +1987,6 @@ export function SubagentsSection({
             </span>
           </div>
         </div>
-        {agentsInstructionFilePath ? (
-          <AgentsInstructionInline
-            className="min-w-0 sm:max-w-72"
-            filePath={agentsInstructionFilePath}
-            {...(canEditDefaultInstructions
-              ? { onEdit: () => setEditingInstructions(true) }
-              : {})}
-          />
-        ) : null}
         <SettingsSearchInput
           containerClassName="w-full sm:ml-auto sm:w-64"
           clearLabel={intl.formatMessage({ id: "settings.search.clear" })}
@@ -2008,6 +1998,16 @@ export function SubagentsSection({
           })}
         />
       </div>
+
+      {/* AGENTS.md 卡片在「已安装」之上独立一行（用户口径 2026-11-22：样式不变、不缩进页头）。 */}
+      {agentsInstructionFilePath ? (
+        <AgentsInstructionInline
+          filePath={agentsInstructionFilePath}
+          {...(canEditDefaultInstructions
+            ? { onEdit: () => setEditingInstructions(true) }
+            : {})}
+        />
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
