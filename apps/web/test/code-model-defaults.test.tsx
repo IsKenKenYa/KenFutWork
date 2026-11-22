@@ -170,13 +170,14 @@ it("权限页只保留基础配置与规则与放行两组，必备项都在", a
 
   // 基础配置必备项，以及它们各自的控件。
   expect(screen.getByRole("combobox", { name: "常规任务档位" })).toBeTruthy();
-  expect(screen.getByLabelText("沙箱隔离")).toBeTruthy();
+  // 布尔项改用开关（与浏览器控制页同一个 Switch）。
+  expect(screen.getByRole("switch", { name: "沙箱隔离" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "自动备份" })).toBeTruthy();
   expect(screen.getByLabelText("删除模式")).toBeTruthy();
   expect(screen.getByLabelText("命令执行前审查")).toBeTruthy();
-  expect(screen.getByLabelText("自动备份")).toBeTruthy();
   expect(screen.getByLabelText("备份保留上限")).toBeTruthy();
 
-  // 规则与放行：放行策略 + 四组规则入口（点箭头进弹窗编辑）+ 两个网络开关。
+  // 规则与放行：放行策略 + 四组规则「编辑」入口 + 网络组内的两个开关。
   expect(screen.getByLabelText("放行策略")).toBeTruthy();
   for (const label of [
     "编辑工具规则",
@@ -186,9 +187,10 @@ it("权限页只保留基础配置与规则与放行两组，必备项都在", a
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
   }
-  expect(screen.getByLabelText("HTTP 放行")).toBeTruthy();
-  expect(screen.getByLabelText("SSL 证书校验")).toBeTruthy();
-  // 勾选框全部换成下拉（用户口径）：页面上不应再出现 checkbox。
+  expect(screen.getByRole("switch", { name: "HTTP 放行" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "SSL 证书校验" })).toBeTruthy();
+  // 不再有「保存规则」按钮：各控件改完即提交。
+  expect(screen.queryByRole("button", { name: "保存规则" })).toBeNull();
   expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
 
   // 被移除的分组不再出现。

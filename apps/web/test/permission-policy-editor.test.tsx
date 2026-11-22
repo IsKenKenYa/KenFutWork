@@ -180,7 +180,7 @@ function openPermissionSection(settings: typeof EMPTY_SETTINGS) {
 }
 
 /**
- * 打开某一组规则的编辑弹窗（用户口径 2026-11-22：规则表改为点箭头进弹窗编辑）。
+ * 打开某一组规则的编辑弹窗（用户口径 2026-11-22：规则表改为点「编辑」进弹窗）。
  *
  * 弹窗里的内容与改版前一致，所以各用例只需在断言编辑控件之前先经过这一步。
  */
@@ -188,6 +188,11 @@ async function openRuleDialog(title: string): Promise<void> {
   const open = await screen.findByRole("button", { name: `编辑${title}` });
   act(() => open.click());
   await screen.findByRole("dialog");
+}
+
+/** 关闭当前弹窗（弹窗里的主按钮叫「完成」）。 */
+async function closeRuleDialog(): Promise<void> {
+  act(() => screen.getByRole("button", { name: "完成" }).click());
 }
 
 it("读回已保存的三张规则表与禁用清单", async () => {
@@ -210,10 +215,10 @@ it("读回已保存的三张规则表与禁用清单", async () => {
     "shell_*",
     "mcp__*",
   ]);
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
   await openRuleDialog("文件路径规则");
   expect(screen.getByLabelText("路径前缀")).toHaveValue("D:\\项目\\密钥");
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
   await openRuleDialog("命令规则");
   expect(screen.getByLabelText("命令前缀")).toHaveValue("rm -rf");
 });
@@ -223,16 +228,16 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
   const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
 
   await openRuleDialog("文件路径规则");
-  await user.click(await screen.findByRole("button", { name: "添加路径规则" }));
+  await user.click(await screen.findByRole("button", { name: "添加" }));
   await user.type(screen.getByLabelText("路径前缀"), "  C:\\机密  ");
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
 
   await openRuleDialog("命令规则");
-  await user.click(screen.getByRole("button", { name: "添加命令规则" }));
+  await user.click(screen.getByRole("button", { name: "添加" }));
   await user.type(screen.getByLabelText("命令前缀"), "git push");
   // 多加一行但不填：保存时必须被剔除，空规则会命中一切。
-  await user.click(screen.getByRole("button", { name: "添加命令规则" }));
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await user.click(screen.getByRole("button", { name: "添加" }));
+  await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts.length).toBeGreaterThanOrEqual(2));
   // 两组的最后一次提交都读回整份策略再合并：分组互相不冲掉对方，空行被剔除。
@@ -270,7 +275,7 @@ it("改动作档与删除行写回同一个策略对象", async () => {
   act(() => within(ruleRow).getByRole("combobox", { name: "动作" }).focus());
   await userEvent.keyboard("[Space]");
   await userEvent.keyboard("[Home][Enter]");
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   expect(tierPuts[0]).toEqual({
@@ -303,10 +308,10 @@ it("域名规则（网络安全）读得回、存得出", async () => {
   expect(await screen.findByLabelText("域名")).toHaveValue(
     "*.internal.example",
   );
-  await user.click(screen.getByRole("button", { name: "添加域名规则" }));
+  await user.click(screen.getByRole("button", { name: "添加" }));
   const inputs = screen.getAllByLabelText("域名");
   await user.type(inputs[1] as HTMLElement, "docs.example.com");
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   expect(tierPuts[0]).toEqual({
@@ -353,9 +358,9 @@ it("规则与放行保存时原样带回敏感保护等其它字段，不把别�
   });
 
   await openRuleDialog("命令规则");
-  await user.click(await screen.findByRole("button", { name: "添加命令规则" }));
+  await user.click(await screen.findByRole("button", { name: "添加" }));
   await user.type(screen.getByLabelText("命令前缀"), "git push");
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   expect(tierPuts[0]).toEqual({
@@ -457,12 +462,10 @@ it("沙箱隔离开关读得回、保存时保留其它策略", async () => {
     },
   });
 
-  // 沙箱隔离改为下拉（用户口径：勾选框全部换成下拉框）。
-  const toggle = (await screen.findByLabelText("沙箱隔离")) as HTMLElement;
-  expect(toggle.textContent).toContain("打开");
-  act(() => toggle.focus());
-  await userEvent.keyboard("[Space]");
-  await user.click(await screen.findByRole("option", { name: "关闭" }));
+  // 沙箱隔离是开关（用户口径：与浏览器控制页同一个 Switch）。
+  const toggle = await screen.findByRole("switch", { name: "沙箱隔离" });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  await user.click(toggle);
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
   const body = tierPuts[0] as { policy: Record<string, unknown> };
@@ -501,7 +504,7 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
   act(() => screen.getByRole("button", { name: "编辑高危命令" }).click());
   expect(await screen.findAllByLabelText("高危命令前缀")).toHaveLength(2);
   // 关掉弹窗再切档，避免同一个 dialog 遮挡断言。
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  act(() => screen.getByRole("button", { name: "完成" }).click());
   await waitFor(() => expect(tierPuts).toHaveLength(1));
 
   const trigger = await screen.findByLabelText("命令执行前审查");
@@ -529,7 +532,7 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
     "/repo/data",
     "/repo/data",
   ].entries()) {
-    await user.click(screen.getByRole("button", { name: "添加路径规则" }));
+    await user.click(screen.getByRole("button", { name: "添加" }));
     const inputs = screen.getAllByLabelText("路径前缀");
     fireEvent.change(inputs[index] as HTMLElement, {
       target: { value: path },
@@ -547,7 +550,7 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
     await user.click(option);
   }
 
-  act(() => screen.getByRole("button", { name: "保存" }).click());
+  await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts.length).toBeGreaterThanOrEqual(1));
   const body = tierPuts[tierPuts.length - 1] as {

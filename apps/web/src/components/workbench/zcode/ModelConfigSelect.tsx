@@ -161,8 +161,8 @@ function effortLevelLabel(value: string): string {
   return EFFORT_LEVEL_LABELS[normalized] ?? value;
 }
 
-/** 手柄直径（px）。设计稿里手柄略大于轨道，上下各露出一截——这是它的样子，保留。 */
-const EFFORT_KNOB = 36;
+/** 手柄直径（px）。与轨道同高，圆形正好嵌在轨道两端，不会上下错位。 */
+const EFFORT_KNOB = 32;
 
 /** 「关闭」一类的档位不参与配色渐变（设计稿里的 None 档：灰、无特效）。 */
 function isEffortPlainLevel(value: string): boolean {
@@ -389,13 +389,16 @@ function EffortSlider({
       <div className="px-2 pb-3 pt-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-ui-base text-foreground-subtle">思考强度</span>
+          {/* 档位读数与标签同字重（用户口径：最高不要加粗），只靠颜色区分。 */}
           <span
-            className="text-ui-base font-semibold tabular-nums"
+            className="text-ui-base tabular-nums"
             style={plain || !currentColor ? undefined : { color: currentColor }}
           >
             {label}
           </span>
         </div>
+        {/* 轨道固定高度、手柄不再超出轨道：手柄改成与轨道同高（h-8），
+            避免上下各露 2px 造成的错位观感。 */}
         <div
           ref={trackRef}
           role="slider"
@@ -497,11 +500,12 @@ function EffortSlider({
               }}
             />
           </div>
-          {/* 最高档星星（设计稿 rs-stars）：只在顶档出现。 */}
+          {/* 最高档星星（设计稿 rs-stars）：只在顶档出现。
+              overflow-hidden 把星星关在轨道内——它撑开容器会让整块面板跳动。 */}
           <div
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute inset-0",
+              "pointer-events-none absolute inset-0 overflow-hidden rounded-full",
               isTop && "effort-track-shine",
             )}
           >
@@ -536,7 +540,8 @@ function EffortSlider({
             ref={knobRef}
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute top-1/2 z-[2] size-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
+              // 手柄与轨道同高（32px）：不再上下各露一截，滑块与轨道对齐。
+              "pointer-events-none absolute top-1/2 z-[2] size-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
               // 拖动时手柄跟手、不做位置过渡（过渡会让拖动看起来发飘）。
               !dragging && "transition-[left] duration-300",
             )}
