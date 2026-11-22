@@ -9,15 +9,10 @@ import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@zui/components/ui/select.js";
 import {
   type ExecutionModeController,
   executionModeIcons,
@@ -162,36 +157,43 @@ function V4ComposerModeSwitchImpl({
                 ?.focus();
           }}
         >
-          {/* 两个小标题各带一个下拉框（用户口径 2026-11-22）：没有选项说明，
-              也没有勾选式单选列表。左右布局改为上下两行，标签在左、控件在右。 */}
-          <div className="space-y-2 p-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="shrink-0 text-ui-base font-medium text-foreground">
+          {/* 两组并排（用户口径）：左列执行方式、右列权限，中间一条竖分隔线。
+              这一版是用户确认过的形态，不要再改成下拉。 */}
+          <div className="flex items-stretch gap-1 p-1">
+            <div className="min-w-0 flex-1">
+              <div className="px-2 pb-1 pt-1 text-ui-sm text-foreground-subtle">
                 执行方式
-              </span>
-              <Select
+              </div>
+              <DropdownMenuRadioGroup
                 value={executionMode ?? ""}
                 onValueChange={(next) => void selectExecutionMode(next)}
-                disabled={disabled}
+                aria-label="执行方式"
               >
-                <SelectTrigger size="lg" aria-label="执行方式" className="w-40">
-                  <SelectValue placeholder="读取中" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(modes ?? []).map((mode) => (
-                    <SelectItem key={mode.id} value={mode.id}>
-                      {mode.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {(modes ?? []).map((mode) => {
+                  const ModeIcon = executionModeIcons[mode.id] ?? WorkflowIcon;
+                  return (
+                    <DropdownMenuRadioItem
+                      key={mode.id}
+                      value={mode.id}
+                      disabled={disabled}
+                      className="min-h-9 px-2"
+                    >
+                      <ModeIcon className="size-4 shrink-0" />
+                      <span>{mode.label}</span>
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
             </div>
-            <div className="h-px w-full bg-border" aria-hidden="true" />
-            <div className="flex items-center justify-between gap-3">
-              <span className="shrink-0 text-ui-base font-medium text-foreground">
+            <div
+              className="my-1 w-px self-stretch bg-border"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="px-2 pb-1 pt-1 text-ui-sm text-foreground-subtle">
                 权限
-              </span>
-              <Select
+              </div>
+              <DropdownMenuRadioGroup
                 value={tier ?? ""}
                 onValueChange={(next) => {
                   setTierSaving(true);
@@ -199,19 +201,19 @@ function V4ComposerModeSwitchImpl({
                     setTierSaving(false),
                   );
                 }}
-                disabled={disabled || tierSaving}
+                aria-label="权限"
               >
-                <SelectTrigger size="lg" aria-label="权限" className="w-40">
-                  <SelectValue placeholder="读取中" />
-                </SelectTrigger>
-                <SelectContent>
-                  {permissions.map((entry) => (
-                    <SelectItem key={entry.value} value={entry.value}>
-                      {entry.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {permissions.map((entry) => (
+                  <DropdownMenuRadioItem
+                    key={entry.value}
+                    value={entry.value}
+                    disabled={disabled || tierSaving}
+                    className="min-h-9 items-center px-2"
+                  >
+                    <span>{entry.label}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
             </div>
           </div>
         </DropdownMenuContent>

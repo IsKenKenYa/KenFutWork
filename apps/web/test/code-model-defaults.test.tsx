@@ -176,18 +176,20 @@ it("权限页只保留基础配置与规则与放行两组，必备项都在", a
   expect(screen.getByLabelText("自动备份")).toBeTruthy();
   expect(screen.getByLabelText("备份保留上限")).toBeTruthy();
 
-  // 规则与放行：放行策略 + 四组规则 + 两个网络开关。
+  // 规则与放行：放行策略 + 四组规则入口（点箭头进弹窗编辑）+ 两个网络开关。
   expect(screen.getByLabelText("放行策略")).toBeTruthy();
   for (const label of [
-    "添加工具规则",
-    "添加路径规则",
-    "添加命令规则",
-    "添加域名规则",
+    "编辑工具规则",
+    "编辑文件路径规则",
+    "编辑命令规则",
+    "编辑网络规则",
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
   }
   expect(screen.getByLabelText("HTTP 放行")).toBeTruthy();
   expect(screen.getByLabelText("SSL 证书校验")).toBeTruthy();
+  // 勾选框全部换成下拉（用户口径）：页面上不应再出现 checkbox。
+  expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
 
   // 被移除的分组不再出现。
   for (const removed of [

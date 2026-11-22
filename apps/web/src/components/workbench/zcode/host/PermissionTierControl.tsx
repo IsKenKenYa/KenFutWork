@@ -1,4 +1,11 @@
 import { Button } from "@zui/components/ui/button.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@zui/components/ui/dialog.js";
 import { Input } from "@zui/components/ui/input.js";
 import {
   Select,
@@ -13,7 +20,7 @@ import {
   SettingsRow,
   SettingsSubheading,
 } from "@zui/settings/SettingsPageParts.js";
-import { Trash2 } from "lucide-react";
+import { ChevronRightIcon, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
@@ -153,8 +160,8 @@ export function PermissionTierSection() {
 
   return (
     <div className="space-y-6">
-      {/* 基础配置：每项都直接决定「AI 能做什么、做之前要不要问、出事能不能找回」。
-          顺序按用户的关注点在前面：先权限模式与隔离，再删除与命令审查，最后备份。 */}
+      {/* 基础配置：整组一张卡片（用户口径 2026-11-22：同组的配置连在一起）。
+          行顺序按用户清单：权限模式、沙箱、删除、命令审查、备份。 */}
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>基础配置</SettingsSubheading>
         <SettingsGroupCard>
@@ -172,18 +179,52 @@ export function PermissionTierSection() {
               />
             }
           />
+          <SandboxSecuritySection />
+          <DeleteModeSection />
+          <CommandReviewSection />
+          <AutoBackupSection />
         </SettingsGroupCard>
-        <SandboxSecuritySection />
-        <DeleteModeSection />
-        <CommandReviewSection />
-        <AutoBackupSection />
       </section>
-      {/* 规则与放行：整体策略 + 四组规则。没命中任何规则时按上面选定的权限模式办。 */}
+      {/* 规则与放行：整组一张卡片。没命中任何规则时按上面选定的权限模式办。 */}
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>规则与放行</SettingsSubheading>
         <PermissionPolicySection />
       </section>
     </div>
+  );
+}
+
+/**
+ * 开 / 关做成下拉（用户口径 2026-11-22：所有勾选框都换成下拉框）。
+ *
+ * 视觉与同页其它配置一致：标签在左、下拉在右；开关语义只有两个值，
+ * 不给「未设置」这类第三态——服务端字段都是布尔。
+ */
+function ToggleSelect({
+  ariaLabel,
+  value,
+  disabled,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <Select
+      value={value ? "on" : "off"}
+      onValueChange={(next) => onChange(next === "on")}
+      disabled={disabled}
+    >
+      <SelectTrigger size="lg" aria-label={ariaLabel} className="w-40">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="on">打开</SelectItem>
+        <SelectItem value="off">关闭</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -428,19 +469,15 @@ function AutoBackupSection() {
   };
 
   return (
-    <SettingsGroupCard>
+    <>
       <SettingsRow
         label="自动备份"
         control={
-          <input
-            type="checkbox"
-            aria-label="自动备份"
-            checked={enabled}
+          <ToggleSelect
+            ariaLabel="自动备份"
+            value={enabled}
             disabled={saving}
-            onChange={(event) =>
-              void save({ enabled: event.target.checked, maxSnapshots })
-            }
-            className="size-4"
+            onChange={(next) => void save({ enabled: next, maxSnapshots })}
           />
         }
       />
@@ -469,7 +506,7 @@ function AutoBackupSection() {
           </span>
         </div>
       ) : null}
-    </SettingsGroupCard>
+    </>
   );
 }
 
@@ -540,7 +577,7 @@ function DeleteModeSection() {
   };
 
   return (
-    <SettingsGroupCard>
+    <>
       <SettingsRow
         label="删除模式"
         control={
@@ -569,7 +606,7 @@ function DeleteModeSection() {
           </span>
         </div>
       ) : null}
-    </SettingsGroupCard>
+    </>
   );
 }
 
@@ -594,6 +631,7 @@ const COMMAND_REVIEW_MODES: ReadonlyArray<{
 function CommandReviewSection() {
   const [mode, setMode] = useState<"auto" | "strict" | "off">("auto");
   const [patterns, setPatterns] = useState<string[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -651,7 +689,7 @@ function CommandReviewSection() {
   };
 
   return (
-    <SettingsGroupCard>
+    <>
       <SettingsRow
         label="命令执行前审查"
         control={
@@ -679,68 +717,25 @@ function CommandReviewSection() {
           </Select>
         }
       />
-      {/* 严格档不看字典，此时列出条目只会让人以为它们也生效。 */}
+      {/* 高危命令字典条目多，逐条铺在页面上会把下面几组顶到第二屏：
+          这里只放一行入口，点箭头进弹窗编辑（用户口径 2026-11-22）。
+          严格档不看字典，此时不展示入口，免得以为它也生效。 */}
       {mode === "strict" ? null : (
-        <div className="space-y-2 border-t border-border px-4 py-3">
-          <span className="text-ui-base font-medium text-foreground">
-            高危命令
-          </span>
-          {patterns.map((pattern, index) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
-              key={index}
-              className="flex items-center gap-2"
-            >
-              <Input
-                aria-label="高危命令前缀"
-                disabled={mode === "off" || saving}
-                value={pattern}
-                onChange={(event) =>
-                  setPatterns((current) =>
-                    current.map((item, i) =>
-                      i === index ? event.target.value : item,
-                    ),
-                  )
-                }
-                className="min-w-0 flex-1 font-mono text-ui-sm"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="删除这条高危命令"
-                disabled={saving}
-                onClick={() =>
-                  setPatterns((current) =>
-                    current.filter((_, i) => i !== index),
-                  )
-                }
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
-          <div className="flex flex-wrap items-center gap-2">
+        <SettingsRow
+          label="高危命令"
+          control={
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="编辑高危命令"
               disabled={mode === "off" || saving}
-              onClick={() => setPatterns((current) => [...current, ""])}
+              onClick={() => setEditorOpen(true)}
             >
-              添加高危命令
+              <ChevronRightIcon className="size-4" />
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving}
-              onClick={() => void save({ mode, patterns })}
-            >
-              保存高危命令
-            </Button>
-          </div>
-        </div>
+          }
+        />
       )}
       {message ? (
         <div className="px-4 pb-3">
@@ -749,7 +744,72 @@ function CommandReviewSection() {
           </span>
         </div>
       ) : null}
-    </SettingsGroupCard>
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>高危命令</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {patterns.length === 0 ? (
+              <p className="text-ui-sm text-foreground-subtle">还没有条目</p>
+            ) : null}
+            {patterns.map((pattern, index) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
+                key={index}
+                className="flex items-center gap-2"
+              >
+                <Input
+                  aria-label="高危命令前缀"
+                  value={pattern}
+                  onChange={(event) =>
+                    setPatterns((current) =>
+                      current.map((item, i) =>
+                        i === index ? event.target.value : item,
+                      ),
+                    )
+                  }
+                  className="min-w-0 flex-1 font-mono text-ui-sm"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="删除这条高危命令"
+                  onClick={() =>
+                    setPatterns((current) =>
+                      current.filter((_, i) => i !== index),
+                    )
+                  }
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPatterns((current) => [...current, ""])}
+            >
+              添加
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving}
+              onClick={() => {
+                void save({ mode, patterns }).then(() => setEditorOpen(false));
+              }}
+            >
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -808,17 +868,15 @@ function SandboxSecuritySection() {
   };
 
   return (
-    <SettingsGroupCard>
+    <>
       <SettingsRow
         label="沙箱隔离"
         control={
-          <input
-            type="checkbox"
-            aria-label="沙箱隔离"
-            checked={sandboxEnabled}
+          <ToggleSelect
+            ariaLabel="沙箱隔离"
+            value={sandboxEnabled}
             disabled={saving}
-            onChange={(event) => void saveSandbox(event.target.checked)}
-            className="size-4"
+            onChange={(next) => void saveSandbox(next)}
           />
         }
       />
@@ -829,7 +887,7 @@ function SandboxSecuritySection() {
           </span>
         </div>
       ) : null}
-    </SettingsGroupCard>
+    </>
   );
 }
 
@@ -859,6 +917,17 @@ function PermissionPolicySection() {
     httpAllowed: boolean;
     tlsVerification: boolean;
   }>({ networkMode: "auto", httpAllowed: true, tlsVerification: true });
+  const [editingRules, setEditingRules] = useState<
+    "tool" | "path" | "command" | "domain" | null
+  >(null);
+  const editingRulesTitle =
+    editingRules === "tool"
+      ? "工具规则"
+      : editingRules === "path"
+        ? "文件路径规则"
+        : editingRules === "command"
+          ? "命令规则"
+          : "网络规则";
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -1018,90 +1087,62 @@ function PermissionPolicySection() {
             </Select>
           }
         />
-        <RuleGroup
+        {/* 四组规则都要逐条编辑，全铺在页面上会把这张卡片拉得很长：
+            每组只留一行入口（标题 + 已配置条数 + 箭头），点箭头进弹窗编辑。 */}
+        <RuleEntryRow
           title="工具规则"
-          rows={toolRules}
-          onChange={setToolRules}
-          addLabel="添加工具规则"
-          placeholder="mcp__fs__*"
-          ariaLabel="工具名或前缀"
-          disabled={saving}
+          count={toolRules.length}
+          onOpen={() => setEditingRules("tool")}
         />
-        <div className="border-t border-border pt-4">
-          <RuleGroup
-            title="文件路径规则"
-            rows={pathRules}
-            onChange={setPathRules}
-            addLabel="添加路径规则"
-            placeholder="D:\\项目\\敏感目录"
-            ariaLabel="路径前缀"
-            disabled={saving}
-            showOperation
-          />
-        </div>
-        <div className="border-t border-border pt-4">
-          <RuleGroup
-            title="命令规则"
-            rows={commandRules}
-            onChange={setCommandRules}
-            addLabel="添加命令规则"
-            placeholder="rm -rf"
-            ariaLabel="命令前缀"
-            disabled={saving}
-          />
-        </div>
-        <div className="border-t border-border pt-4">
-          <RuleGroup
-            title="网络规则"
-            rows={domainRules}
-            onChange={setDomainRules}
-            addLabel="添加域名规则"
-            placeholder="*.example.com"
-            ariaLabel="域名"
-            disabled={saving}
-          />
-          {/* 网络访问的两个开关（用户口径）：明文 http / 自签证书是否放行。
-              整体放行策略在卡片开头，这里只管域名表与这两项协议层设置。 */}
-          <div className="mt-3 space-y-2 border-t border-border pt-3">
-            <SettingsRow
-              label="HTTP 放行"
-              control={
-                <input
-                  type="checkbox"
-                  aria-label="HTTP 放行"
-                  checked={networkPolicy.httpAllowed}
-                  disabled={saving}
-                  onChange={(event) =>
-                    setNetworkPolicy((current) => ({
-                      ...current,
-                      httpAllowed: event.target.checked,
-                    }))
-                  }
-                  className="size-4"
-                />
+        <RuleEntryRow
+          title="文件路径规则"
+          count={pathRules.length}
+          onOpen={() => setEditingRules("path")}
+        />
+        <RuleEntryRow
+          title="命令规则"
+          count={commandRules.length}
+          onOpen={() => setEditingRules("command")}
+        />
+        <RuleEntryRow
+          title="网络规则"
+          count={domainRules.length}
+          onOpen={() => setEditingRules("domain")}
+        />
+        {/* HTTP 放行与 SSL 证书校验是单值配置，不随规则表进弹窗。 */}
+        <SettingsRow
+          label="HTTP 放行"
+          control={
+            <ToggleSelect
+              ariaLabel="HTTP 放行"
+              value={networkPolicy.httpAllowed}
+              disabled={saving}
+              onChange={(next) =>
+                setNetworkPolicy((current) => ({
+                  ...current,
+                  httpAllowed: next,
+                }))
               }
             />
-            <SettingsRow
-              label="SSL 证书校验"
-              control={
-                <input
-                  type="checkbox"
-                  aria-label="SSL 证书校验"
-                  checked={networkPolicy.tlsVerification}
-                  disabled={saving}
-                  onChange={(event) =>
-                    setNetworkPolicy((current) => ({
-                      ...current,
-                      tlsVerification: event.target.checked,
-                    }))
-                  }
-                  className="size-4"
-                />
+          }
+        />
+        <SettingsRow
+          label="SSL 证书校验"
+          control={
+            <ToggleSelect
+              ariaLabel="SSL 证书校验"
+              value={networkPolicy.tlsVerification}
+              disabled={saving}
+              onChange={(next) =>
+                setNetworkPolicy((current) => ({
+                  ...current,
+                  tlsVerification: next,
+                }))
               }
             />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+          }
+        />
+        <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
           <Button
             type="button"
             variant="outline"
@@ -1111,9 +1152,6 @@ function PermissionPolicySection() {
           >
             保存规则
           </Button>
-          <span className="text-ui-sm text-foreground-subtle">
-            从上往下匹配 第一条命中生效
-          </span>
           {message ? (
             <span role="status" className="text-ui-sm text-foreground-subtle">
               {message}
@@ -1121,6 +1159,108 @@ function PermissionPolicySection() {
           ) : null}
         </div>
       </div>
+      <Dialog
+        open={editingRules !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingRules(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingRulesTitle}</DialogTitle>
+          </DialogHeader>
+          {editingRules === "tool" ? (
+            <RuleGroup
+              title="工具规则"
+              rows={toolRules}
+              onChange={setToolRules}
+              addLabel="添加工具规则"
+              placeholder="mcp__fs__*"
+              ariaLabel="工具名或前缀"
+              disabled={saving}
+            />
+          ) : null}
+          {editingRules === "path" ? (
+            <RuleGroup
+              title="文件路径规则"
+              rows={pathRules}
+              onChange={setPathRules}
+              addLabel="添加路径规则"
+              placeholder="D:\\项目\\敏感目录"
+              ariaLabel="路径前缀"
+              disabled={saving}
+              showOperation
+            />
+          ) : null}
+          {editingRules === "command" ? (
+            <RuleGroup
+              title="命令规则"
+              rows={commandRules}
+              onChange={setCommandRules}
+              addLabel="添加命令规则"
+              placeholder="rm -rf"
+              ariaLabel="命令前缀"
+              disabled={saving}
+            />
+          ) : null}
+          {editingRules === "domain" ? (
+            <RuleGroup
+              title="网络规则"
+              rows={domainRules}
+              onChange={setDomainRules}
+              addLabel="添加域名规则"
+              placeholder="*.example.com"
+              ariaLabel="域名"
+              disabled={saving}
+            />
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving}
+              onClick={() => {
+                void savePolicy().then(() => setEditingRules(null));
+              }}
+            >
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SettingsGroupCard>
+  );
+}
+
+/** 规则组入口行：标题 + 已配置条数 + 箭头（点进弹窗编辑）。 */
+function RuleEntryRow({
+  title,
+  count,
+  onOpen,
+}: {
+  title: string;
+  count: number;
+  onOpen: () => void;
+}) {
+  return (
+    <SettingsRow
+      label={title}
+      control={
+        <span className="flex items-center gap-2">
+          <span className="text-ui-sm tabular-nums text-foreground-subtle">
+            {count}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`编辑${title}`}
+            onClick={onOpen}
+          >
+            <ChevronRightIcon className="size-4" />
+          </Button>
+        </span>
+      }
+    />
   );
 }

@@ -260,10 +260,15 @@ function EffortSlider({
   const levels = option.options ?? [];
   const currentValue =
     typeof option.currentValue === "string" ? option.currentValue : "";
-  const currentIndex = Math.max(
+  const committedIndex = Math.max(
     0,
     levels.findIndex((level) => level.value === currentValue),
   );
+  // 拖动中的预览档位：只在本地画，松手才提交。拖动时逐档提交会触发保存与
+  // 整块重渲染，实测表现为「拖动很卡、界面一直闪」。
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const currentIndex = dragIndex ?? committedIndex;
+  const dragging = dragIndex !== null;
   const current = levels[currentIndex];
   const last = levels.length - 1;
   const ratio = last <= 0 ? 1 : currentIndex / last;
@@ -318,6 +323,7 @@ function EffortSlider({
   }, []);
 
   // 档位变化：特效强度与速率跟着档位走；手柄回弹一下（设计稿 bump）。
+  // 拖动期间不做回弹——每帧重启动画就是「一直在闪」的来源。
   useEffect(() => {
     const rate = 0.5 + 1.7 * ratio;
     for (const animation of shimmerFirstRef.current?.getAnimations() ?? []) {
@@ -326,19 +332,17 @@ function EffortSlider({
     for (const animation of shimmerSecondRef.current?.getAnimations() ?? []) {
       animation.playbackRate = rate;
     }
-    // 手柄回弹（设计稿 bump）：新一次回弹开始前取消上一次，避免叠帧。
-    if (knobRef.current) {
-      knobBumpRef.current?.cancel();
-      knobBumpRef.current = knobRef.current.animate(
-        [
-          { transform: "translate(-50%, -50%) scale(1)" },
-          { transform: "translate(-50%, -50%) scale(.85)" },
-          { transform: "translate(-50%, -50%) scale(1)" },
-        ],
-        { duration: 350, easing: "cubic-bezier(.34, 1.56, .64, 1)" },
-      );
-    }
-  }, [ratio]);
+    if (dragging || !knobRef.current) return;
+    knobBumpRef.current?.cancel();
+    knobBumpRef.current = knobRef.current.animate(
+      [
+        { transform: "translate(-50%, -50%) scale(1)" },
+        { transform: "translate(-50%, -50%) scale(.85)" },
+        { transform: "translate(-50%, -50%) scale(1)" },
+      ],
+      { duration: 350, easing: "cubic-bezier(.34, 1.56, .64, 1)" },
+    );
+  }, [ratio, dragging]);
 
   const selectNearest = useCallback(
     (clientX: number) => {
@@ -351,12 +355,18 @@ function EffortSlider({
         1,
         Math.max(0, (clientX - rect.left - EFFORT_KNOB / 2) / travel),
       );
-      const nextIndex = Math.round(nextRatio * last);
-      const next = levels[nextIndex];
-      if (next && next.value !== currentValue) onValueChange(next.value);
+      setDragIndex(Math.round(nextRatio * last));
     },
-    [last, levels, onValueChange, currentValue],
+    [last, levels.length],
   );
+
+  /** 松手才提交：整段拖动只写一次，避免逐档保存与重渲染。 */
+  const commitDrag = useCallback(() => {
+    const index = dragIndex;
+    setDragIndex(null);
+    const next = index === null ? undefined : levels[index];
+    if (next && next.value !== currentValue) onValueChange(next.value);
+  }, [dragIndex, levels, onValueChange, currentValue]);
 
   const move = useCallback(
     (delta: number) => {
@@ -369,9 +379,13 @@ function EffortSlider({
 
   return (
     <div className="mt-1 pb-1">
-      {/* 分割线与上下文容量面板同款：实线 border（用户口径 2026-11-22）。 */}
+      {/* 分割线与上下文容量面板同款：实线 border，左右内缩，不贴菜单边缘。 */}
       <style>{EFFORT_KEYFRAMES}</style>
-      <div className="h-px w-full bg-border" aria-hidden="true" />
+      <div
+        className="my-1 h-px bg-border"
+        aria-hidden="true"
+        style={{ marginLeft: 12, marginRight: 12 }}
+      />
       <div className="px-2 pb-3 pt-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-ui-base text-foreground-subtle">思考强度</span>
@@ -407,6 +421,14 @@ function EffortSlider({
               selectNearest(event.clientX);
             }
           }}
+          onPointerUp={() => {
+            if (disabled) return;
+            commitDrag();
+          }}
+          onPointerCancel={() => {
+            if (disabled) return;
+            commitDrag();
+          }}
           onKeyDown={(event) => {
             if (disabled) return;
             if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
@@ -440,7 +462,10 @@ function EffortSlider({
                       .join(", ")})`
                   : (coloredStops[0]?.color ?? "transparent"),
               clipPath: `inset(0 calc((1 - ${ratio}) * (100% - ${EFFORT_KNOB}px)) 0 0 round 999px)`,
-              transition: "clip-path .3s cubic-bezier(.3, 1.2, .4, 1)",
+              // 拖动时不做过渡：每一帧都重启动画会拖慢拖动并造成闪烁。
+              transition: dragging
+                ? "none"
+                : "clip-path .3s cubic-bezier(.3, 1.2, .4, 1)",
               animation: isTop
                 ? undefined
                 : "effort-glow 2.6s ease-in-out infinite",
@@ -510,7 +535,11 @@ function EffortSlider({
           <span
             ref={knobRef}
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 z-[2] size-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)] transition-[left] duration-300"
+            className={cn(
+              "pointer-events-none absolute top-1/2 z-[2] size-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
+              // 拖动时手柄跟手、不做位置过渡（过渡会让拖动看起来发飘）。
+              !dragging && "transition-[left] duration-300",
+            )}
             style={{
               left: `calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
             }}
@@ -664,6 +693,15 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     pending && renderedPendingLabel
       ? renderedPendingLabel
       : renderedTriggerDisplayLabel;
+  // 触发器同时显示思考程度（用户口径）：模型名 · 档位，一眼读全这次怎么跑。
+  const effortTriggerLabel =
+    effort?.option && (effort.option.options?.length ?? 0) > 1
+      ? (() => {
+          const value = effort.option.currentValue;
+          if (typeof value !== "string" || !value) return null;
+          return effortLevelLabel(value);
+        })()
+      : null;
   const currentTriggerTitle =
     pending && pendingLabel ? pendingLabel : triggerDisplayLabel;
   const triggerLabelClassName = getModelTriggerLabelClassName({
@@ -955,6 +993,12 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             value={pending ? undefined : triggerLabelValue}
           />
         </span>
+        {effortTriggerLabel ? (
+          <>
+            <span className="text-foreground-subtle">·</span>
+            <span className="shrink-0 font-semibold">{effortTriggerLabel}</span>
+          </>
+        ) : null}
         {triggerBadge}
         {pending ? (
           <LoaderIcon className="pointer-events-none size-3.5 animate-spin text-foreground" />
@@ -1027,8 +1071,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               {renderModelItems(leadingItems)}
               {hasSelectableModel ? (
                 <div
-                  className="my-1 h-px w-full bg-border"
+                  className="my-1 h-px bg-border"
                   aria-hidden="true"
+                  style={{ marginLeft: 12, marginRight: 12 }}
                 />
               ) : null}
             </>
@@ -1040,8 +1085,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   group,
                 ) ? (
                   <div
-                    className="my-1 h-px w-full bg-border"
+                    className="my-1 h-px bg-border"
                     aria-hidden="true"
+                    style={{ marginLeft: 12, marginRight: 12 }}
                   />
                 ) : null;
                 if (group.directItems) {
@@ -1088,9 +1134,8 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                         }
                       >
                         {renderGroupLabel(group)}
-                        {groupSelected ? (
-                          <CheckIcon className="size-4 text-foreground-subtle" />
-                        ) : null}
+                        {/* 供应商行只留右侧箭头（用户口径）：勾由子菜单里的模型项表示，
+                            这一行重复打勾既挤又容易误读成「整个供应商被选中」。 */}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent
                         className={cn(
@@ -1113,8 +1158,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             <div className="sticky bottom-0 z-10 bg-menu after:absolute after:left-0 after:top-full after:h-1 after:w-full after:bg-menu after:content-['']">
               {hasSelectableModel ? (
                 <div
-                  className="my-1 h-px w-full bg-border"
+                  className="my-1 h-px bg-border"
                   aria-hidden="true"
+                  style={{ marginLeft: 12, marginRight: 12 }}
                 />
               ) : null}
               {renderedFooterActions.map((action) => (
