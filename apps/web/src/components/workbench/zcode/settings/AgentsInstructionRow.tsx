@@ -19,21 +19,28 @@ export function resolveAgentsInstructionPath(workspacePath: string): string {
 }
 
 /**
- * 智能体页顶部的 AGENTS.md 入口：与页签 + 搜索并在同一行。
+ * 智能体页顶部的 AGENTS.md 入口：与页签 + 搜索**同一行**。
  *
  * 为什么不再是整张卡片：它是全页唯一的「全局文件」，独占一整行会让下面的
- * 作用域筛选与搜索被顶到第二屏；把它压成行内一段（图标 + 文件名 + 编辑），
+ * 作用域筛选与搜索被顶到第二屏；压成行内一段（图标 + 文件名 + 路径 + 编辑），
  * 与页签同一行时用户仍能一眼看到它在哪、点得到编辑。
+ *
+ * 路径按可用宽度截断（`truncate` + `title`）：页头空间有限，完整路径在悬停时可见，
+ * 让路径换行会把这一行撑成两行，回到原来的问题。
  */
 export function AgentsInstructionInline({
   filePath,
   onEdit,
+  className,
 }: {
   filePath: string;
   onEdit?: () => void;
+  className?: string;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+    <div
+      className={`flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 ${className ?? ""}`}
+    >
       <FileDisplayIcon
         src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
         size={16}

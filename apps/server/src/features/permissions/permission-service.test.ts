@@ -568,6 +568,71 @@ describe("工具策略：三态规则与禁用清单", () => {
     expect(decision?.decision).toBe("deny");
     expect(decision?.blocked).toBeUndefined();
   });
+
+  it("整体策略：白名单模式只放行域名表允许的，其余一律拦", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "allowed.example", action: "allow" }],
+      networkPolicy: {
+        networkMode: "whitelist",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
+    });
+    expect(svc.checkUrlPolicy("https://allowed.example/x")?.decision).toBe(
+      "allow",
+    );
+    const other = svc.checkUrlPolicy("https://other.example");
+    expect(other?.decision).toBe("deny");
+    // 硬拦：白名单模式下「不在名单里」就是拒绝，不给审批机会
+    expect(other?.blocked).toBe(true);
+  });
+
+  it("整体策略：全部放行/黑名单只在域名表拒绝时拦", () => {
+    for (const networkMode of ["allow-all", "blacklist"] as const) {
+      const svc = withPolicy({
+        domainRules: [{ domain: "bad.example", action: "deny" }],
+        networkPolicy: {
+          networkMode,
+          httpAllowed: true,
+          tlsVerification: true,
+        },
+      });
+      expect(svc.checkUrlPolicy("https://bad.example")?.blocked).toBe(true);
+      // 未命中表 → 放行（不再回落 undefined 让调用方各自解释）
+      expect(svc.checkUrlPolicy("https://other.example")?.decision).toBe(
+        "allow",
+      );
+    }
+  });
+
+  it("整体策略：默认询问模式下未命中表的地址要过问，不硬拦", () => {
+    const svc = withPolicy({
+      networkPolicy: {
+        networkMode: "ask",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
+    });
+    const decision = svc.checkUrlPolicy("https://other.example");
+    expect(decision?.decision).toBe("deny");
+    expect(decision?.blocked).toBeUndefined();
+  });
+
+  it("关闭「HTTP 放行」后明文 http 一律硬拦，https 不受影响", () => {
+    const svc = withPolicy({
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: false,
+        tlsVerification: true,
+      },
+    });
+    const plain = svc.checkUrlPolicy("http://example.com");
+    expect(plain?.decision).toBe("deny");
+    expect(plain?.blocked).toBe(true);
+    expect(plain?.reason).toMatch(/HTTP 放行/);
+    // https 未命中表 → auto 档不下结论
+    expect(svc.checkUrlPolicy("https://example.com")).toBeUndefined();
+  });
 });
 
 describe("审计中心：判定流水", () => {

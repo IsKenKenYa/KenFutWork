@@ -44,6 +44,11 @@ type PolicyDraft = {
   }>;
   commandRules: Array<{ prefix: string; action: RuleAction }>;
   domainRules: Array<{ domain: string; action: RuleAction }>;
+  networkPolicy: {
+    networkMode: "allow-all" | "auto" | "ask" | "whitelist" | "blacklist";
+    httpAllowed: boolean;
+    tlsVerification: boolean;
+  };
   deleteMode: "ask" | "auto-approve" | "trash" | "permanent";
   deleteProtection: { enabled: boolean; batchThreshold: number };
   commandReview: "auto" | "strict" | "off";
@@ -80,6 +85,11 @@ const DEFAULT_DATA_SAFETY = {
   deleteProtection: { enabled: true, batchThreshold: 50 },
   commandReview: "auto" as const,
   commandReviewPatterns: ["rm "],
+  networkPolicy: {
+    networkMode: "auto" as const,
+    httpAllowed: true,
+    tlsVerification: true,
+  },
   sensitiveProtection: { enabled: true, patterns: [] },
 };
 
@@ -308,6 +318,11 @@ it("安全防护：敏感保护读得回、存得出，且不动其它字段", a
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
       commandReview: "auto",
       commandReviewPatterns: ["rm "],
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
       aiSafety: { injectionGuard: false, approvalReview: false },
@@ -340,6 +355,11 @@ it("安全防护：敏感保护读得回、存得出，且不动其它字段", a
       deleteProtection: { enabled: true, batchThreshold: 20 },
       commandReview: "auto",
       commandReviewPatterns: ["rm "],
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
       sensitiveProtection: {
         enabled: true,
         patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],
@@ -366,6 +386,11 @@ it("删除模式：四选一写回 deleteMode，批量阈值同卡片提交", as
       sensitiveProtection: { enabled: true, patterns: [] },
       commandReview: "auto",
       commandReviewPatterns: ["rm "],
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
       aiSafety: { injectionGuard: false, approvalReview: false },
@@ -406,6 +431,11 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
       sensitiveProtection: { enabled: true, patterns: [] },
       commandReview: "auto",
       commandReviewPatterns: ["rm ", "sudo "],
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },
       aiSafety: { injectionGuard: false, approvalReview: false },

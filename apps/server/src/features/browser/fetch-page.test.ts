@@ -182,7 +182,8 @@ describe("网络安全整链（permissions → browser 服务出口）", () => {
       browser.snapshot("https://blocked.example/x", {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
-    ).rejects.toThrow(/拒绝/);
+      // 理由来自权限服务的真实规则文案（「命中「拦截」规则 …」），断言它点名了被拦的域名。
+    ).rejects.toThrow(/blocked\.example/);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

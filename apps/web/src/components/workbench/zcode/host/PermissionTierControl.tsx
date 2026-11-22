@@ -39,6 +39,20 @@ const FILE_OPERATIONS: ReadonlyArray<{
   { value: "delete", label: "删" },
 ];
 
+/** 网络整体策略（与 `permissionNetworkModeSchema` 一一对应）。 */
+type NetworkMode = "allow-all" | "auto" | "ask" | "whitelist" | "blacklist";
+
+const NETWORK_MODES: ReadonlyArray<{
+  value: NetworkMode;
+  label: string;
+}> = [
+  { value: "allow-all", label: "全部放行" },
+  { value: "auto", label: "自动审批" },
+  { value: "ask", label: "默认询问" },
+  { value: "whitelist", label: "白名单" },
+  { value: "blacklist", label: "黑名单" },
+];
+
 /**
  * 权限档（G7/T7/C1，KenFutWork 宿主件）：旧四档语义（默认/自动审批/完全访问/自定义）
  * 充当「新会话默认档」（Q12：不采用 ZCode build/edit/plan/yolo 作权限档）。
@@ -1176,6 +1190,11 @@ function PermissionPolicySection() {
   const [pathRules, setPathRules] = useState<EditableRule[]>([]);
   const [commandRules, setCommandRules] = useState<EditableRule[]>([]);
   const [domainRules, setDomainRules] = useState<EditableRule[]>([]);
+  const [networkPolicy, setNetworkPolicy] = useState<{
+    networkMode: NetworkMode;
+    httpAllowed: boolean;
+    tlsVerification: boolean;
+  }>({ networkMode: "auto", httpAllowed: true, tlsVerification: true });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -1192,10 +1211,21 @@ function PermissionPolicySection() {
         }>;
         commandRules?: Array<{ prefix: string; action: PolicyRule["action"] }>;
         domainRules?: Array<{ domain: string; action: PolicyRule["action"] }>;
+        networkPolicy?: {
+          networkMode?: NetworkMode;
+          httpAllowed?: boolean;
+          tlsVerification?: boolean;
+        };
       };
     }>("/api/permissions/tier")
       .then((view) => {
         if (cancelled) return;
+        setNetworkPolicy({
+          networkMode: view.policy?.networkPolicy?.networkMode ?? "auto",
+          httpAllowed: view.policy?.networkPolicy?.httpAllowed !== false,
+          tlsVerification:
+            view.policy?.networkPolicy?.tlsVerification !== false,
+        });
         // 禁用清单折成排在最前的「工具规则 + 拒绝」：两者判定相同（硬拒绝、不了审批），
         // 排在前面保持原本「禁用先判」的先后关系。
         setToolRules([
@@ -1276,6 +1306,11 @@ function PermissionPolicySection() {
               domain: row.value,
               action: row.action,
             })),
+            networkPolicy: {
+              networkMode: networkPolicy.networkMode,
+              httpAllowed: networkPolicy.httpAllowed,
+              tlsVerification: networkPolicy.tlsVerification,
+            },
           },
         }),
       });
@@ -1341,6 +1376,76 @@ function PermissionPolicySection() {
             ariaLabel="域名"
             disabled={saving}
           />
+          {/* 网络整体策略与两个开关（用户口径）：它们决定「没被域名表命中的地址
+              怎么办」以及「明文 http / 自签证书是否放行」，与逐条域名三态表正交。 */}
+          <div className="mt-3 space-y-2 border-t border-border pt-3">
+            <SettingsRow
+              label="网络策略"
+              control={
+                <Select
+                  value={networkPolicy.networkMode}
+                  disabled={saving}
+                  onValueChange={(next) =>
+                    setNetworkPolicy((current) => ({
+                      ...current,
+                      networkMode: next as NetworkMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    size="lg"
+                    aria-label="网络策略"
+                    className="w-40"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NETWORK_MODES.map((entry) => (
+                      <SelectItem key={entry.value} value={entry.value}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+            />
+            <SettingsRow
+              label="HTTP 放行"
+              control={
+                <input
+                  type="checkbox"
+                  aria-label="HTTP 放行"
+                  checked={networkPolicy.httpAllowed}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setNetworkPolicy((current) => ({
+                      ...current,
+                      httpAllowed: event.target.checked,
+                    }))
+                  }
+                  className="size-4"
+                />
+              }
+            />
+            <SettingsRow
+              label="SSL 证书校验"
+              control={
+                <input
+                  type="checkbox"
+                  aria-label="SSL 证书校验"
+                  checked={networkPolicy.tlsVerification}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setNetworkPolicy((current) => ({
+                      ...current,
+                      tlsVerification: event.target.checked,
+                    }))
+                  }
+                  className="size-4"
+                />
+              }
+            />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <Button

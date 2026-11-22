@@ -77,7 +77,14 @@ export function createBrowserPlugin(): PluginDefinition {
         };
       };
       ctx.register("browser", () =>
-        createBrowserService(cdp, (url) => hostPolicyFor()?.(url)),
+        createBrowserService(
+          cdp,
+          (url) => hostPolicyFor()?.(url),
+          // 「SSL 证书校验」：关掉后抓取自签/内网站点不校验证书链。
+          () =>
+            kernelCtx.tryGet("permissions")?.getSettings().policy.networkPolicy
+              ?.tlsVerification !== false,
+        ),
       );
       /**
        * 「允许 AI 读取开发者工具数据」门控（默认开，设置 → 浏览器）。

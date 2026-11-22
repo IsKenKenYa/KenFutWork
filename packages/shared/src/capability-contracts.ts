@@ -245,6 +245,38 @@ export const DEFAULT_COMMAND_REVIEW_PATTERNS: readonly string[] = [
 ];
 
 /**
+ * 网络规则的整体策略（用户口径「网络安全」四选一）。
+ *
+ * 与域名三态表正交：这一项说的是「没被域名表命中的地址怎么办」。
+ * - `allow-all`：全部放行（域名表里的「拒绝」仍然生效）；
+ * - `auto`：按权限模式走（默认档本来就要审批）；
+ * - `ask`：除域名表放行外，一律先问我；
+ * - `whitelist`：只放行域名表里显式「允许」的，其余一律拦；
+ * - `blacklist`：放行全部，只拦域名表里「拒绝」的。
+ */
+export const permissionNetworkModeSchema = z.enum([
+  "allow-all",
+  "auto",
+  "ask",
+  "whitelist",
+  "blacklist",
+]);
+export type PermissionNetworkMode = z.infer<typeof permissionNetworkModeSchema>;
+
+/**
+ * 网络安全附加规则（用户口径）：
+ * - `httpAllowed`：关闭时只允许 https（明文 HTTP 一律拦）；
+ * - `tlsVerification`：关闭时抓取不校验证书链（自签/内网证书场景）。
+ */
+export const permissionNetworkPolicySchema = z
+  .object({
+    networkMode: permissionNetworkModeSchema.default("auto"),
+    httpAllowed: z.boolean().default(true),
+    tlsVerification: z.boolean().default(true),
+  })
+  .default({ networkMode: "auto", httpAllowed: true, tlsVerification: true });
+
+/**
  * 工具策略：三态规则表 + 禁用清单 + 路径/命令/域名规则。
  *
  * 判定顺序（拒绝优先，全部在档位之前）：
@@ -259,6 +291,8 @@ export const permissionPolicySchema = z.object({
   pathRules: z.array(permissionPathRuleSchema).max(500).default([]),
   commandRules: z.array(permissionCommandRuleSchema).max(500).default([]),
   domainRules: z.array(permissionDomainRuleSchema).max(500).default([]),
+  /** 网络整体策略 + 明文 HTTP / 证书校验开关（用户口径「网络安全」）。 */
+  networkPolicy: permissionNetworkPolicySchema,
   /**
    * 删除模式（用户口径的四选一，替代原来的「删除保护 + 回收站」两个开关）。
    *
@@ -391,6 +425,11 @@ export const EMPTY_PERMISSION_POLICY: PermissionPolicy = {
   pathRules: [],
   commandRules: [],
   domainRules: [],
+  networkPolicy: {
+    networkMode: "auto",
+    httpAllowed: true,
+    tlsVerification: true,
+  },
   deleteMode: "ask",
   deleteProtection: {
     enabled: true,

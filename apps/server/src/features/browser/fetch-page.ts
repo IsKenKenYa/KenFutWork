@@ -71,13 +71,18 @@ export interface BrowserService {
 export function createBrowserService(
   cdp: import("./cdp-session.js").CdpBrowserSession,
   hostPolicy?: FetchPageOptions["hostPolicy"],
+  /** 「SSL 证书校验」开关（设置 → 权限 → 网络安全）；缺省校验。 */
+  tlsVerification?: () => boolean,
 ): BrowserService {
   return {
-    snapshot: (url, options) =>
-      fetchPageSnapshot(url, {
+    snapshot: (url, options) => {
+      const verify = tlsVerification?.();
+      return fetchPageSnapshot(url, {
         ...(options ?? {}),
         ...(hostPolicy ? { hostPolicy } : {}),
-      }),
+        ...(verify === false ? { tlsVerification: false } : {}),
+      });
+    },
     cdp,
   };
 }
@@ -265,6 +270,13 @@ export interface FetchPageOptions {
   hostPolicy?: (
     url: URL,
   ) => { decision: "allow" } | { decision: "deny"; reason: string } | undefined;
+  /**
+   * 是否校验目标站点的证书链（网络安全里的「SSL 证书校验」）。
+   *
+   * 缺省 `true`。关闭后允许抓取自签 / 内网证书站点——做法是给这个请求单独挂一个
+   * 不校验证书的 undici dispatcher，不动进程级 TLS 设置（那会波及模型请求）。
+   */
+  tlsVerification?: boolean;
   /** 测试注入。 */
   fetchImpl?: typeof fetch;
 }
@@ -275,6 +287,21 @@ export class BrowserPolicyError extends Error {
     super(message);
     this.name = "BrowserPolicyError";
   }
+}
+
+/**
+ * 不校验证书的 dispatcher（「SSL 证书校验」关闭时用）。
+ *
+ * 只作用于本模块的抓取请求：`fetch(url, { dispatcher })` 的 per-request 覆盖，
+ * 不动全局 `NODE_TLS_REJECT_UNAUTHORIZED` —— 那会让进程里所有请求（含模型 API）
+ * 一起失去证书校验。懒加载并在成功后缓存复用。
+ */
+let insecureDispatcher: unknown | null = null;
+async function insecureTlsDispatcher(): Promise<unknown> {
+  if (insecureDispatcher) return insecureDispatcher;
+  const { Agent } = await import("undici");
+  insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  return insecureDispatcher;
 }
 
 /**
@@ -317,12 +344,15 @@ export async function fetchPageSnapshot(
     response = await fetchImpl(url.toString(), {
       redirect: "follow",
       signal: controller.signal,
+      ...(options.tlsVerification === false && !options.fetchImpl
+        ? { dispatcher: await insecureTlsDispatcher() }
+        : {}),
       headers: {
         // 明确的 UA：不少站点对无 UA 的请求直接回兜底页
         "user-agent": BROWSER_FETCH_USER_AGENT,
         accept: "text/html,application/xhtml+xml",
       },
-    });
+    } as RequestInit);
   } catch (error) {
     clearTimeout(timer);
     const reason =

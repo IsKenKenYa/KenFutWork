@@ -589,7 +589,55 @@ export function createPermissionService(
     },
     checkUrlPolicy(url) {
       const policy = settings.policy ?? EMPTY_PERMISSION_POLICY;
-      return domainDecisionFor(url, policy.domainRules);
+      const network = policy.networkPolicy ?? {
+        networkMode: "auto",
+        httpAllowed: true,
+        tlsVerification: true,
+      };
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return undefined;
+      }
+      // 明文 HTTP 放行开关（用户口径「网络安全」）：关闭时只允许 https。
+      // 这一项先于域名表：协议不合格的请求不该再用域名表去解释。
+      if (parsed.protocol === "http:" && !network.httpAllowed) {
+        return {
+          decision: "deny",
+          blocked: true,
+          source: "domain-rule",
+          reason: "网络安全里关闭了「HTTP 放行」，只允许 https 地址",
+        };
+      }
+      // 域名表按表内顺序取第一条命中。命中即按它办，不再看整体策略：
+      // 用户显式写下的规则比「全部放行/白名单」这类整体口径更具体。
+      const matched = domainDecisionFor(url, policy.domainRules);
+      if (matched) return matched;
+      // 未命中域名表 → 按整体策略决定
+      switch (network.networkMode) {
+        case "allow-all":
+        case "blacklist":
+          // 放行（blacklist 的「拦」已经由域名表的「拒绝」表达）
+          return { decision: "allow", source: "domain-rule" };
+        case "whitelist":
+          return {
+            decision: "deny",
+            blocked: true,
+            source: "domain-rule",
+            reason: "网络安全是「白名单」模式：只放行域名规则里显式允许的地址",
+          };
+        case "ask":
+          return {
+            decision: "deny",
+            source: "domain-rule",
+            reason:
+              "网络安全是「默认询问」模式：这个地址不在域名规则里，需你确认",
+          };
+        default:
+          // auto：不在这里下结论，交给调用方按原行为（档位/审批）处理
+          return undefined;
+      }
     },
     setAuditSink(sink) {
       auditSink = sink;
