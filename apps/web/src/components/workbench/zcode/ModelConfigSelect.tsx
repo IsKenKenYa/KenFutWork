@@ -164,6 +164,17 @@ function effortLevelLabel(value: string): string {
 /** 手柄直径（px）。与轨道同高，圆形正好嵌在轨道两端，不会上下错位。 */
 const EFFORT_KNOB = 32;
 
+/**
+ * 菜单里的分割线（模型菜单的两条、思考强度上方的那条）。
+ *
+ * 为什么是「2px 高 + 一半透明度」而不是 1px 实线：1px 线落在哪个物理像素取决于它在
+ * 页面里的累计位置，分数倍缩放（Windows 125% / 150%，DPR 1.25 / 1.5）下两条位置不同的
+ * 1px 线会被拆到不同的物理像素行——实测一条渲染成 48+65、另一条 54+59，用户看到的就是
+ * 「两条不一样粗」。2px 高度必然覆盖整物理像素，边缘那半行只有一半透明度，两条线的
+ * 观感就一致了；总墨量与 1px 实线相同，仍是细线。
+ */
+const MENU_DIVIDER_CLASS = "my-1 h-0.5 bg-border/50";
+
 /** 「关闭」一类的档位不参与配色渐变（设计稿里的 None 档：灰、无特效）。 */
 function isEffortPlainLevel(value: string): boolean {
   return ["off", "none", "disable", "disabled"].includes(
@@ -324,6 +335,10 @@ function EffortSlider({
 
   // 档位变化：特效强度与速率跟着档位走；手柄回弹一下（设计稿 bump）。
   // 拖动期间不做回弹——每帧重启动画就是「一直在闪」的来源。
+  //
+  // 回弹**只缩放、不改位移**：手柄的水平/垂直居中由 `left` + `margin` 完成（见下方 style），
+  // 动画里再写 translate(-50%,-50%) 会与 Tailwind 4 的 `translate` 属性叠加，
+  // 实测偏移 16px（手柄半径）——那正是「滑块手柄错位」的来源。
   useEffect(() => {
     const rate = 0.5 + 1.7 * ratio;
     for (const animation of shimmerFirstRef.current?.getAnimations() ?? []) {
@@ -335,12 +350,12 @@ function EffortSlider({
     if (dragging || !knobRef.current) return;
     knobBumpRef.current?.cancel();
     knobBumpRef.current = knobRef.current.animate(
-      [
-        { transform: "translate(-50%, -50%) scale(1)" },
-        { transform: "translate(-50%, -50%) scale(.85)" },
-        { transform: "translate(-50%, -50%) scale(1)" },
-      ],
-      { duration: 350, easing: "cubic-bezier(.34, 1.56, .64, 1)" },
+      [{ scale: "1" }, { scale: "0.85" }, { scale: "1" }],
+      {
+        duration: 350,
+        easing: "cubic-bezier(.34, 1.56, .64, 1)",
+        composite: "replace",
+      },
     );
   }, [ratio, dragging]);
 
@@ -382,7 +397,7 @@ function EffortSlider({
       {/* 分割线与上下文容量面板同款：实线 border，左右内缩，不贴菜单边缘。 */}
       <style>{EFFORT_KEYFRAMES}</style>
       <div
-        className="my-1 h-px bg-border"
+        className={MENU_DIVIDER_CLASS}
         aria-hidden="true"
         style={{ marginLeft: 12, marginRight: 12 }}
       />
@@ -541,7 +556,12 @@ function EffortSlider({
             aria-hidden="true"
             className={cn(
               // 手柄与轨道同高（32px）：不再上下各露一截，滑块与轨道对齐。
-              "pointer-events-none absolute top-1/2 z-[2] size-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
+              //
+              // 居中方式：`top-1/2` + 负 margin，**不用** `-translate-x-1/2 -translate-y-1/2`。
+              // Tailwind 4 把 translate 工具类编译成独立的 `translate` 属性，而回弹动画
+              // （knob.animate）用的是 `transform`——两者会叠加成双倍位移（实测偏 16px，
+              // 正是用户看到的「手柄错位」）。负 margin 只受 left 控制，与 transform 不冲突。
+              "pointer-events-none absolute top-1/2 z-[2] size-8 -mt-4 -ml-4 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
               // 拖动时手柄跟手、不做位置过渡（过渡会让拖动看起来发飘）。
               !dragging && "transition-[left] duration-300",
             )}
@@ -1001,7 +1021,15 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         {effortTriggerLabel ? (
           <>
             <span className="text-foreground-subtle">·</span>
-            <span className="shrink-0 font-semibold">{effortTriggerLabel}</span>
+            {/*
+              档位读数与模型名同字重（用户口径「最高不要加粗」）。
+              宽度固定为两字：档位从「关闭 / 默认 / 低 / 中 / 高」变成「最高」等两字档时
+              触发器不再变宽——菜单锚定在触发器上，触发器一变宽菜单就跟着横跳（实测
+              宽度 145→192、x 851→865，即用户看到的「面板抖动」）。
+            */}
+            <span className="w-[2em] shrink-0 text-right">
+              {effortTriggerLabel}
+            </span>
           </>
         ) : null}
         {triggerBadge}
@@ -1076,7 +1104,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               {renderModelItems(leadingItems)}
               {hasSelectableModel ? (
                 <div
-                  className="my-1 h-px bg-border"
+                  className={MENU_DIVIDER_CLASS}
                   aria-hidden="true"
                   style={{ marginLeft: 12, marginRight: 12 }}
                 />
@@ -1090,7 +1118,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   group,
                 ) ? (
                   <div
-                    className="my-1 h-px bg-border"
+                    className={MENU_DIVIDER_CLASS}
                     aria-hidden="true"
                     style={{ marginLeft: 12, marginRight: 12 }}
                   />
@@ -1163,7 +1191,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             <div className="sticky bottom-0 z-10 bg-menu after:absolute after:left-0 after:top-full after:h-1 after:w-full after:bg-menu after:content-['']">
               {hasSelectableModel ? (
                 <div
-                  className="my-1 h-px bg-border"
+                  className={MENU_DIVIDER_CLASS}
                   aria-hidden="true"
                   style={{ marginLeft: 12, marginRight: 12 }}
                 />

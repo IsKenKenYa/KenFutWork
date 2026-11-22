@@ -758,21 +758,59 @@ function SandboxSecuritySection() {
   );
 }
 
+/** 四类规则：匹配对象不同，界面形状一致（列表 + 弹窗编辑）。 */
+type RuleKind = "tool" | "path" | "command" | "domain";
+
+const RULE_GROUPS: ReadonlyArray<{
+  kind: RuleKind;
+  title: string;
+  placeholder: string;
+  ariaLabel: string;
+  /** 只有路径规则需要「读 / 写 / 删」这一档。 */
+  showOperation?: boolean;
+}> = [
+  {
+    kind: "tool",
+    title: "工具规则",
+    placeholder: "mcp__fs__*",
+    ariaLabel: "工具名或前缀",
+  },
+  {
+    kind: "path",
+    title: "文件路径规则",
+    placeholder: "D:\\项目\\敏感目录",
+    ariaLabel: "路径前缀",
+    showOperation: true,
+  },
+  {
+    kind: "command",
+    title: "命令规则",
+    placeholder: "rm -rf",
+    ariaLabel: "命令前缀",
+  },
+  {
+    kind: "domain",
+    title: "网络规则",
+    placeholder: "*.example.com",
+    ariaLabel: "域名",
+  },
+];
+
 /**
  * 规则与放行：四类三态规则（工具 / 文件 / 命令 / 网络）。
  *
- * 每类规则的匹配对象不同，所以每组都直接写出「按什么匹配」——用户不必猜
- * 「路径规则」和「命令规则」差在哪。四组按**服务的判定顺序**排列（工具 → 路径 →
- * 命令 → 域名），因此卡片顶部那句「从上往下匹配」对用户来说是成立的。
+ * 版式与浏览器控制页一致：每类规则一个设置行（标签在左、编辑按钮在右），
+ * 已配置的规则直接列在行下方——点某一条就在弹窗里编辑那一条，行尾可删除。
+ * 匹配对象不同的四类都直接写出「按什么匹配」，用户不必猜路径规则与命令规则差在哪。
  *
  * 四组合成一次保存——它们同属一个策略对象，分四次提交会让「先存了规则、后存失败」
  * 留下半套配置。提交前读回整份策略再合并：PUT 收的是完整 policy，漏传的字段会被
  * 服务端缺省值冲掉（曾经把沙箱总开关、自动备份与 AI 安全防护一并重置）。
  * 空白匹配值在提交前剔除：空规则会命中一切，绝不能静默存下去。
  *
- * 旧的「禁用工具」清单不再单列：它与「工具规则 + 拒绝」的判定完全一致（都是硬拒绝、
+ * 旧的「禁用工具」清单不再单列：它与「工具规则 + 拦截」的判定完全一致（都是硬拒绝、
  * 不给审批机会），两处并存只会让用户以为它们是两种不同的东西。读回时把清单里的
- * 匹配式折成排在**最前**的工具拒绝规则——保持原来「禁用先判」的先后关系。
+ * 匹配式折成排在**最前**的工具拦截规则——保持原来「禁用先判」的先后关系。
  */
 function PermissionPolicySection() {
   const [toolRules, setToolRules] = useState<EditableRule[]>([]);
@@ -784,17 +822,13 @@ function PermissionPolicySection() {
     httpAllowed: boolean;
     tlsVerification: boolean;
   }>({ networkMode: "auto", httpAllowed: true, tlsVerification: true });
-  const [editingRules, setEditingRules] = useState<
-    "tool" | "path" | "command" | "domain" | null
-  >(null);
-  const editingRulesTitle =
-    editingRules === "tool"
-      ? "工具规则"
-      : editingRules === "path"
-        ? "文件路径规则"
-        : editingRules === "command"
-          ? "命令规则"
-          : "网络规则";
+  /** 打开的是哪一组规则；`index` 非空表示从列表里点进来的那一条。 */
+  const [editor, setEditor] = useState<{
+    kind: RuleKind;
+    index: number | null;
+  } | null>(null);
+  /** 弹窗打开时锁定到规则详情：从列表点进来先展示那一条，从「编辑」进来先看列表。 */
+  const [editorDetail, setEditorDetail] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -867,13 +901,14 @@ function PermissionPolicySection() {
   /**
    * 提交规则与网络策略。
    *
-   * `override` 用于「单个开关/下拉改完立刻生效」：这些控件的值在 setState 之后
-   * 还没进闭包，直接读 state 会提交旧值。
+   * `override` 用于「改完立刻生效」的单点操作：这些值在 setState 之后还没进闭包，
+   * 直接读 state 会提交旧值。`rows` 适用于删除一条规则时同时替换该组规则表。
    */
   const savePolicy = async (override?: {
     networkMode?: NetworkMode;
     httpAllowed?: boolean;
     tlsVerification?: boolean;
+    rows?: Partial<Record<RuleKind, EditableRule[]>>;
   }) => {
     setSaving(true);
     setMessage(null);
@@ -891,28 +926,32 @@ function PermissionPolicySection() {
       const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
         "/api/permissions/tier",
       );
+      const nextTool = override?.rows?.tool ?? toolRules;
+      const nextPath = override?.rows?.path ?? pathRules;
+      const nextCommand = override?.rows?.command ?? commandRules;
+      const nextDomain = override?.rows?.domain ?? domainRules;
       await surfaceJson("/api/permissions/tier", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           policy: {
             ...(view.policy ?? {}),
-            rules: trimmed(toolRules).map((row) => ({
+            rules: trimmed(nextTool).map((row) => ({
               pattern: row.value,
               action: row.action,
             })),
-            // 禁用清单已并入工具规则（「拒绝」），这里清空：否则读回时会被再展开一遍。
+            // 禁用清单已并入工具规则（「拦截」），这里清空：否则读回时会被再展开一遍。
             disabledTools: [],
-            pathRules: trimmed(pathRules).map((row) => ({
+            pathRules: trimmed(nextPath).map((row) => ({
               path: row.value,
               operation: row.operation ?? "read",
               action: row.action,
             })),
-            commandRules: trimmed(commandRules).map((row) => ({
+            commandRules: trimmed(nextCommand).map((row) => ({
               prefix: row.value,
               action: row.action,
             })),
-            domainRules: trimmed(domainRules).map((row) => ({
+            domainRules: trimmed(nextDomain).map((row) => ({
               domain: row.value,
               action: row.action,
             })),
@@ -933,166 +972,176 @@ function PermissionPolicySection() {
     }
   };
 
+  /** 四组规则表与各自的 setter：四类共用一个编辑器，按 kind 查表。 */
+  const ruleTable: Record<
+    RuleKind,
+    { rows: EditableRule[]; setRows: (next: EditableRule[]) => void }
+  > = {
+    tool: { rows: toolRules, setRows: setToolRules },
+    path: { rows: pathRules, setRows: setPathRules },
+    command: { rows: commandRules, setRows: setCommandRules },
+    domain: { rows: domainRules, setRows: setDomainRules },
+  };
+  const editorGroup = editor
+    ? RULE_GROUPS.find((group) => group.kind === editor.kind)
+    : undefined;
+
+  /** 打开某一组规则：`index` 有值时直接进入该条详情，否则展示列表。 */
+  const openEditor = (kind: RuleKind, index: number | null) => {
+    setEditor({ kind, index });
+    setEditorDetail(index);
+  };
+
+  /** 删除一条规则并立即提交（列表行尾的垃圾桶直接生效，不再进弹窗）。 */
+  const removeRule = (kind: RuleKind, index: number) => {
+    const table = ruleTable[kind];
+    const next = table.rows.filter((_, i) => i !== index);
+    table.setRows(next);
+    void savePolicy({ rows: { [kind]: next } });
+  };
+
   return (
     <SettingsGroupCard>
-      <div className="space-y-5 p-4">
-        {/* 放行策略：没命中任何规则时怎么办——全部放行 / 自动审批 / 默认询问 /
-            白名单 / 黑名单。 */}
-        <SettingsRow
-          label="放行策略"
-          control={
-            <Select
-              value={networkPolicy.networkMode}
-              disabled={saving}
-              onValueChange={(next) => {
-                const mode = next as NetworkMode;
-                setNetworkPolicy((current) => ({
-                  ...current,
-                  networkMode: mode,
-                }));
-                void savePolicy({ networkMode: mode });
-              }}
-            >
-              <SelectTrigger size="lg" aria-label="放行策略" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {NETWORK_MODES.map((entry) => (
-                  <SelectItem key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          }
-        />
-        {/* 四组规则：每组一个小标题 + 「编辑」按钮；组内已配置的规则逐条列出，
-            每条可直接点开编辑、右侧可删除。改完立即提交，不再有「保存规则」。 */}
-        <RuleListSection
-          title="工具规则"
-          rows={toolRules}
-          placeholder="mcp__fs__*"
-          ariaLabel="工具名或前缀"
-          disabled={saving}
-          onOpenEditor={() => setEditingRules("tool")}
-          onChange={setToolRules}
-        />
-        <RuleListSection
-          title="文件路径规则"
-          rows={pathRules}
-          placeholder="D:\\项目\\敏感目录"
-          ariaLabel="路径前缀"
-          disabled={saving}
-          showOperation
-          onOpenEditor={() => setEditingRules("path")}
-          onChange={setPathRules}
-        />
-        <RuleListSection
-          title="命令规则"
-          rows={commandRules}
-          placeholder="rm -rf"
-          ariaLabel="命令前缀"
-          disabled={saving}
-          onOpenEditor={() => setEditingRules("command")}
-          onChange={setCommandRules}
-        />
-        {/* 网络规则：域名表 + 两个协议层开关（用户口径：HTTP / SSL 放在这一组里）。 */}
-        <div className="space-y-3 border-t border-border pt-4">
-          <RuleListSection
-            title="网络规则"
-            rows={domainRules}
-            placeholder="*.example.com"
-            ariaLabel="域名"
+      {/* 放行策略：没命中任何规则时怎么办——全部放行 / 自动审批 / 默认询问 /
+          白名单 / 黑名单。 */}
+      <SettingsRow
+        label="放行策略"
+        control={
+          <Select
+            value={networkPolicy.networkMode}
             disabled={saving}
-            onOpenEditor={() => setEditingRules("domain")}
-            onChange={setDomainRules}
-            embedded
+            onValueChange={(next) => {
+              const mode = next as NetworkMode;
+              setNetworkPolicy((current) => ({
+                ...current,
+                networkMode: mode,
+              }));
+              void savePolicy({ networkMode: mode });
+            }}
+          >
+            <SelectTrigger size="lg" aria-label="放行策略" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NETWORK_MODES.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
+      {/* 四类规则各一行：标签在左、编辑按钮在右（与浏览器控制页同一版式）。
+          已配置的规则逐条列在行下方，点某一条直接进那一条的编辑面板，行尾可删除。 */}
+      {RULE_GROUPS.map((group) => (
+        <RuleGroupRow
+          key={group.kind}
+          title={group.title}
+          rows={ruleTable[group.kind].rows}
+          placeholder={group.placeholder}
+          ariaLabel={group.ariaLabel}
+          showOperation={group.showOperation === true}
+          disabled={saving}
+          onOpenEditor={() => openEditor(group.kind, null)}
+          onEditRow={(index) => openEditor(group.kind, index)}
+          onRemoveRow={(index) => removeRule(group.kind, index)}
+        />
+      ))}
+      {/* 网络规则的两项协议开关（用户口径：HTTP / SSL 归入网络规则）。 */}
+      <SettingsRow
+        label="HTTP 放行"
+        control={
+          <ToggleSelect
+            ariaLabel="HTTP 放行"
+            value={networkPolicy.httpAllowed}
+            disabled={saving}
+            onChange={(next) => {
+              setNetworkPolicy((current) => ({
+                ...current,
+                httpAllowed: next,
+              }));
+              void savePolicy({ httpAllowed: next });
+            }}
           />
-          <SettingsRow
-            label="HTTP 放行"
-            control={
-              <ToggleSelect
-                ariaLabel="HTTP 放行"
-                value={networkPolicy.httpAllowed}
-                disabled={saving}
-                onChange={(next) => {
-                  setNetworkPolicy((current) => ({
-                    ...current,
-                    httpAllowed: next,
-                  }));
-                  void savePolicy({ httpAllowed: next });
-                }}
-              />
-            }
+        }
+      />
+      <SettingsRow
+        label="SSL 证书校验"
+        control={
+          <ToggleSelect
+            ariaLabel="SSL 证书校验"
+            value={networkPolicy.tlsVerification}
+            disabled={saving}
+            onChange={(next) => {
+              setNetworkPolicy((current) => ({
+                ...current,
+                tlsVerification: next,
+              }));
+              void savePolicy({ tlsVerification: next });
+            }}
           />
-          <SettingsRow
-            label="SSL 证书校验"
-            control={
-              <ToggleSelect
-                ariaLabel="SSL 证书校验"
-                value={networkPolicy.tlsVerification}
-                disabled={saving}
-                onChange={(next) => {
-                  setNetworkPolicy((current) => ({
-                    ...current,
-                    tlsVerification: next,
-                  }));
-                  void savePolicy({ tlsVerification: next });
-                }}
-              />
-            }
-          />
+        }
+      />
+      {message ? (
+        <div className="px-4 pb-3">
+          <span role="status" className="text-ui-sm text-foreground-subtle">
+            {message}
+          </span>
         </div>
-      </div>
+      ) : null}
       <Dialog
-        open={editingRules !== null}
+        open={editor !== null}
         onOpenChange={(open) => {
-          if (!open) setEditingRules(null);
+          if (!open) {
+            setEditor(null);
+            setEditorDetail(null);
+          }
         }}
       >
-        <DialogContent className="flex max-h-[80vh] w-[min(640px,calc(100vw-2rem))] max-w-none flex-col">
+        {/* 高度上限 + 内部滚动：条目多时弹窗不会撑出屏幕（原本会溢出）。
+            宽度随视口收缩，窄窗口下也留出左右边距。 */}
+        <DialogContent className="flex max-h-[min(80vh,calc(100vh-4rem))] w-[min(560px,calc(100vw-2rem))] max-w-none flex-col">
           <DialogHeader>
-            <DialogTitle>{editingRulesTitle}</DialogTitle>
+            <DialogTitle>{editorGroup?.title ?? "规则"}</DialogTitle>
           </DialogHeader>
-          {/* 弹窗内单独滚动：条目多时不再把弹窗撑出屏幕。 */}
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {editingRules === "tool" ? (
-              <RuleEditor
-                rows={toolRules}
-                onChange={setToolRules}
-                placeholder="mcp__fs__*"
-                ariaLabel="工具名或前缀"
-                disabled={saving}
-              />
-            ) : null}
-            {editingRules === "path" ? (
-              <RuleEditor
-                rows={pathRules}
-                onChange={setPathRules}
-                placeholder="D:\\项目\\敏感目录"
-                ariaLabel="路径前缀"
-                disabled={saving}
-                showOperation
-              />
-            ) : null}
-            {editingRules === "command" ? (
-              <RuleEditor
-                rows={commandRules}
-                onChange={setCommandRules}
-                placeholder="rm -rf"
-                ariaLabel="命令前缀"
-                disabled={saving}
-              />
-            ) : null}
-            {editingRules === "domain" ? (
-              <RuleEditor
-                rows={domainRules}
-                onChange={setDomainRules}
-                placeholder="*.example.com"
-                ariaLabel="域名"
-                disabled={saving}
-              />
-            ) : null}
+            {editor === null || editorGroup === undefined
+              ? null
+              : (() => {
+                  const table = ruleTable[editor.kind];
+                  const detailRow =
+                    editorDetail === null
+                      ? undefined
+                      : table.rows[editorDetail];
+                  return detailRow === undefined ? (
+                    <RuleEditor
+                      rows={table.rows}
+                      onChange={table.setRows}
+                      placeholder={editorGroup.placeholder}
+                      ariaLabel={editorGroup.ariaLabel}
+                      disabled={saving}
+                      showOperation={editorGroup.showOperation === true}
+                      onEditRow={(index) => setEditorDetail(index)}
+                    />
+                  ) : (
+                    <RuleDetail
+                      row={detailRow}
+                      placeholder={editorGroup.placeholder}
+                      ariaLabel={editorGroup.ariaLabel}
+                      disabled={saving}
+                      showOperation={editorGroup.showOperation === true}
+                      onChange={(next) =>
+                        table.setRows(
+                          table.rows.map((row, i) =>
+                            i === editorDetail ? next : row,
+                          ),
+                        )
+                      }
+                      onBack={() => setEditorDetail(null)}
+                    />
+                  );
+                })()}
           </div>
           <DialogFooter>
             <Button
@@ -1100,7 +1149,10 @@ function PermissionPolicySection() {
               size="sm"
               disabled={saving}
               onClick={() => {
-                void savePolicy().then(() => setEditingRules(null));
+                void savePolicy().then(() => {
+                  setEditor(null);
+                  setEditorDetail(null);
+                });
               }}
             >
               完成
@@ -1112,17 +1164,17 @@ function PermissionPolicySection() {
   );
 }
 
-/** 规则组在页面上的形态：标题 + 「编辑」按钮 + 已配置规则的逐行列表。 */
-function RuleListSection({
+/** 规则组在页面上的形态：设置行（标签在左、编辑按钮在右）+ 已配置规则的逐行列表。 */
+function RuleGroupRow({
   title,
   rows,
   placeholder,
   ariaLabel,
   disabled,
   showOperation = false,
-  embedded = false,
   onOpenEditor,
-  onChange,
+  onEditRow,
+  onRemoveRow,
 }: {
   title: string;
   rows: EditableRule[];
@@ -1130,66 +1182,145 @@ function RuleListSection({
   ariaLabel: string;
   disabled: boolean;
   showOperation?: boolean;
-  /** 嵌在网络规则分组里时不再加分隔线。 */
-  embedded?: boolean;
   onOpenEditor: () => void;
-  onChange: (next: EditableRule[]) => void;
+  onEditRow: (index: number) => void;
+  onRemoveRow: (index: number) => void;
 }) {
   return (
-    <div
-      className={
-        embedded ? "space-y-2" : "space-y-2 border-t border-border pt-4"
-      }
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-ui-base font-medium text-foreground">
-          {title}
-        </span>
+    <SettingsRow
+      label={title}
+      control={
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="lg"
           aria-label={`编辑${title}`}
           disabled={disabled}
           onClick={onOpenEditor}
         >
           编辑
         </Button>
-      </div>
+      }
+      // 规则条目作为这一行的明细铺在下方：与浏览器控制页的 detail 位置一致。
+      detail={
+        rows.length === 0 ? undefined : (
+          <div className="space-y-1">
+            {rows.map((row, index) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
+                key={index}
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-hover"
+              >
+                {/* 点这一行直接进这一条的编辑面板（用户口径：点规则直接编辑）。 */}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`编辑规则 ${row.value || placeholder}`}
+                  onClick={() => onEditRow(index)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-ui-base text-foreground">
+                    {row.value || placeholder}
+                  </span>
+                  {showOperation ? (
+                    <span className="shrink-0 text-ui-base text-foreground-subtle">
+                      {FILE_OPERATIONS.find(
+                        (entry) => entry.value === (row.operation ?? "read"),
+                      )?.label ?? "读"}
+                    </span>
+                  ) : null}
+                  <span className="shrink-0 text-ui-base text-foreground-subtle">
+                    {RULE_ACTIONS.find((entry) => entry.value === row.action)
+                      ?.label ?? ""}
+                  </span>
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`删除规则 ${row.value || ariaLabel}`}
+                  disabled={disabled}
+                  onClick={() => onRemoveRow(index)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    />
+  );
+}
+
+/**
+ * 规则编辑弹窗里的列表：添加按钮在左，每条点开就是那一条的编辑面板。
+ *
+ * 与插件页的列表同一形状（添加在左上、条目逐行、行尾删除），不再把输入框、
+ * 两个下拉和删除按钮挤在同一行——那是弹窗宽度溢出与右侧控件贴边的原因。
+ */
+function RuleEditor({
+  rows,
+  onChange,
+  placeholder,
+  ariaLabel,
+  disabled,
+  showOperation = false,
+  onEditRow,
+}: {
+  rows: EditableRule[];
+  onChange: (next: EditableRule[]) => void;
+  placeholder: string;
+  ariaLabel: string;
+  disabled: boolean;
+  showOperation?: boolean;
+  onEditRow: (index: number) => void;
+}) {
+  /** 新增一条后直接进它的详情：新条目没内容，停在列表里没有可编辑的对象。 */
+  const addRow = () => {
+    onChange([...rows, { value: "", action: "ask" }]);
+    onEditRow(rows.length);
+  };
+
+  return (
+    <div className="space-y-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={disabled}
+        onClick={addRow}
+      >
+        添加
+      </Button>
       {rows.length === 0 ? (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onOpenEditor}
-          className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-left text-ui-sm text-foreground-subtle hover:bg-hover"
-        >
-          还没有规则 点这里添加
-        </button>
+        <p className="text-ui-base text-foreground-subtle">还没有规则</p>
       ) : (
         <div className="space-y-1">
           {rows.map((row, index) => (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
               key={index}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-hover"
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-hover"
             >
               <button
                 type="button"
                 disabled={disabled}
-                onClick={onOpenEditor}
+                aria-label={`编辑规则 ${row.value || placeholder}`}
+                onClick={() => onEditRow(index)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-ui-sm text-foreground">
+                <span className="min-w-0 flex-1 truncate font-mono text-ui-base text-foreground">
                   {row.value || placeholder}
                 </span>
                 {showOperation ? (
-                  <span className="shrink-0 text-ui-sm text-foreground-subtle">
+                  <span className="shrink-0 text-ui-base text-foreground-subtle">
                     {FILE_OPERATIONS.find(
                       (entry) => entry.value === (row.operation ?? "read"),
                     )?.label ?? "读"}
                   </span>
                 ) : null}
-                <span className="shrink-0 text-ui-sm text-foreground-subtle">
+                <span className="shrink-0 text-ui-base text-foreground-subtle">
                   {RULE_ACTIONS.find((entry) => entry.value === row.action)
                     ?.label ?? ""}
                 </span>
@@ -1198,7 +1329,7 @@ function RuleListSection({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="删除这条规则"
+                aria-label={`删除规则 ${row.value || ariaLabel}`}
                 disabled={disabled}
                 onClick={() => onChange(rows.filter((_, i) => i !== index))}
               >
@@ -1212,116 +1343,94 @@ function RuleListSection({
   );
 }
 
-/** 规则编辑弹窗里的列表：添加按钮在左，每条可编辑可删。 */
-function RuleEditor({
-  rows,
-  onChange,
+/**
+ * 单条规则的编辑面板：匹配值与动作各一行（标签在上、控件铺满），
+ * 顶部可返回列表。宽度随弹窗，控件不再横向挤在一起。
+ */
+function RuleDetail({
+  row,
   placeholder,
   ariaLabel,
   disabled,
   showOperation = false,
+  onChange,
+  onBack,
 }: {
-  rows: EditableRule[];
-  onChange: (next: EditableRule[]) => void;
+  row: EditableRule;
   placeholder: string;
   ariaLabel: string;
   disabled: boolean;
   showOperation?: boolean;
+  onChange: (next: EditableRule) => void;
+  onBack: () => void;
 }) {
-  const update = (index: number, patch: Partial<EditableRule>) => {
-    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  };
-
   return (
-    <div className="space-y-3">
-      <Button
+    <div className="space-y-4">
+      <button
         type="button"
-        variant="outline"
-        size="sm"
-        disabled={disabled}
-        onClick={() => onChange([...rows, { value: "", action: "ask" }])}
+        onClick={onBack}
+        className="text-ui-base text-foreground-subtle hover:text-foreground"
       >
-        添加
-      </Button>
-      {rows.length === 0 ? (
-        <p className="text-ui-sm text-foreground-subtle">还没有条目</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((row, index) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
-              key={index}
-              className="flex items-center gap-2"
-            >
-              <Input
-                aria-label={ariaLabel}
-                placeholder={placeholder}
-                value={row.value}
-                onChange={(event) =>
-                  update(index, { value: event.target.value })
-                }
-                className="min-w-0 flex-1 font-mono text-ui-sm"
-              />
-              {showOperation ? (
-                <Select
-                  value={row.operation ?? "read"}
-                  onValueChange={(next) =>
-                    update(index, {
-                      operation: next as NonNullable<EditableRule["operation"]>,
-                    })
-                  }
-                >
-                  <SelectTrigger
-                    size="lg"
-                    aria-label="操作"
-                    className="w-24 shrink-0"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FILE_OPERATIONS.map((entry) => (
-                      <SelectItem key={entry.value} value={entry.value}>
-                        {entry.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : null}
-              <Select
-                value={row.action}
-                onValueChange={(next) =>
-                  update(index, { action: next as PolicyRule["action"] })
-                }
-              >
-                <SelectTrigger
-                  size="lg"
-                  aria-label="动作"
-                  className="w-28 shrink-0"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RULE_ACTIONS.map((entry) => (
-                    <SelectItem key={entry.value} value={entry.value}>
-                      {entry.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="删除这条规则"
-                disabled={disabled}
-                onClick={() => onChange(rows.filter((_, i) => i !== index))}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
+        返回列表
+      </button>
+      <div className="space-y-1.5">
+        <span className="text-ui-base text-foreground-subtle">{ariaLabel}</span>
+        <Input
+          aria-label={ariaLabel}
+          placeholder={placeholder}
+          value={row.value}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...row, value: event.target.value })}
+          className="w-full font-mono text-ui-base"
+        />
+      </div>
+      {showOperation ? (
+        <div className="space-y-1.5">
+          <span className="text-ui-base text-foreground-subtle">操作</span>
+          <Select
+            value={row.operation ?? "read"}
+            disabled={disabled}
+            onValueChange={(next) =>
+              onChange({
+                ...row,
+                operation: next as NonNullable<EditableRule["operation"]>,
+              })
+            }
+          >
+            <SelectTrigger size="lg" aria-label="操作" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FILE_OPERATIONS.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      )}
+      ) : null}
+      <div className="space-y-1.5">
+        <span className="text-ui-base text-foreground-subtle">动作</span>
+        <Select
+          value={row.action}
+          disabled={disabled}
+          onValueChange={(next) =>
+            onChange({ ...row, action: next as PolicyRule["action"] })
+          }
+        >
+          <SelectTrigger size="lg" aria-label="动作" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {RULE_ACTIONS.map((entry) => (
+              <SelectItem key={entry.value} value={entry.value}>
+                {entry.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

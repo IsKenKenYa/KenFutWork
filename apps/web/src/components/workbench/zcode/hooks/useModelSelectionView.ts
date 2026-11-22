@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   IModelSelectionService,
   ModelSelectionView,
@@ -6,6 +5,14 @@ import type {
 } from "@zcode/services";
 import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
 import { logger } from "@zui/logger.js";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 export type ModelSelectionState =
   | { status: "loading" }
@@ -32,9 +39,13 @@ function isTransientReadError(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { code?: unknown; name?: unknown; message?: unknown };
   return (
-    ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"].includes(String(error.code)) ||
+    ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"].includes(
+      String(error.code),
+    ) ||
     (error.name === "TypeError" &&
-      ["Failed to fetch", "fetch failed", "Load failed"].includes(String(error.message)))
+      ["Failed to fetch", "fetch failed", "Load failed"].includes(
+        String(error.message),
+      ))
   );
 }
 
@@ -70,23 +81,32 @@ export function useModelSelectionServiceView(
   const ownedRef = useRef(owned);
   ownedRef.current = owned;
   const generationRef = useRef(0);
-  const ownerMatches =
+  /**
+   * 「归属」只认 service / enabled / 不可用原因——它们变了就是换了目标。
+   *
+   * `inputKey` 不在归属判定里：它只决定「按哪些已选值解析」，候选目录本身不变。
+   * 提交思考档位、切换选择都会让 inputKey 变化；若因此把状态退回 loading，菜单里的
+   * 模型分组与档位控件会整块闪空再逐帧长回（用户看到的「面板抖动」）。同一目标下
+   * 沿用上一份 ready 视图，新结果在后台读到后再替换。
+   */
+  const sameTarget =
     owned.service === normalizedService &&
     owned.enabled === enabled &&
-    owned.inputKey === inputKey &&
     owned.unavailableReason === unavailableReason;
-  const visibleState = ownerMatches
-    ? owned.state
-    : initialState(normalizedService, enabled, unavailableReason);
+  const ownerMatches = sameTarget && owned.inputKey === inputKey;
+  const visibleState =
+    ownerMatches || (sameTarget && owned.state.status === "ready")
+      ? owned.state
+      : initialState(normalizedService, enabled, unavailableReason);
 
   useEffect(() => {
     generationRef.current += 1;
     const generation = generationRef.current;
     const previous = ownedRef.current;
+    // 同一目标下重新读取时沿用上一份 ready 视图：候选目录没变，只是按新的已选值重解析。
     const retainedReady =
       previous.service === normalizedService &&
       previous.enabled === enabled &&
-      previous.inputKey === inputKey &&
       previous.unavailableReason === unavailableReason &&
       previous.state.status === "ready"
         ? previous.state
@@ -96,7 +116,9 @@ export function useModelSelectionServiceView(
       enabled,
       unavailableReason,
       inputKey,
-      state: retainedReady ?? initialState(normalizedService, enabled, unavailableReason),
+      state:
+        retainedReady ??
+        initialState(normalizedService, enabled, unavailableReason),
     });
     if (!enabled || !normalizedService) return;
 
@@ -110,7 +132,11 @@ export function useModelSelectionServiceView(
       retryTimer = undefined;
     };
     const commit = (candidate: ModelSelectionView): void => {
-      if (generation !== generationRef.current || candidate.revision < latestRevision) return;
+      if (
+        generation !== generationRef.current ||
+        candidate.revision < latestRevision
+      )
+        return;
       latestRevision = candidate.revision;
       hasReadyView = true;
       cancelRetry();
@@ -130,8 +156,10 @@ export function useModelSelectionServiceView(
           if (request === requestId) commit(candidate);
         },
         (cause: unknown) => {
-          if (generation !== generationRef.current || request !== requestId) return;
-          const error = cause instanceof Error ? cause : new Error(String(cause));
+          if (generation !== generationRef.current || request !== requestId)
+            return;
+          const error =
+            cause instanceof Error ? cause : new Error(String(cause));
           logger.warn("[model-selection] 目标 Host View 读取失败", { error });
           // 读取失败不是选择失效。成功后的刷新失败保留原 View；首次失败可见且有界重读。
           if (!hasReadyView) {
@@ -166,7 +194,14 @@ export function useModelSelectionServiceView(
       cancelRetry();
       subscription.dispose();
     };
-  }, [enabled, normalizedService, reloadVersion, unavailableReason, inputKey, stableInput]);
+  }, [
+    enabled,
+    normalizedService,
+    reloadVersion,
+    unavailableReason,
+    inputKey,
+    stableInput,
+  ]);
 
   return { state: visibleState, reload: useCallback(() => reload(), []) };
 }

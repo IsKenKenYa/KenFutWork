@@ -8,7 +8,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ServiceProvider } from "@zui/hooks/useServices";
@@ -182,12 +181,21 @@ function openPermissionSection(settings: typeof EMPTY_SETTINGS) {
 /**
  * 打开某一组规则的编辑弹窗（用户口径 2026-11-22：规则表改为点「编辑」进弹窗）。
  *
- * 弹窗里的内容与改版前一致，所以各用例只需在断言编辑控件之前先经过这一步。
+ * 弹窗先展示条目列表，点某一条进入那一条的编辑面板——各用例在输入内容之前
+ * 都要先经过这一步（列表里没有输入框，只有可点的条目）。
  */
 async function openRuleDialog(title: string): Promise<void> {
   const open = await screen.findByRole("button", { name: `编辑${title}` });
   act(() => open.click());
   await screen.findByRole("dialog");
+}
+
+/** 在已打开的规则弹窗里点开第 `index` 条（列表顺序），进入单条编辑面板。 */
+async function openRuleDetail(index = 0): Promise<void> {
+  const rows = await screen.findAllByRole("button", { name: /^编辑规则/ });
+  const row = rows[index];
+  if (!row) throw new Error(`规则列表里没有第 ${index} 条`);
+  act(() => row.click());
 }
 
 /** 关闭当前弹窗（弹窗里的主按钮叫「完成」）。 */
@@ -208,19 +216,26 @@ it("读回已保存的三张规则表与禁用清单", async () => {
     },
   });
 
-  // 禁用清单读回时折成排在最前的「工具规则 + 拦截」：两条都在同一张工具规则表里
+  // 禁用清单读回时折成排在最前的「工具规则 + 拦截」：两条都在同一张工具规则表里。
+  // 弹窗先列条目，点第几条就进那条的编辑面板（用户口径：点击对应的规则直接编辑）。
   await openRuleDialog("工具规则");
-  const toolInputs = await screen.findAllByLabelText("工具名或前缀");
-  expect(toolInputs.map((input) => (input as HTMLInputElement).value)).toEqual([
-    "shell_*",
-    "mcp__*",
-  ]);
+  expect(
+    screen
+      .getAllByRole("button", { name: /^编辑规则/ })
+      .map((row) => (row.textContent ?? "").trim()),
+  ).toEqual(["shell_*拦截", "mcp__*拦截"]);
+  await openRuleDetail(0);
+  expect(await screen.findByLabelText("工具名或前缀")).toHaveValue("shell_*");
   await closeRuleDialog();
   await openRuleDialog("文件路径规则");
-  expect(screen.getByLabelText("路径前缀")).toHaveValue("D:\\项目\\密钥");
+  await openRuleDetail(0);
+  expect(await screen.findByLabelText("路径前缀")).toHaveValue(
+    "D:\\项目\\密钥",
+  );
   await closeRuleDialog();
   await openRuleDialog("命令规则");
-  expect(screen.getByLabelText("命令前缀")).toHaveValue("rm -rf");
+  await openRuleDetail(0);
+  expect(await screen.findByLabelText("命令前缀")).toHaveValue("rm -rf");
 });
 
 it("新增路径与命令规则后保存，空白行不落库", async () => {
@@ -228,14 +243,16 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
   const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
 
   await openRuleDialog("文件路径规则");
+  // 添加后直接进新条目的编辑面板：列表里没有输入框。
   await user.click(await screen.findByRole("button", { name: "添加" }));
-  await user.type(screen.getByLabelText("路径前缀"), "  C:\\机密  ");
+  await user.type(await screen.findByLabelText("路径前缀"), "  C:\\机密  ");
   await closeRuleDialog();
 
   await openRuleDialog("命令规则");
   await user.click(screen.getByRole("button", { name: "添加" }));
-  await user.type(screen.getByLabelText("命令前缀"), "git push");
-  // 多加一行但不填：保存时必须被剔除，空规则会命中一切。
+  await user.type(await screen.findByLabelText("命令前缀"), "git push");
+  // 再加一条不填：保存时必须被剔除，空规则会命中一切。
+  act(() => screen.getByRole("button", { name: "返回列表" }).click());
   await user.click(screen.getByRole("button", { name: "添加" }));
   await closeRuleDialog();
 
@@ -255,7 +272,6 @@ it("新增路径与命令规则后保存，空白行不落库", async () => {
 });
 
 it("改动作档与删除行写回同一个策略对象", async () => {
-  const user = userEvent.setup();
   const { tierPuts } = openPermissionSection({
     ...EMPTY_SETTINGS,
     policy: {
@@ -269,10 +285,11 @@ it("改动作档与删除行写回同一个策略对象", async () => {
   });
 
   await openRuleDialog("工具规则");
-  const patternInput = await screen.findByLabelText("工具名或前缀");
-  const ruleRow = patternInput.parentElement as HTMLElement;
+  await openRuleDetail(0);
+  expect(await screen.findByLabelText("工具名或前缀")).toHaveValue("mcp__*");
   // Base UI 的 Select 在 jsdom 下走键盘交互（与 code-model-defaults 同一手法）。
-  act(() => within(ruleRow).getByRole("combobox", { name: "动作" }).focus());
+  // 详情面板里匹配值与动作各占一行，所以动作下拉直接按名字取。
+  act(() => screen.getByRole("combobox", { name: "动作" }).focus());
   await userEvent.keyboard("[Space]");
   await userEvent.keyboard("[Home][Enter]");
   await closeRuleDialog();
@@ -305,12 +322,14 @@ it("域名规则（网络安全）读得回、存得出", async () => {
   });
 
   await openRuleDialog("网络规则");
-  expect(await screen.findByLabelText("域名")).toHaveValue(
-    "*.internal.example",
-  );
+  expect(
+    (await screen.findAllByRole("button", { name: /^编辑规则/ })).map((row) =>
+      (row.textContent ?? "").trim(),
+    ),
+  ).toEqual(["*.internal.example拦截"]);
   await user.click(screen.getByRole("button", { name: "添加" }));
-  const inputs = screen.getAllByLabelText("域名");
-  await user.type(inputs[1] as HTMLElement, "docs.example.com");
+  // 新条目直接进编辑面板，填完返回列表继续操作。
+  await user.type(await screen.findByLabelText("域名"), "docs.example.com");
   await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
@@ -359,7 +378,7 @@ it("规则与放行保存时原样带回敏感保护等其它字段，不把别�
 
   await openRuleDialog("命令规则");
   await user.click(await screen.findByRole("button", { name: "添加" }));
-  await user.type(screen.getByLabelText("命令前缀"), "git push");
+  await user.type(await screen.findByLabelText("命令前缀"), "git push");
   await closeRuleDialog();
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
@@ -526,28 +545,18 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
   const { tierPuts } = openPermissionSection(EMPTY_SETTINGS);
 
   await openRuleDialog("文件路径规则");
-  // 三条规则指向同一目录，但操作不同
-  for (const [index, path] of [
-    "/repo/data",
-    "/repo/data",
-    "/repo/data",
-  ].entries()) {
+  // 三条规则指向同一目录，但操作不同。每条添加后进各自的编辑面板填值。
+  for (const operationLabel of ["读", "写", "删"]) {
     await user.click(screen.getByRole("button", { name: "添加" }));
-    const inputs = screen.getAllByLabelText("路径前缀");
-    fireEvent.change(inputs[index] as HTMLElement, {
-      target: { value: path },
+    fireEvent.change(await screen.findByLabelText("路径前缀"), {
+      target: { value: "/repo/data" },
     });
-  }
-  // 第 2、3 条改成「写」「删」
-  const operationTriggers = screen.getAllByRole("combobox", { name: "操作" });
-  for (const [index, label] of [
-    [1, "写"],
-    [2, "删"],
-  ] as const) {
-    act(() => operationTriggers[index]?.focus());
+    act(() => screen.getByRole("combobox", { name: "操作" }).focus());
     await userEvent.keyboard("[Space]");
-    const option = await screen.findByRole("option", { name: label });
-    await user.click(option);
+    await user.click(
+      await screen.findByRole("option", { name: operationLabel }),
+    );
+    act(() => screen.getByRole("button", { name: "返回列表" }).click());
   }
 
   await closeRuleDialog();
@@ -561,4 +570,70 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
     "write",
     "delete",
   ]);
+});
+
+it("点列表里的规则直接进那一条的编辑面板，行尾垃圾桶提交删除", async () => {
+  const user = userEvent.setup();
+  const { tierPuts } = openPermissionSection({
+    ...EMPTY_SETTINGS,
+    policy: {
+      // 工具规则留空，让断言只落在网络规则这两条上。
+      rules: [],
+      disabledTools: [],
+      pathRules: [],
+      commandRules: [],
+      domainRules: [
+        { domain: "*.a.example", action: "ask" },
+        { domain: "*.b.example", action: "deny" },
+      ],
+      ...FETCHED_POLICY_DEFAULTS,
+    },
+  });
+
+  // 页面上的规则条目可直接点开编辑（不需要先进弹窗再找那一条）。
+  const listed = await screen.findAllByRole("button", {
+    name: /^编辑规则/,
+  });
+  expect(listed.map((row) => (row.textContent ?? "").trim())).toEqual([
+    "*.a.example每次询问",
+    "*.b.example拦截",
+  ]);
+
+  // 行尾垃圾桶立刻提交删除（用户口径：每一条规则都有删除按钮）。
+  const deletes = screen.getAllByRole("button", { name: /^删除规则/ });
+  const firstDelete = deletes[0];
+  if (!firstDelete) throw new Error("没有找到删除按钮");
+  await user.click(firstDelete);
+  await waitFor(() => expect(tierPuts.length).toBeGreaterThanOrEqual(1));
+  const body = tierPuts[tierPuts.length - 1] as {
+    policy: { domainRules: Array<{ domain: string }> };
+  };
+  expect(body.policy.domainRules).toEqual([
+    { domain: "*.b.example", action: "deny" },
+  ]);
+
+  // 剩下的那一条点开就是它自己的编辑面板。
+  const remaining = screen.getAllByRole("button", { name: /^编辑规则/ });
+  expect(remaining.map((row) => (row.textContent ?? "").trim())).toEqual([
+    "*.b.example拦截",
+  ]);
+  const only = remaining[0];
+  if (!only) throw new Error("剩下的规则条目不见了");
+  act(() => only.click());
+  expect(await screen.findByLabelText("域名")).toHaveValue("*.b.example");
+});
+
+it("HTTP 放行与 SSL 证书校验归在网络规则这一组", async () => {
+  openPermissionSection(EMPTY_SETTINGS);
+  // 两项都在网络规则之后，不再是独立的底部区块。
+  const network = await screen.findByLabelText("编辑网络规则");
+  const http = screen.getByRole("switch", { name: "HTTP 放行" });
+  const ssl = screen.getByRole("switch", { name: "SSL 证书校验" });
+  // 网络规则的「编辑」按钮先出现，HTTP / SSL 两行排在它后面。
+  const followsNetwork = (node: HTMLElement) =>
+    (network.compareDocumentPosition(node) &
+      Node.DOCUMENT_POSITION_FOLLOWING) !==
+    0;
+  expect(followsNetwork(http)).toBe(true);
+  expect(followsNetwork(ssl)).toBe(true);
 });
