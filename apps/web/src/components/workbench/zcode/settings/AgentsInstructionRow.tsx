@@ -1,3 +1,4 @@
+import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
   FileDisplayIcon,
@@ -19,14 +20,15 @@ export function resolveAgentsInstructionPath(workspacePath: string): string {
 }
 
 /**
- * 智能体页顶部的 AGENTS.md 入口：与页签 + 搜索**同一行**。
+ * 智能体页的 AGENTS.md 入口：与内置智能体卡片同一张白卡、同一种行高。
  *
- * 为什么不再是整张卡片：它是全页唯一的「全局文件」，独占一整行会让下面的
- * 作用域筛选与搜索被顶到第二屏；压成行内一段（图标 + 文件名 + 路径 + 编辑），
- * 与页签同一行时用户仍能一眼看到它在哪、点得到编辑。
+ * 为什么不再做页头内联：用户口径 2026-11-22「做成白色的卡片，和下面的内置智能体卡片
+ * 一样的风格、一样的高度」。所以外形与 `renderAgentList` 完全一致——`rounded-xl` 白卡、
+ * 同样的描边与 `px-4 py-3` 行内边距、同样的图标尺寸（size-9）与两行文字结构，
+ * 把这一块当成「列表里的一行」来读，而不是页头附件。
  *
- * 路径按可用宽度截断（`truncate` + `title`）：页头空间有限，完整路径在悬停时可见，
- * 让路径换行会把这一行撑成两行，回到原来的问题。
+ * 路径按可用宽度截断（`truncate` + `title`）：完整路径在悬停时可见，换行会把卡片撑高、
+ * 与内置智能体卡片的高度就对不上了。
  */
 export function AgentsInstructionInline({
   filePath,
@@ -39,22 +41,41 @@ export function AgentsInstructionInline({
 }) {
   return (
     <div
-      className={`flex min-w-0 items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2.5 shadow-sm ${className ?? ""}`}
+      className={cn(
+        "flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3",
+        className,
+      )}
     >
-      <FileDisplayIcon
-        src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
-        size={16}
-        className="size-4 shrink-0"
-      />
-      <span className="shrink-0 text-ui-base font-medium text-foreground">
-        AGENTS.md
-      </span>
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-ui-sm text-foreground-subtle"
-        title={filePath}
-      >
-        {filePath}
-      </span>
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle">
+        <FileDisplayIcon
+          src={resolveFileDisplayDescriptor(filePath).fileIconSrc}
+          size={16}
+          className="size-4 shrink-0"
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        {/*
+          标题行套一层 flex：内置智能体行的标题与徽标同在一条 flex 里，行盒按
+          `text-ui-base` 算成 21px；直接放在块级容器里会继承父级 24px 行高，
+          整张卡因此比智能体行高 3px。
+        */}
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-ui-base font-medium text-foreground">
+            AGENTS.md
+          </span>
+        </div>
+        {/*
+          路径行按内置智能体行的「两行描述」高度预留：那两行是
+          `text-ui-sm` / 18px 行高 × 2 = 36px（实测），所以这里固定 `min-h-9`。
+          不留高度会把整张卡压矮一截（实测 70 vs 84），用户口径要求一样高。
+        */}
+        <p
+          className="mt-0.5 min-h-9 truncate font-mono text-ui-sm text-foreground-subtle"
+          title={filePath}
+        >
+          {filePath}
+        </p>
+      </div>
       {onEdit ? (
         <Button type="button" variant="outline" size="sm" onClick={onEdit}>
           编辑

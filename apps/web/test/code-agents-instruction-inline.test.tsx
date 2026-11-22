@@ -110,3 +110,31 @@ it("传入 onEdit 时出现页内编辑入口，未传则不出现", () => {
   );
   expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
 });
+
+it("与内置智能体卡片同一张白卡：同底色、同圆角、同行内边距", () => {
+  renderRow(createWebPlatform(), "/home/me/proj");
+  const card = screen.getByText("AGENTS.md").closest("div.rounded-xl");
+  const classes = (card as HTMLElement).className;
+  // 与 renderAgentList 的内置智能体列表卡同一组底色/描边/圆角 token。
+  expect(classes).toContain("bg-card");
+  expect(classes).toContain("border-border");
+  expect(classes).toContain("rounded-xl");
+  // 与 AgentListRow 相同的行内边距与行列间距，卡片高度才对得上。
+  expect(classes).toContain("px-4");
+  expect(classes).toContain("py-3");
+  expect(classes).toContain("gap-3");
+  // 不再是页头附件：无投影、不用卡片描边变量。
+  expect(classes).not.toContain("shadow-sm");
+  expect(classes).not.toContain("border-card-border");
+});
+
+it("图标容器与内置智能体头像同尺寸（size-9 圆角方块）", () => {
+  renderRow(createWebPlatform(), "/home/me/proj");
+  const iconBox = screen
+    .getByText("AGENTS.md")
+    .closest("div.rounded-xl")
+    ?.querySelector("div.size-9");
+  expect(iconBox).not.toBeNull();
+  expect((iconBox as HTMLElement).className).toContain("rounded-xl");
+  expect((iconBox as HTMLElement).className).toContain("bg-background");
+});
