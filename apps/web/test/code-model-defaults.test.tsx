@@ -160,28 +160,44 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
   ).toContain("网关2");
 });
 
-it("权限设置含审批模型选择，同时保留两档位选择器", async () => {
-  const { calls, ids } = openDefaults(false, true);
-  const approval = await screen.findByRole("combobox", {
-    name: "帮我批准模型",
-  });
-  await waitFor(() => expect(approval).toHaveProperty("disabled", false));
-  // 常规任务与自动化任务两个档位选择器都要在：权限分区不再只剩审批模型一项。
-  expect(screen.getByRole("combobox", { name: "常规任务档位" })).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: "自动化任务档位" })).toBeTruthy();
-  expect(approval.textContent).toContain("人工审批");
-  act(() => approval.focus());
-  await userEvent.keyboard("[Space]");
-  await screen.findByRole("option", { name: "网关1 / 对话模型" });
-  await userEvent.keyboard("[Home][ArrowDown][Enter]");
-  await waitFor(() =>
-    expect(calls.at(-1)).toEqual({
-      chat: null,
-      approval: { providerId: ids[0], modelId: "chat-model" },
-      image: { mode: "auto" },
-      video: { mode: "auto" },
-    }),
+it("权限页只保留基础配置与规则与放行两组，必备项都在", async () => {
+  openDefaults(false, true);
+  // 用户口径（2026-11-22）：权限页只保留这两个小标题，其余分组全部移除。
+  const headings = (await screen.findAllByRole("heading", { level: 3 })).map(
+    (node) => node.textContent?.trim(),
   );
+  expect(headings).toEqual(["基础配置", "规则与放行"]);
+
+  // 基础配置必备项，以及它们各自的控件。
+  expect(screen.getByRole("combobox", { name: "常规任务档位" })).toBeTruthy();
+  expect(screen.getByLabelText("沙箱隔离")).toBeTruthy();
+  expect(screen.getByLabelText("删除模式")).toBeTruthy();
+  expect(screen.getByLabelText("命令执行前审查")).toBeTruthy();
+  expect(screen.getByLabelText("自动备份")).toBeTruthy();
+  expect(screen.getByLabelText("备份保留上限")).toBeTruthy();
+
+  // 规则与放行：放行策略 + 四组规则 + 两个网络开关。
+  expect(screen.getByLabelText("放行策略")).toBeTruthy();
+  for (const label of [
+    "添加工具规则",
+    "添加路径规则",
+    "添加命令规则",
+    "添加域名规则",
+  ]) {
+    expect(screen.getByRole("button", { name: label })).toBeTruthy();
+  }
+  expect(screen.getByLabelText("HTTP 放行")).toBeTruthy();
+  expect(screen.getByLabelText("SSL 证书校验")).toBeTruthy();
+
+  // 被移除的分组不再出现。
+  for (const removed of [
+    "自动化任务档位",
+    "帮我批准模型",
+    "敏感保护",
+    "审计中心",
+  ]) {
+    expect(screen.queryByLabelText(removed)).toBeNull();
+  }
 });
 
 it("帮我批准独立选择启用对话模型，切回人工审批仍保留对话选择", async () => {

@@ -303,7 +303,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
   });
 });
 
-it("安全防护：敏感保护读得回、存得出，且不动其它字段", async () => {
+it("规则与放行保存时原样带回敏感保护等其它字段，不把别人刚改的冲掉", async () => {
   const user = userEvent.setup();
   const { tierPuts } = openPermissionSection({
     ...EMPTY_SETTINGS,
@@ -315,6 +315,8 @@ it("安全防护：敏感保护读得回、存得出，且不动其它字段", a
       domainRules: [],
       deleteMode: "ask",
       deleteProtection: { enabled: true, batchThreshold: 20 },
+      // 用户口径（2026-11-22）：敏感保护不再在权限页配置，但服务端字段仍在，
+      // 规则卡片保存时**必须原样带回**，不能把它冲回缺省值。
       sensitiveProtection: { enabled: true, patterns: ["内部工号\\s*\\d{6}"] },
       commandReview: "auto",
       commandReviewPatterns: ["rm "],
@@ -329,27 +331,17 @@ it("安全防护：敏感保护读得回、存得出，且不动其它字段", a
     },
   });
 
-  expect(await screen.findByLabelText("自定义敏感规则")).toHaveValue(
-    "内部工号\\s*\\d{6}",
-  );
-
-  // 加一条自定义敏感规则再保存。
-  // 用 fireEvent.change 直接设值：`user.type` 会把 `[0-9]` 当键盘语法解析。
-  await user.click(screen.getByRole("button", { name: "添加敏感规则" }));
-  const patterns = screen.getAllByLabelText("自定义敏感规则");
-  fireEvent.change(patterns[1] as HTMLElement, {
-    target: { value: "token-[0-9]{8}" },
-  });
-  await user.click(screen.getByRole("button", { name: "保存敏感规则" }));
+  await user.click(await screen.findByRole("button", { name: "添加命令规则" }));
+  await user.type(screen.getByLabelText("命令前缀"), "git push");
+  await user.click(screen.getByRole("button", { name: "保存规则" }));
 
   await waitFor(() => expect(tierPuts).toHaveLength(1));
-  // 安全防护卡片读回整份策略再合并：删除模式、四张规则表与沙箱/AI 设置原样带回。
   expect(tierPuts[0]).toEqual({
     policy: {
       rules: [],
       disabledTools: [],
       pathRules: [],
-      commandRules: [],
+      commandRules: [{ prefix: "git push", action: "ask" }],
       domainRules: [],
       deleteMode: "ask",
       deleteProtection: { enabled: true, batchThreshold: 20 },
@@ -362,7 +354,7 @@ it("安全防护：敏感保护读得回、存得出，且不动其它字段", a
       },
       sensitiveProtection: {
         enabled: true,
-        patterns: ["内部工号\\s*\\d{6}", "token-[0-9]{8}"],
+        patterns: ["内部工号\\s*\\d{6}"],
       },
       bundledRuntimes: { enabled: true },
       sandbox: { enabled: true },

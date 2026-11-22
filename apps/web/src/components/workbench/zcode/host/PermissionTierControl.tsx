@@ -15,8 +15,7 @@ import {
 } from "@zui/settings/SettingsPageParts.js";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
-import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
+import { surfaceJson } from "./surfaceApi.js";
 
 /** 一条三态规则的界面形状（与服务端 `permissionPolicySchema` 对齐）。 */
 type PolicyRule = { pattern: string; action: "allow" | "ask" | "deny" };
@@ -86,18 +85,6 @@ function readableError(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "保存失败";
 }
 
-/**
- * 当前连接是否走加密传输。
- *
- * 只看页面协议：自托管/局域网部署配了
- * `KENFUTWORK_TLS_CERT_PATH` + `KENFUTWORK_TLS_KEY_PATH` 后整站是 https，
- * WS 升级走同一端口因此也是 wss。本机回环形态是 http + 本机凭据。
- * 不额外问服务端：页面能打开就说明协议已经定了，多一次请求只会更不确定。
- */
-function secureTransportActive(): boolean {
-  return window.location.protocol === "https:";
-}
-
 /** 读取当前默认档；端点不可用时返回 null（调用方隐藏控件）。 */
 export function usePermissionTier() {
   const [tier, setTier] = useState<PermissionTier | null>(null);
@@ -153,41 +140,16 @@ export const PERMISSION_MENU_TIERS: ReadonlyArray<{
   { value: "full-access", label: "完全访问", hint: "访问本机文件与网络" },
 ];
 
-/** 设置页「权限」分区：档位、规则与审批三块，控件与全站一致。 */
+/**
+ * 设置页「权限」分区：基础配置 + 规则与放行两组。
+ *
+ * 用户口径（2026-11-22）：这一页只保留这两组，其余分组（自动化任务档、手动放行、
+ * AI 安全防护、敏感保护、审批模型、审计中心）从本页移除。它们的能力没有删除——
+ * 服务端字段与执行链路照旧，只是不再在这个页面配置。
+ */
 export function PermissionTierSection() {
   const { tier, save } = usePermissionTier();
-  const [automationTier, setAutomationTier] = useState<PermissionTier | null>(
-    null,
-  );
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    surfaceJson<{ automationTier: PermissionTier }>("/api/permissions/tier")
-      .then((view) => {
-        if (!cancelled) setAutomationTier(view.automationTier);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const saveAutomation = async (next: PermissionTier) => {
-    if (!automationTier) return;
-    const previous = automationTier;
-    setAutomationTier(next);
-    try {
-      await surfaceJson("/api/permissions/tier", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ automationTier: next }),
-      });
-    } catch (error) {
-      setAutomationTier(previous);
-      toast(readableError(error));
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -211,43 +173,16 @@ export function PermissionTierSection() {
               />
             }
           />
-          <SettingsRow
-            label="自动化任务"
-            description="无人值守轮次使用的档位"
-            control={
-              <PermissionTierSelect
-                ariaLabel="自动化任务档位"
-                value={automationTier}
-                busy={automationTier === null}
-                onChange={(next) => void saveAutomation(next)}
-              />
-            }
-          />
         </SettingsGroupCard>
         <SandboxSecuritySection />
         <DeleteModeSection />
         <CommandReviewSection />
         <AutoBackupSection />
       </section>
-      {/* 规则与放行：四张表都是「命中就按动作办」，所以合成一个分组。
-          组首那句「没命中就按权限模式走」是这张卡片的全局前提，只说一次。 */}
+      {/* 规则与放行：整体策略 + 四组规则。没命中任何规则时按上面选定的权限模式办。 */}
       <section className="min-w-0 space-y-3">
         <SettingsSubheading>规则与放行</SettingsSubheading>
         <PermissionPolicySection />
-        <ToolApprovalSection />
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>安全防护</SettingsSubheading>
-        <AiSafetySection />
-        <DataSafetySection />
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>审批模型</SettingsSubheading>
-        <ModelDefaultsSection approvalOnly showHeading={false} />
-      </section>
-      <section className="min-w-0 space-y-3">
-        <SettingsSubheading>审计中心</SettingsSubheading>
-        <PermissionAuditSection />
       </section>
     </div>
   );
@@ -902,127 +837,6 @@ function CommandReviewSection() {
 }
 
 /**
- * AI 安全防护：三项里落地了两项，整组默认关闭（与 WorkBuddy 一致）。
- *
- * - **工具内容注入防护**：工具返回内容里出现「覆盖先前指令」「索取凭据」这类句式时，
- *   在结果末尾追加属主声明，提示模型那是外部内容。
- * - **审批模型审查**：属主声明了操作类型的工具在进入人工审批之前，先交给审批模型审一次
- *   ——常规且有界的自动放行，可疑或越权的交回人工并附风险说明；未配置审批模型时
- *   一律回落到人工。关掉后审批一律走人工。
- *
- * 「模型行为智能审查」与「AI 智能审批」在 WorkBuddy 里是两项，本仓库由同一条
- * 审阅链路承担（`features/permissions/approval-review-service`），所以合成一个开关。
- */
-function AiSafetySection() {
-  const [injectionGuard, setInjectionGuard] = useState(false);
-  const [approvalReview, setApprovalReview] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    surfaceJson<{
-      policy?: {
-        aiSafety?: { injectionGuard?: boolean; approvalReview?: boolean };
-      };
-    }>("/api/permissions/tier")
-      .then((view) => {
-        if (cancelled) return;
-        setInjectionGuard(view.policy?.aiSafety?.injectionGuard === true);
-        setApprovalReview(view.policy?.aiSafety?.approvalReview === true);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /**
-   * 改一项、另一项原样带上：PUT 收的是整个 policy，`aiSafety` 是整体替换，
-   * 少传一个字段就会被服务端缺省值冲掉。
-   */
-  const save = async (next: {
-    injectionGuard: boolean;
-    approvalReview: boolean;
-  }) => {
-    setSaving(true);
-    setMessage(null);
-    const previous = { injectionGuard, approvalReview };
-    setInjectionGuard(next.injectionGuard);
-    setApprovalReview(next.approvalReview);
-    try {
-      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
-        "/api/permissions/tier",
-      );
-      await surfaceJson("/api/permissions/tier", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          policy: { ...(view.policy ?? {}), aiSafety: next },
-        }),
-      });
-      setMessage("已保存");
-    } catch (error) {
-      setInjectionGuard(previous.injectionGuard);
-      setApprovalReview(previous.approvalReview);
-      setMessage(readableError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsGroupCard>
-      <SettingsRow
-        label="工具内容注入防护"
-        description="标注外部内容里的指令"
-        control={
-          <input
-            type="checkbox"
-            aria-label="工具内容注入防护"
-            checked={injectionGuard}
-            disabled={saving}
-            onChange={(event) =>
-              void save({
-                injectionGuard: event.target.checked,
-                approvalReview,
-              })
-            }
-            className="size-4"
-          />
-        }
-      />
-      <SettingsRow
-        label="审批模型审查"
-        description="高风险操作先自动审一遍"
-        control={
-          <input
-            type="checkbox"
-            aria-label="审批模型审查"
-            checked={approvalReview}
-            disabled={saving}
-            onChange={(event) =>
-              void save({
-                injectionGuard,
-                approvalReview: event.target.checked,
-              })
-            }
-            className="size-4"
-          />
-        }
-      />
-      {message ? (
-        <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
-            {message}
-          </span>
-        </div>
-      ) : null}
-    </SettingsGroupCard>
-  );
-}
-
-/**
  * 沙箱安全：如实说明执行隔离的**实际**状态，不摆开关。
  *
  * 本仓库的命令执行已经跑在进程沙箱里（`features/process-sandbox`）：文件系统按 Task
@@ -1325,10 +1139,42 @@ function PermissionPolicySection() {
   return (
     <SettingsGroupCard>
       <div className="space-y-5 p-4">
-        {/* 整张卡片的全局前提：四组规则是「例外表」，没命中就回落到权限模式。
-            不写这一句时用户会以为规则表决定一切、模式是另一套机制。 */}
+        {/* 组首两行是这张卡片的整体口径：
+            ① 规则是「例外表」，没命中就回落到权限模式；
+            ② 放行策略决定「没命中任何规则时怎么办」——全部放行 / 自动审批 /
+            默认询问 / 白名单 / 黑名单。
+            自动审批与白名单这两种「没被审批过」的地址，仍会先问用户是否执行
+            （`auto` 回落档位审批、`whitelist` 硬拦在名单外，名单内命中即为用户
+            事先批准的显式放行）。 */}
+        <SettingsRow
+          label="放行策略"
+          description="没命中下面规则时怎么办"
+          control={
+            <Select
+              value={networkPolicy.networkMode}
+              disabled={saving}
+              onValueChange={(next) =>
+                setNetworkPolicy((current) => ({
+                  ...current,
+                  networkMode: next as NetworkMode,
+                }))
+              }
+            >
+              <SelectTrigger size="lg" aria-label="放行策略" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NETWORK_MODES.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
         <p className="text-ui-sm text-foreground-subtle">
-          命中就按规则办 没命中按权限模式办
+          命中就按规则办 没命中按放行策略办
         </p>
         <RuleGroup
           title="工具规则"
@@ -1376,39 +1222,9 @@ function PermissionPolicySection() {
             ariaLabel="域名"
             disabled={saving}
           />
-          {/* 网络整体策略与两个开关（用户口径）：它们决定「没被域名表命中的地址
-              怎么办」以及「明文 http / 自签证书是否放行」，与逐条域名三态表正交。 */}
+          {/* 网络访问的两个开关（用户口径）：明文 http / 自签证书是否放行。
+              整体放行策略在卡片开头，这里只管域名表与这两项协议层设置。 */}
           <div className="mt-3 space-y-2 border-t border-border pt-3">
-            <SettingsRow
-              label="网络策略"
-              control={
-                <Select
-                  value={networkPolicy.networkMode}
-                  disabled={saving}
-                  onValueChange={(next) =>
-                    setNetworkPolicy((current) => ({
-                      ...current,
-                      networkMode: next as NetworkMode,
-                    }))
-                  }
-                >
-                  <SelectTrigger
-                    size="lg"
-                    aria-label="网络策略"
-                    className="w-40"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NETWORK_MODES.map((entry) => (
-                      <SelectItem key={entry.value} value={entry.value}>
-                        {entry.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
-            />
             <SettingsRow
               label="HTTP 放行"
               control={
@@ -1460,482 +1276,6 @@ function PermissionPolicySection() {
           <span className="text-ui-sm text-foreground-subtle">
             从上往下匹配 第一条命中生效
           </span>
-          {message ? (
-            <span role="status" className="text-ui-sm text-foreground-subtle">
-              {message}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </SettingsGroupCard>
-  );
-}
-
-const APPROVAL_SCOPES = [
-  { value: "once", label: "仅本次" },
-  { value: "thread", label: "本会话" },
-  { value: "forever", label: "永久" },
-] as const;
-
-/**
- * 安全防护：敏感保护（凭据不外发）+ 两项如实状态（安全网关 / 传输加密）。
- *
- * 删除相关项已移到「基础配置 · 删除模式」——它们属于「删除要不要问、删了能不能找回」，
- * 与「凭据会不会被发出去」不是同一件事，混在一张卡里两次被判为看不懂。
- *
- * 开关与规则文本都由「保存」按钮提交：规则是逐字编辑，逐字提交会把半截正则写进去。
- * 提交前读回整份策略再合并，只替换本卡片负责的字段。
- */
-function DataSafetySection() {
-  const [sensitiveProtection, setSensitiveProtection] = useState({
-    enabled: true,
-    patterns: [] as string[],
-  });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    surfaceJson<{
-      policy?: {
-        sensitiveProtection?: { enabled?: boolean; patterns?: string[] };
-      };
-    }>("/api/permissions/tier")
-      .then((view) => {
-        if (cancelled) return;
-        setSensitiveProtection({
-          enabled: view.policy?.sensitiveProtection?.enabled !== false,
-          patterns: view.policy?.sensitiveProtection?.patterns ?? [],
-        });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const save = async () => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const view = await surfaceJson<{ policy?: Record<string, unknown> }>(
-        "/api/permissions/tier",
-      );
-      await surfaceJson("/api/permissions/tier", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          policy: {
-            ...(view.policy ?? {}),
-            sensitiveProtection: {
-              enabled: sensitiveProtection.enabled,
-              patterns: sensitiveProtection.patterns
-                .map((pattern) => pattern.trim())
-                .filter((pattern) => pattern.length > 0),
-            },
-          },
-        }),
-      });
-      setMessage("已保存");
-    } catch (error) {
-      setMessage(readableError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsGroupCard>
-      <SettingsRow
-        label="敏感保护"
-        description="参数里出现凭据格式就拦下"
-        control={
-          <input
-            type="checkbox"
-            aria-label="敏感保护"
-            checked={sensitiveProtection.enabled}
-            disabled={saving}
-            onChange={(event) =>
-              setSensitiveProtection((current) => ({
-                ...current,
-                enabled: event.target.checked,
-              }))
-            }
-            className="size-4"
-          />
-        }
-      />
-      <div className="space-y-2 border-t border-border px-4 py-3">
-        {sensitiveProtection.patterns.map((pattern, index) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: 自定义正则可以重复，索引是唯一稳定键。
-            key={index}
-            className="flex items-center gap-2"
-          >
-            <Input
-              aria-label="自定义敏感规则"
-              placeholder="内部工号\\s*\\d{6}"
-              disabled={!sensitiveProtection.enabled || saving}
-              value={pattern}
-              onChange={(event) =>
-                setSensitiveProtection((current) => ({
-                  ...current,
-                  patterns: current.patterns.map((item, i) =>
-                    i === index ? event.target.value : item,
-                  ),
-                }))
-              }
-              className="min-w-0 flex-1 font-mono text-ui-sm"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="删除这条敏感规则"
-              disabled={saving}
-              onClick={() =>
-                setSensitiveProtection((current) => ({
-                  ...current,
-                  patterns: current.patterns.filter((_, i) => i !== index),
-                }))
-              }
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
-          </div>
-        ))}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!sensitiveProtection.enabled || saving}
-            onClick={() =>
-              setSensitiveProtection((current) => ({
-                ...current,
-                patterns: [...current.patterns, ""],
-              }))
-            }
-          >
-            添加敏感规则
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={saving}
-            onClick={() => void save()}
-          >
-            保存敏感规则
-          </Button>
-          {message ? (
-            <span role="status" className="text-ui-sm text-foreground-subtle">
-              {message}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      {/* 安全网关与传输加密：如实显示**当前连接的实际状态**。
-          - 安全网关：入站由「回环监听 + CORS 白名单 + 每路由本机鉴权」收口，
-            出站由域名规则（工具门 / 服务端出口 / HTTP MCP / 沙箱网络白名单）收口。
-            自托管/局域网部署的 TLS 终结由用户自己的反向代理承担。
-          - 传输加密：按页面协议判断——自托管配了 KENFUTWORK_TLS_CERT_PATH /
-            KENFUTWORK_TLS_KEY_PATH 就是 https/wss；本机回环是 http + 本机凭据。 */}
-      <SettingsRow
-        label="安全网关"
-        control={
-          <span className="text-ui-sm text-foreground-subtle">
-            出入站均收口
-          </span>
-        }
-      />
-      <SettingsRow
-        label="传输加密"
-        control={
-          <span className="text-ui-sm text-foreground-subtle">
-            {secureTransportActive() ? "HTTPS + WSS" : "本机凭据"}
-          </span>
-        }
-      />
-    </SettingsGroupCard>
-  );
-}
-
-/** 人工放行某个工具（agent 没有自我授权路径，只能由这里批准）。 */
-function ToolApprovalSection() {
-  const [toolName, setToolName] = useState("");
-  const [scope, setScope] =
-    useState<(typeof APPROVAL_SCOPES)[number]["value"]>("once");
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [approvedForever, setApprovedForever] = useState<string[]>([]);
-
-  const loadApproved = useCallback(async () => {
-    try {
-      const view = await surfaceJson<{ approvedForever?: string[] }>(
-        "/api/permissions/tier",
-      );
-      setApprovedForever(view.approvedForever ?? []);
-    } catch {
-      // 列表读不到不影响批准动作本身。
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadApproved();
-  }, [loadApproved]);
-
-  const approve = async () => {
-    const trimmed = toolName.trim();
-    if (!trimmed) {
-      setMessage("请填写工具名");
-      return;
-    }
-    setSaving(true);
-    setMessage(null);
-    try {
-      await surfaceJson("/api/permissions/approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ toolName: trimmed, scope }),
-      });
-      setMessage(
-        `已批准 ${trimmed}（${
-          APPROVAL_SCOPES.find((entry) => entry.value === scope)?.label ?? scope
-        }）`,
-      );
-      setToolName("");
-      void loadApproved();
-    } catch (error) {
-      setMessage(readableError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsGroupCard>
-      <div className="space-y-3 p-4">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 text-ui-base font-medium text-foreground">
-            手动放行工具
-          </span>
-          <span className="truncate text-ui-sm text-foreground-subtle">
-            立刻放行 不用等弹窗
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="工具名"
-            placeholder="如 mcp__fs__write"
-            value={toolName}
-            onChange={(event) => setToolName(event.target.value)}
-            className="min-w-0 flex-1 font-mono text-ui-sm"
-          />
-          <Select
-            value={scope}
-            onValueChange={(next) =>
-              setScope(next as (typeof APPROVAL_SCOPES)[number]["value"])
-            }
-          >
-            <SelectTrigger
-              size="lg"
-              aria-label="批准范围"
-              className="w-28 shrink-0"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {APPROVAL_SCOPES.map((entry) => (
-                <SelectItem key={entry.value} value={entry.value}>
-                  {entry.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={saving}
-            onClick={() => void approve()}
-          >
-            批准
-          </Button>
-        </div>
-        {approvedForever.length > 0 ? (
-          <p className="text-ui-sm text-foreground-subtle">
-            已永久批准：{approvedForever.join("、")}
-          </p>
-        ) : null}
-        {message ? (
-          <p role="status" className="text-ui-sm text-foreground-subtle">
-            {message}
-          </p>
-        ) : null}
-      </div>
-    </SettingsGroupCard>
-  );
-}
-
-/** 审计来源 → 界面标签（与服务端 `permissionDecisionSourceSchema` 一一对应）。 */
-const AUDIT_SOURCES: Record<string, string> = {
-  disabled: "禁用清单",
-  "tool-rule": "工具规则",
-  "path-rule": "路径规则",
-  "command-rule": "命令规则",
-  "domain-rule": "域名规则",
-  "custom-rules": "自定义规则",
-  "approval-memory": "已批准",
-  tier: "权限模式",
-  approval: "人工审批",
-};
-
-interface AuditEntry {
-  id: string;
-  occurredAt: string;
-  toolName: string;
-  decision: "allow" | "deny";
-  source: string | null;
-  blocked: boolean;
-  reason: string | null;
-}
-
-/**
- * 审计中心：最近的判定流水（放行与拦截都在），可导出与清空。
- *
- * 流水只记工具名、结论、命中的规则与理由——**不含工具参数**，所以整段导出
- * 不需要额外打码。导出为 CSV：一列一项，用户能直接用表格软件打开。
- */
-function PermissionAuditSection() {
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const view = await surfaceJson<{ entries?: AuditEntry[] }>(
-        "/api/permissions/audit",
-      );
-      setEntries(view.entries ?? []);
-    } catch (error) {
-      setMessage(readableError(error));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const exportCsv = () => {
-    const header = "时间,工具,结论,命中规则,硬拒绝,原因";
-    const csvCell = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const rows = entries.map((entry) =>
-      [
-        entry.occurredAt,
-        entry.toolName,
-        entry.decision === "deny" ? "拒绝" : "放行",
-        entry.source ? (AUDIT_SOURCES[entry.source] ?? entry.source) : "",
-        entry.blocked ? "是" : "否",
-        entry.reason ?? "",
-      ]
-        .map(csvCell)
-        .join(","),
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `审计记录-${new Date().toISOString().slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setMessage("已导出");
-  };
-
-  const clear = async () => {
-    try {
-      await surfaceRequest("/api/permissions/audit", { method: "DELETE" });
-      setEntries([]);
-      setMessage("已清空");
-    } catch (error) {
-      setMessage(readableError(error));
-    }
-  };
-
-  return (
-    <SettingsGroupCard>
-      <div className="space-y-3 p-4">
-        {loading ? (
-          <p className="text-ui-sm text-foreground-subtle">读取中</p>
-        ) : entries.length === 0 ? (
-          <p className="text-ui-sm text-foreground-subtle">还没有记录</p>
-        ) : (
-          <div className="max-h-80 space-y-1 overflow-y-auto">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-border pb-1 text-ui-sm last:border-b-0"
-              >
-                <span className="shrink-0 font-mono text-foreground-subtle">
-                  {entry.occurredAt.slice(11, 19)}
-                </span>
-                <span className="font-mono text-foreground">
-                  {entry.toolName}
-                </span>
-                <span
-                  className={
-                    entry.decision === "deny"
-                      ? "text-destructive"
-                      : "text-foreground-subtle"
-                  }
-                >
-                  {entry.decision === "deny"
-                    ? entry.blocked
-                      ? "拒绝"
-                      : "待审批"
-                    : "放行"}
-                </span>
-                {entry.source ? (
-                  <span className="text-foreground-subtle">
-                    {AUDIT_SOURCES[entry.source] ?? entry.source}
-                  </span>
-                ) : null}
-                {entry.reason ? (
-                  <span className="min-w-0 flex-1 truncate text-foreground-subtle">
-                    {entry.reason}
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" variant="outline" size="sm" onClick={load}>
-            刷新
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={entries.length === 0}
-            onClick={exportCsv}
-          >
-            导出
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={entries.length === 0}
-            onClick={() => void clear()}
-          >
-            清空
-          </Button>
           {message ? (
             <span role="status" className="text-ui-sm text-foreground-subtle">
               {message}
