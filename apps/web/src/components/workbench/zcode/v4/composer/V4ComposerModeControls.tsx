@@ -11,9 +11,9 @@ import {
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
+import { MenuGradientDivider } from "@zui/components/ui/menu-divider.js";
 import {
   type ExecutionModeController,
   executionModeIcons,
@@ -98,6 +98,12 @@ function V4ComposerModeSwitchImpl({
     modes,
     select: selectExecutionMode,
   } = executionModeController;
+  // 触发器要能同时读到「怎么跑」（执行方式）与「跑之前要不要问」（权限档），
+  // 只写权限档时用户看不出当前执行方式，得点开菜单才知道。
+  const currentMode = (modes ?? []).find((entry) => entry.id === executionMode);
+  const ModeIcon = currentMode
+    ? (executionModeIcons[currentMode.id] ?? WorkflowIcon)
+    : null;
   return (
     <div className="flex min-w-0 items-center gap-1">
       <DropdownMenu
@@ -124,16 +130,24 @@ function V4ComposerModeSwitchImpl({
                   "text-warning hover:text-warning aria-expanded:text-warning",
               )}
             >
-              {/* 触发器只写当前权限档，不再带图标（用户口径：最左边这个手去掉）。 */}
-              <span>{selected.label}</span>
-              <ChevronDownIcon className="size-3.5 text-foreground-subtle" />
+              <span className="flex min-w-0 items-center gap-1">
+                {ModeIcon && currentMode ? (
+                  <>
+                    <ModeIcon className="size-3.5 shrink-0" />
+                    <span>{currentMode.label}</span>
+                    <span>·</span>
+                  </>
+                ) : null}
+                <span className="min-w-0 truncate">{selected.label}</span>
+              </span>
+              <ChevronDownIcon className="size-3.5 shrink-0 text-foreground-subtle" />
             </Button>
           </DropdownMenuTrigger>
         </ControlHintTooltip>
         <DropdownMenuContent
           side="top"
           sideOffset={4}
-          className="w-64"
+          className="w-[26rem]"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             if (!isCoarseTouchDevice())
@@ -144,54 +158,67 @@ function V4ComposerModeSwitchImpl({
                 ?.focus();
           }}
         >
-          <DropdownMenuRadioGroup
-            value={tier ?? ""}
-            onValueChange={(next) => {
-              setTierSaving(true);
-              void save(next as PermissionTier).finally(() =>
-                setTierSaving(false),
-              );
-            }}
-            aria-label="权限"
-          >
-            {permissions.map((entry) => (
-              <DropdownMenuRadioItem
-                key={entry.value}
-                value={entry.value}
-                disabled={disabled || tierSaving}
-                className="min-h-13 items-start gap-3 py-2"
+          {/* 两组**并排**（用户口径）：左边执行方式、右边权限档，中间一条渐隐竖线。
+              两组的行高、字号同一套——左列图标 + 名称，右列名称 + 说明。 */}
+          <div className="flex items-stretch gap-1 p-1">
+            <div className="min-w-0 flex-1">
+              <div className="px-2 pb-1 pt-1 text-ui-sm text-foreground-subtle">
+                执行方式
+              </div>
+              <DropdownMenuRadioGroup
+                value={executionMode ?? ""}
+                onValueChange={(next) => void selectExecutionMode(next)}
+                aria-label="执行方式"
               >
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span>{entry.label}</span>
-                  <span className="text-ui-sm text-foreground-subtle">
-                    {entry.hint}
-                  </span>
-                </span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-          <DropdownMenuSeparator />
-          {/* 执行方式与权限档**并列**在同一面板：两者都决定这次提交怎么跑，
-              分两个入口时用户要先点开才知道区别。 */}
-          <DropdownMenuRadioGroup
-            value={executionMode ?? ""}
-            onValueChange={(next) => void selectExecutionMode(next)}
-            aria-label="执行方式"
-          >
-            {(modes ?? []).map((mode) => {
-              const ModeIcon = executionModeIcons[mode.id] ?? WorkflowIcon;
-              return (
-                <DropdownMenuRadioItem
-                  key={mode.id}
-                  value={mode.id}
-                  disabled={disabled}
-                >
-                  <ModeIcon className="size-4 shrink-0" />
-                  <span>{mode.label}</span>
-                </DropdownMenuRadioItem>
-              );
-            })}
-          </DropdownMenuRadioGroup>
+                {(modes ?? []).map((mode) => {
+                  const ModeIcon = executionModeIcons[mode.id] ?? WorkflowIcon;
+                  return (
+                    <DropdownMenuRadioItem
+                      key={mode.id}
+                      value={mode.id}
+                      disabled={disabled}
+                      className="min-h-9 px-2"
+                    >
+                      <ModeIcon className="size-4 shrink-0" />
+                      <span>{mode.label}</span>
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </div>
+            <MenuGradientDivider vertical className="my-1" />
+            <div className="min-w-0 flex-1">
+              <div className="px-2 pb-1 pt-1 text-ui-sm text-foreground-subtle">
+                权限
+              </div>
+              <DropdownMenuRadioGroup
+                value={tier ?? ""}
+                onValueChange={(next) => {
+                  setTierSaving(true);
+                  void save(next as PermissionTier).finally(() =>
+                    setTierSaving(false),
+                  );
+                }}
+                aria-label="权限"
+              >
+                {permissions.map((entry) => (
+                  <DropdownMenuRadioItem
+                    key={entry.value}
+                    value={entry.value}
+                    disabled={disabled || tierSaving}
+                    className="min-h-9 items-center px-2"
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span>{entry.label}</span>
+                      <span className="text-ui-sm text-foreground-subtle">
+                        {entry.hint}
+                      </span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </div>
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

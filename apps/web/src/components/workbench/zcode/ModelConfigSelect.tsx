@@ -18,12 +18,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
+import { MenuGradientDivider } from "@zui/components/ui/menu-divider.js";
 import {
   Select,
   SelectContent,
@@ -229,75 +229,83 @@ function EffortSlider({
   );
 
   return (
-    <div className="mt-1 border-t border-border px-2 pb-1 pt-2.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-ui-sm text-foreground-subtle">思考强度</span>
-        <span className="text-ui-sm tabular-nums text-foreground">{label}</span>
-      </div>
-      <div
-        ref={trackRef}
-        role="slider"
-        aria-label="思考强度"
-        aria-valuemin={0}
-        aria-valuemax={last}
-        aria-valuenow={currentIndex}
-        aria-valuetext={label}
-        aria-disabled={disabled}
-        tabIndex={disabled ? -1 : 0}
-        className={cn(
-          "relative mt-2 h-8 w-full cursor-pointer rounded-full bg-hover outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          disabled && "cursor-not-allowed opacity-50",
-        )}
-        onPointerDown={(event) => {
-          if (disabled) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          selectNearest(event.clientX);
-        }}
-        onPointerMove={(event) => {
-          if (disabled) return;
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            selectNearest(event.clientX);
-          }
-        }}
-        onKeyDown={(event) => {
-          if (disabled) return;
-          if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-            event.preventDefault();
-            move(-1);
-          } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-            event.preventDefault();
-            move(1);
-          } else if (event.key === "Home") {
-            event.preventDefault();
-            move(-levels.length);
-          } else if (event.key === "End") {
-            event.preventDefault();
-            move(levels.length);
-          }
-        }}
-      >
-        {/* 已填充段：绿（低）→ 蓝（高），与用户给定的设计稿同一套色。 */}
+    <div className="mt-1 pb-1">
+      {/* 与两个菜单里其它分割线同一条渐隐线（用户口径：分割线统一）。 */}
+      <MenuGradientDivider />
+      <div className="px-2 pb-1 pt-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-ui-base text-foreground-subtle">思考强度</span>
+          <span className="text-ui-base tabular-nums text-foreground">
+            {label}
+          </span>
+        </div>
         <div
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-[width] duration-300"
-          style={{ width: `${ratio * 100}%` }}
-        />
-        {levels.map((level, index) => {
-          const stop = last <= 0 ? 1 : index / last;
-          return (
-            <span
-              key={level.value}
-              aria-hidden="true"
-              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/85 shadow-sm"
-              style={{ left: `${stop * 100}%` }}
-            />
-          );
-        })}
-        <span
-          aria-hidden="true"
-          className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md transition-[left] duration-300"
-          style={{ left: `${ratio * 100}%` }}
-        />
+          ref={trackRef}
+          role="slider"
+          aria-label="思考强度"
+          aria-valuemin={0}
+          aria-valuemax={last}
+          aria-valuenow={currentIndex}
+          aria-valuetext={label}
+          aria-disabled={disabled}
+          tabIndex={disabled ? -1 : 0}
+          className={cn(
+            "relative mt-2 h-8 w-full cursor-pointer rounded-full bg-hover outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+          onPointerDown={(event) => {
+            if (disabled) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            selectNearest(event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (disabled) return;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              selectNearest(event.clientX);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (disabled) return;
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              event.preventDefault();
+              move(-1);
+            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              event.preventDefault();
+              move(1);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              move(-levels.length);
+            } else if (event.key === "End") {
+              event.preventDefault();
+              move(levels.length);
+            }
+          }}
+        >
+          {/* 已填充段：绿（低）→ 蓝（高），与用户给定的设计稿同一套色。
+            填充终点与手柄圆心对齐：手柄直径 24px，两端各内缩 12px，
+            手柄推到两端时不会再被菜单边缘裁掉（用户反馈「显示不全」）。 */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-[width] duration-300"
+            style={{ width: `calc(12px + ${ratio} * (100% - 24px))` }}
+          />
+          {levels.map((level, index) => {
+            const stop = last <= 0 ? 1 : index / last;
+            return (
+              <span
+                key={level.value}
+                aria-hidden="true"
+                className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/85 shadow-sm"
+                style={{ left: `calc(12px + ${stop} * (100% - 24px))` }}
+              />
+            );
+          })}
+          <span
+            aria-hidden="true"
+            className="absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md transition-[left] duration-300"
+            style={{ left: `calc(12px + ${ratio} * (100% - 24px))` }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -807,7 +815,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           {leadingItems !== undefined && leadingItems.length > 0 ? (
             <>
               {renderModelItems(leadingItems)}
-              {hasSelectableModel ? <DropdownMenuSeparator /> : null}
+              {hasSelectableModel ? (
+                <MenuGradientDivider className="my-1" />
+              ) : null}
             </>
           ) : null}
           {hasSelectableModel && shouldShowProviderLevel
@@ -816,7 +826,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                   modelGroups[index - 1],
                   group,
                 ) ? (
-                  <DropdownMenuSeparator />
+                  <MenuGradientDivider className="my-1" />
                 ) : null;
                 if (group.directItems) {
                   return (
@@ -885,7 +895,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               : null}
           {renderedFooterActions.length > 0 ? (
             <div className="sticky bottom-0 z-10 bg-menu after:absolute after:left-0 after:top-full after:h-1 after:w-full after:bg-menu after:content-['']">
-              {hasSelectableModel ? <DropdownMenuSeparator /> : null}
+              {hasSelectableModel ? (
+                <MenuGradientDivider className="my-1" />
+              ) : null}
               {renderedFooterActions.map((action) => (
                 <DropdownMenuItem
                   key={action.key}
