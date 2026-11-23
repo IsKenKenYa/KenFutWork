@@ -33,6 +33,21 @@ describe("原生目录对话框命令", () => {
     // 回归锁：WinForms 的旧版「浏览文件夹」树形框不得回来（5.1 下 AutoUpgrade
     // 实测不升级到现代对话框，用户要的是资源管理器那种）
     expect(script).not.toContain("FolderBrowserDialog");
+    /**
+     * 回归锁（用户口径 2026-11-23「打开文件夹一直不能用，不弹原生对话框」）：
+     *
+     * 1) 两个 COM 接口必须是 `public`。`FolderDialog.Pick` 是 public 且以它们为
+     *    参数/局部类型，`internal` 会触发 C# 的「一致性可访问性」编译错误
+     *    （PowerShell 把它显示成误导性的「名称 FileSystemPath 不存在」），
+     *    编译失败后 Pick 抛 TypeNotFound，前端就一直等一个不出现的对话框。
+     * 2) 必须 `-ErrorAction Stop`：旧版 Add-Type 编译失败不抛异常，脚本会继续
+     *    往下跑到 Pick；没有这一句，编译回归会再次表现为「点了没反应」。
+     */
+    expect(script).not.toContain("internal interface");
+    expect(script).toContain("public interface IFileDialogVtable");
+    expect(script).toContain("public interface IShellItem");
+    expect(script).toContain("$ErrorActionPreference = 'Stop'");
+    expect(script).toContain("Add-Type -TypeDefinition $cs -ErrorAction Stop");
   });
 
   it("macOS 用 osascript 的 choose folder", () => {

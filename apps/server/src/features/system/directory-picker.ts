@@ -64,8 +64,14 @@ namespace KenFutWork {
   // 跳飞（实测漏 4 个槽时 SetTitle 落到 GetCurrentSelection 上返回 E_FAIL，
   // SetClientGuid 落到 AddPlace 上直接 0xC0000005）。
   // 用不到的槽按指针/整数的等价签名占位，只为把方法表撑对。
+  //
+  // 接口必须是 public：FolderDialog.Pick 是 public 且以这些接口为参数与局部类型，
+  // internal 会触发 C# 的「一致性可访问性」错误。而 PowerShell 的 CodeDom 编译器
+  // 把这个错误显示成误导性的「当前上下文中不存在名称 FileSystemPath」，
+  // 加上旧版 Add-Type 不抛异常，脚本继续往下跑、Pick 永远 TypeNotFound，
+  // 前端就一直等一个永远不会出现的对话框——这就是「打开文件夹一直不能用」的真因。
   [ComImport, Guid("d57c7288-d4ad-4768-be02-9d969532d960"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  internal interface IFileDialogVtable {
+  public interface IFileDialogVtable {
     [PreserveSig] int Show(IntPtr hwndOwner);
     [PreserveSig] int SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
     [PreserveSig] int SetFileTypeIndex(uint iFileType);
@@ -93,7 +99,7 @@ namespace KenFutWork {
   }
 
   [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  internal interface IShellItem {
+  public interface IShellItem {
     [PreserveSig] int BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
     [PreserveSig] int GetParent(out IShellItem parent);
     [PreserveSig] int GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
@@ -129,7 +135,10 @@ namespace KenFutWork {
   }
 }
 '@
-Add-Type -TypeDefinition $cs
+# 编译失败必须当场退出：旧版 Add-Type 只把错误写进错误流、脚本继续往下跑，
+# 于是 Pick 抛 TypeNotFound，前端等一个永远不出现的对话框（这一条就是 bug 本体）。
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition $cs -ErrorAction Stop
 $owner = New-Object System.Windows.Forms.Form
 $owner.TopMost = $true
 $owner.ShowInTaskbar = $false
