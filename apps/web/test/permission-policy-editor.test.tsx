@@ -533,9 +533,8 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
   act(() => screen.getByRole("button", { name: "编辑高危命令" }).click());
   expect(await screen.findAllByLabelText("高危命令前缀")).toHaveLength(2);
   // 关掉弹窗再切档，避免同一个 dialog 遮挡断言（关闭即保存，不需要「完成」）。
-  // 高危命令弹窗仍用 DialogContent 自带的关闭按钮（aria-label 是 Close），
-  // 与规则弹窗（照知识库样式，标题栏自绘「关闭」）不同，这里按各自的名字取。
-  act(() => screen.getByRole("button", { name: "Close" }).click());
+  // 两个弹窗现在都是标题栏自绘的「关闭」按钮。
+  act(() => screen.getByRole("button", { name: "关闭" }).click());
   await waitFor(() => expect(tierPuts).toHaveLength(1));
 
   const trigger = await screen.findByLabelText("命令执行前审查");

@@ -23,7 +23,8 @@ import {
   SettingsRow,
   SettingsSubheading,
 } from "@zui/settings/SettingsPageParts.js";
-import { ShieldCheck, Trash2, X } from "lucide-react";
+import { SettingsSearchInput } from "@zui/settings/SettingsSearchInput.js";
+import { Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
@@ -640,57 +641,86 @@ function CommandReviewSection() {
           if (!open) void save({ mode, patterns });
         }}
       >
-        {/* 固定尺寸（用户口径 2026-11-23：宽 60%、高 80%）+ 内部滚动。 */}
-        <DialogContent className="flex h-[80vh] w-[60vw] max-w-none flex-col">
-          <DialogHeader>
-            <DialogTitle>高危命令</DialogTitle>
+        {/* 固定尺寸（用户口径 2026-11-23：宽 60%、高 80%）+ 内部滚动。
+            标题栏与列表结构跟规则弹窗一致（用户口径：高危命令这个弹窗也要一起改）。 */}
+        <DialogContent
+          showCloseButton={false}
+          className="flex h-[80vh] w-[60vw] max-w-none flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b border-border px-5 py-3 pr-12">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-base font-medium">
+              <span className="min-w-0 truncate">高危命令</span>
+            </DialogTitle>
+            <DialogClose
+              className="absolute top-1/2 right-2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md border border-transparent text-foreground transition-colors hover:bg-muted"
+              aria-label="关闭"
+              title="关闭"
+            >
+              <X className="size-[18px]" strokeWidth={1.4} aria-hidden="true" />
+            </DialogClose>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-            {/* 添加放在条目列表上方左侧（用户口径：与插件页一致）。 */}
+          <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
+            {/* 添加：黑底、在左（与规则弹窗一致）。 */}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="default"
+              size="lg"
               onClick={() => setPatterns((current) => [...current, ""])}
+              className="self-start"
             >
               添加
             </Button>
-            {patterns.length === 0 ? (
-              <p className="text-ui-sm text-foreground-subtle">还没有条目</p>
-            ) : null}
-            {patterns.map((pattern, index) => (
-              <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
-                key={index}
-                className="flex items-center gap-2"
-              >
-                <Input
-                  aria-label="高危命令前缀"
-                  value={pattern}
-                  onChange={(event) =>
-                    setPatterns((current) =>
-                      current.map((item, i) =>
-                        i === index ? event.target.value : item,
-                      ),
-                    )
-                  }
-                  className="min-w-0 flex-1 font-mono text-ui-sm"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="删除这条高危命令"
-                  onClick={() =>
-                    setPatterns((current) =>
-                      current.filter((_, i) => i !== index),
-                    )
-                  }
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="grid grid-cols-[minmax(0,1fr)_56px] items-center bg-card px-4 py-3 text-ui-base text-foreground-subtle">
+                  <span>命令前缀</span>
+                  <span className="sr-only">操作</span>
+                </div>
+                {patterns.length === 0 ? (
+                  <div className="border-t border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
+                    还没有条目
+                  </div>
+                ) : (
+                  patterns.map((pattern, index) => (
+                    <div
+                      // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
+                      key={index}
+                      className="grid grid-cols-[minmax(0,1fr)_56px] items-center border-t border-border px-4 py-3"
+                    >
+                      {/* 与规则弹窗同形：值就是输入框，行尾删除。 */}
+                      <Input
+                        aria-label="高危命令前缀"
+                        value={pattern}
+                        onChange={(event) =>
+                          setPatterns((current) =>
+                            current.map((item, i) =>
+                              i === index ? event.target.value : item,
+                            ),
+                          )
+                        }
+                        className="min-w-0 border-transparent bg-transparent px-0 font-mono text-ui-base focus-visible:border-input-border"
+                      />
+                      <span className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="删除这条高危命令"
+                          onClick={() =>
+                            setPatterns((current) =>
+                              current.filter((_, i) => i !== index),
+                            )
+                          }
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
-            ))}
+            </div>
           </div>
           {/* 关闭即保存（用户口径 2026-11-23：不需要「完成」按钮，操作完自动保存）。 */}
         </DialogContent>
@@ -1084,13 +1114,10 @@ function PermissionPolicySection() {
           showCloseButton={false}
           className="flex h-[80vh] w-[60vw] max-w-none flex-col gap-0 overflow-hidden p-0"
         >
-          {/* 标题栏：照知识库弹窗的样子（左侧图标 + 标题，右侧窗控，细底线）。 */}
-          <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-12">
+          {/* 标题栏：只有标题与关闭（用户口径 2026-11-23：去掉图标）；
+              分界线用灰色的 `border-border`，与设置页其他分隔线同一个 token。 */}
+          <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b border-border px-5 py-3 pr-12">
             <DialogTitle className="flex min-w-0 items-center gap-2 text-base font-medium">
-              <ShieldCheck
-                className="size-4 shrink-0 text-foreground-subtle"
-                aria-hidden="true"
-              />
               <span className="min-w-0 truncate">
                 {editorGroup?.title ?? "规则"}
               </span>
@@ -1273,30 +1300,35 @@ function RuleEditor({
       {/* 工具条：添加在左、搜索在右（用户口径 2026-11-23：添加按钮放左边不变，
           列表参照快捷键页的搜索框样式）。 */}
       <div className="flex shrink-0 items-center justify-between gap-3">
+        {/* 添加按钮：黑底（用户口径 2026-11-23）。 */}
         <Button
           type="button"
-          variant="outline"
+          variant="default"
           size="lg"
           disabled={disabled}
           onClick={addRow}
-          className="bg-input"
         >
           添加
         </Button>
-        <Input
+        {/* 搜索框带放大镜图标（用户口径），与设置页搜索框同一个组件。 */}
+        <SettingsSearchInput
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜索"
           aria-label={`搜索${ariaLabel}`}
-          className="w-64"
+          containerClassName="w-64"
+          clearLabel="清空搜索"
+          onClear={() => setQuery("")}
         />
       </div>
       {/* 表格：表头 + 分隔线行（参照快捷键页）。 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {/* 表头字号与数据行一致（用户口径：表头字号和下面保持一致），
+              只靠颜色低一档区分层级。 */}
           <div
             className={cn(
-              "grid items-center bg-card px-4 py-3 text-ui-sm text-foreground-subtle",
+              "grid items-center bg-card px-4 py-3 text-ui-base text-foreground-subtle",
               gridCols,
             )}
           >
@@ -1307,7 +1339,7 @@ function RuleEditor({
             <span className="sr-only">操作</span>
           </div>
           {visible.length === 0 ? (
-            <div className="border-t border-border px-4 py-8 text-center text-ui-sm text-foreground-subtle">
+            <div className="border-t border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
               {rows.length === 0 ? "还没有规则" : "没有匹配的规则"}
             </div>
           ) : (
@@ -1341,6 +1373,7 @@ function RuleEditor({
                     ?.label ?? ""}
                 </span>
                 <span className="flex justify-end">
+                  {/* 删除按钮标红（用户口径 2026-11-23）。 */}
                   <Button
                     type="button"
                     variant="ghost"
@@ -1348,6 +1381,7 @@ function RuleEditor({
                     aria-label={`删除规则 ${row.value || ariaLabel}`}
                     disabled={disabled}
                     onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
