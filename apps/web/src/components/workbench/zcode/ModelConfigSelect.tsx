@@ -493,9 +493,10 @@ function EffortSlider({
             「为什么你不加过渡动画」就是这个原因）。`inset()` 的四个 inset 值与
             父级圆角无关，可以逐帧插值，所以填充宽度是真的在动。
 
-            圆角由外层 `overflow-hidden rounded-full` 提供，所以 inset 不带 `round`
-            ——带 `round 999px` 时每次变化都要重算圆角轮廓，是之前「有点卡」的一半原因。
-            呼吸发光同样不用 `filter`（每帧跑像素级滤镜），改透明度叠层。
+            裁剪必须带 `round`：不带时填充右端是直角方块（用户截图反馈「有bug」）。
+            半径用轨道半高 `16px` 而不是 `999px`：半径只需等于半高就能得到完全圆头，
+            `999px` 每次变化都要按巨大半径重算轮廓，是之前「有点卡」的一半原因。
+            呼吸发光不用 `filter`（每帧跑像素级滤镜），改透明度叠层。
           */}
           <div
             ref={gradRef}
@@ -515,7 +516,7 @@ function EffortSlider({
                         )
                         .join(", ")})`
                     : (coloredStops[0]?.color ?? "transparent"),
-                clipPath: `inset(0 calc(${((1 - ratio) * 100).toFixed(2)}% - ${((1 - ratio) * EFFORT_KNOB).toFixed(2)}px) 0 0)`,
+                clipPath: `inset(0 calc(${((1 - ratio) * 100).toFixed(2)}% - ${((1 - ratio) * EFFORT_KNOB).toFixed(2)}px) 0 0 round ${EFFORT_KNOB / 2}px)`,
                 // 拖动时不做过渡：每一帧都重启动画会让拖动发飘。
                 transition: dragging
                   ? "none"
