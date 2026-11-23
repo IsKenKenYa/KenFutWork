@@ -35,8 +35,15 @@ export function resolveExecutable(
       if (existsSync(name)) return name;
       continue;
     }
+    /**
+     * 名字自带扩展名时不能再追加 PATHEXT：`powershell.exe` 会被拼成
+     * `powershell.exe.EXE`，那个文件永远不存在，函数返回 null，调用方只能退回
+     * 裸命令名交给 `spawn`——PATH 不可靠时这就是「文件夹对话框根本不弹」的
+     * 直接原因（实测：本机 powershell.exe 存在、resolveExecutable 却返回 null）。
+     */
+    const extensions = /\.[A-Za-z0-9]+$/u.test(name) ? [""] : pathExt;
     for (const dir of dirs) {
-      for (const ext of pathExt) {
+      for (const ext of extensions) {
         const candidate = join(dir, `${name}${ext}`);
         if (existsSync(candidate)) return candidate;
       }

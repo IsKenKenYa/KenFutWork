@@ -364,9 +364,11 @@ function AutoBackupSection() {
           />
         }
       />
-      {message ? (
+      {/* 成功不弹行内提示（用户口径 2026-11-23：不要显示「已保存」这类东西）；
+          只有失败才要一句话说明怎么处理。 */}
+      {message && message !== "已保存" ? (
         <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
+          <span role="alert" className="text-ui-sm text-destructive">
             {message}
           </span>
         </div>
@@ -464,9 +466,11 @@ function DeleteModeSection() {
           </Select>
         }
       />
-      {message ? (
+      {/* 成功不弹行内提示（用户口径 2026-11-23：不要显示「已保存」这类东西）；
+          只有失败才要一句话说明怎么处理。 */}
+      {message && message !== "已保存" ? (
         <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
+          <span role="alert" className="text-ui-sm text-destructive">
             {message}
           </span>
         </div>
@@ -602,9 +606,10 @@ function CommandReviewSection() {
           }
         />
       )}
-      {message ? (
+      {/* 成功不弹行内提示（用户口径 2026-11-23），只有失败才显示。 */}
+      {message && message !== "已保存" ? (
         <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
+          <span role="alert" className="text-ui-sm text-destructive">
             {message}
           </span>
         </div>
@@ -747,9 +752,11 @@ function SandboxSecuritySection() {
           />
         }
       />
-      {message ? (
+      {/* 成功不弹行内提示（用户口径 2026-11-23：不要显示「已保存」这类东西）；
+          只有失败才要一句话说明怎么处理。 */}
+      {message && message !== "已保存" ? (
         <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
+          <span role="alert" className="text-ui-sm text-destructive">
             {message}
           </span>
         </div>
@@ -992,14 +999,6 @@ function PermissionPolicySection() {
     setEditorDetail(index);
   };
 
-  /** 删除一条规则并立即提交（列表行尾的垃圾桶直接生效，不再进弹窗）。 */
-  const removeRule = (kind: RuleKind, index: number) => {
-    const table = ruleTable[kind];
-    const next = table.rows.filter((_, i) => i !== index);
-    table.setRows(next);
-    void savePolicy({ rows: { [kind]: next } });
-  };
-
   return (
     <SettingsGroupCard>
       {/* 放行策略：没命中任何规则时怎么办——全部放行 / 自动审批 / 默认询问 /
@@ -1033,63 +1032,26 @@ function PermissionPolicySection() {
         }
       />
       {/* 四类规则各一行：标签在左、编辑按钮在右（与浏览器控制页同一版式）。
-          已配置的规则逐条列在行下方，点某一条直接进那一条的编辑面板，行尾可删除。 */}
+          规则条目本身不在页面上铺开——用户口径 2026-11-23「这些东西不要显示，
+          进编辑按钮打开的弹窗那边编辑」，页面只留入口。 */}
       {RULE_GROUPS.map((group) => (
-        <RuleGroupRow
+        <SettingsRow
           key={group.kind}
-          title={group.title}
-          rows={ruleTable[group.kind].rows}
-          placeholder={group.placeholder}
-          ariaLabel={group.ariaLabel}
-          showOperation={group.showOperation === true}
-          disabled={saving}
-          onOpenEditor={() => openEditor(group.kind, null)}
-          onEditRow={(index) => openEditor(group.kind, index)}
-          onRemoveRow={(index) => removeRule(group.kind, index)}
+          label={group.title}
+          control={
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              aria-label={`编辑${group.title}`}
+              disabled={saving}
+              onClick={() => openEditor(group.kind, null)}
+            >
+              编辑
+            </Button>
+          }
         />
       ))}
-      {/* 网络规则的两项协议开关（用户口径：HTTP / SSL 归入网络规则）。 */}
-      <SettingsRow
-        label="HTTP 放行"
-        control={
-          <ToggleSelect
-            ariaLabel="HTTP 放行"
-            value={networkPolicy.httpAllowed}
-            disabled={saving}
-            onChange={(next) => {
-              setNetworkPolicy((current) => ({
-                ...current,
-                httpAllowed: next,
-              }));
-              void savePolicy({ httpAllowed: next });
-            }}
-          />
-        }
-      />
-      <SettingsRow
-        label="SSL 证书校验"
-        control={
-          <ToggleSelect
-            ariaLabel="SSL 证书校验"
-            value={networkPolicy.tlsVerification}
-            disabled={saving}
-            onChange={(next) => {
-              setNetworkPolicy((current) => ({
-                ...current,
-                tlsVerification: next,
-              }));
-              void savePolicy({ tlsVerification: next });
-            }}
-          />
-        }
-      />
-      {message ? (
-        <div className="px-4 pb-3">
-          <span role="status" className="text-ui-sm text-foreground-subtle">
-            {message}
-          </span>
-        </div>
-      ) : null}
       <Dialog
         open={editor !== null}
         onOpenChange={(open) => {
@@ -1142,6 +1104,46 @@ function PermissionPolicySection() {
                     />
                   );
                 })()}
+            {/* 网络规则弹窗内追加两项协议开关（用户口径 2026-11-23：
+                HTTP 放行与 SSL 证书校验归到网络规则编辑弹窗里）。 */}
+            {editor?.kind === "domain" ? (
+              <div className="mt-4 space-y-3 border-t border-border pt-4">
+                <SettingsRow
+                  label="HTTP 放行"
+                  control={
+                    <ToggleSelect
+                      ariaLabel="HTTP 放行"
+                      value={networkPolicy.httpAllowed}
+                      disabled={saving}
+                      onChange={(next) => {
+                        setNetworkPolicy((current) => ({
+                          ...current,
+                          httpAllowed: next,
+                        }));
+                        void savePolicy({ httpAllowed: next });
+                      }}
+                    />
+                  }
+                />
+                <SettingsRow
+                  label="SSL 证书校验"
+                  control={
+                    <ToggleSelect
+                      ariaLabel="SSL 证书校验"
+                      value={networkPolicy.tlsVerification}
+                      disabled={saving}
+                      onChange={(next) => {
+                        setNetworkPolicy((current) => ({
+                          ...current,
+                          tlsVerification: next,
+                        }));
+                        void savePolicy({ tlsVerification: next });
+                      }}
+                    />
+                  }
+                />
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
@@ -1161,95 +1163,6 @@ function PermissionPolicySection() {
         </DialogContent>
       </Dialog>
     </SettingsGroupCard>
-  );
-}
-
-/** 规则组在页面上的形态：设置行（标签在左、编辑按钮在右）+ 已配置规则的逐行列表。 */
-function RuleGroupRow({
-  title,
-  rows,
-  placeholder,
-  ariaLabel,
-  disabled,
-  showOperation = false,
-  onOpenEditor,
-  onEditRow,
-  onRemoveRow,
-}: {
-  title: string;
-  rows: EditableRule[];
-  placeholder: string;
-  ariaLabel: string;
-  disabled: boolean;
-  showOperation?: boolean;
-  onOpenEditor: () => void;
-  onEditRow: (index: number) => void;
-  onRemoveRow: (index: number) => void;
-}) {
-  return (
-    <SettingsRow
-      label={title}
-      control={
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          aria-label={`编辑${title}`}
-          disabled={disabled}
-          onClick={onOpenEditor}
-        >
-          编辑
-        </Button>
-      }
-      // 规则条目作为这一行的明细铺在下方：与浏览器控制页的 detail 位置一致。
-      detail={
-        rows.length === 0 ? undefined : (
-          <div className="space-y-1">
-            {rows.map((row, index) => (
-              <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
-                key={index}
-                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-hover"
-              >
-                {/* 点这一行直接进这一条的编辑面板（用户口径：点规则直接编辑）。 */}
-                <button
-                  type="button"
-                  disabled={disabled}
-                  aria-label={`编辑规则 ${row.value || placeholder}`}
-                  onClick={() => onEditRow(index)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                >
-                  <span className="min-w-0 flex-1 truncate font-mono text-ui-base text-foreground">
-                    {row.value || placeholder}
-                  </span>
-                  {showOperation ? (
-                    <span className="shrink-0 text-ui-base text-foreground-subtle">
-                      {FILE_OPERATIONS.find(
-                        (entry) => entry.value === (row.operation ?? "read"),
-                      )?.label ?? "读"}
-                    </span>
-                  ) : null}
-                  <span className="shrink-0 text-ui-base text-foreground-subtle">
-                    {RULE_ACTIONS.find((entry) => entry.value === row.action)
-                      ?.label ?? ""}
-                  </span>
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`删除规则 ${row.value || ariaLabel}`}
-                  disabled={disabled}
-                  onClick={() => onRemoveRow(index)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )
-      }
-    />
   );
 }
 

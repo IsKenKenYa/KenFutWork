@@ -572,7 +572,7 @@ it("文件安全：同一目录可分别配读 / 写 / 删三条规则", async (
   ]);
 });
 
-it("点列表里的规则直接进那一条的编辑面板，行尾垃圾桶提交删除", async () => {
+it("页面上不铺规则条目；条目都在弹窗里，可点开编辑、行尾可删除", async () => {
   const user = userEvent.setup();
   const { tierPuts } = openPermissionSection({
     ...EMPTY_SETTINGS,
@@ -590,20 +590,36 @@ it("点列表里的规则直接进那一条的编辑面板，行尾垃圾桶提�
     },
   });
 
-  // 页面上的规则条目可直接点开编辑（不需要先进弹窗再找那一条）。
-  const listed = await screen.findAllByRole("button", {
-    name: /^编辑规则/,
-  });
+  // 用户口径 2026-11-23：规则条目不在页面上显示，只留「编辑」入口。
+  expect(screen.queryAllByRole("button", { name: /^编辑规则/ })).toHaveLength(
+    0,
+  );
+  expect(screen.queryAllByRole("button", { name: /^删除规则/ })).toHaveLength(
+    0,
+  );
+
+  // 进网络规则弹窗：条目逐行列出，行尾有删除按钮。
+  await openRuleDialog("网络规则");
+  const listed = await screen.findAllByRole("button", { name: /^编辑规则/ });
   expect(listed.map((row) => (row.textContent ?? "").trim())).toEqual([
     "*.a.example每次询问",
     "*.b.example拦截",
   ]);
 
-  // 行尾垃圾桶立刻提交删除（用户口径：每一条规则都有删除按钮）。
+  // 点某一条进那一条的编辑面板。
+  const second = listed[1];
+  if (!second) throw new Error("没有找到第二条规则");
+  act(() => second.click());
+  expect(await screen.findByLabelText("域名")).toHaveValue("*.b.example");
+  act(() => screen.getByRole("button", { name: "返回列表" }).click());
+
+  // 行尾垃圾桶删掉第一条，关闭弹窗后提交。
   const deletes = screen.getAllByRole("button", { name: /^删除规则/ });
   const firstDelete = deletes[0];
   if (!firstDelete) throw new Error("没有找到删除按钮");
   await user.click(firstDelete);
+  await closeRuleDialog();
+
   await waitFor(() => expect(tierPuts.length).toBeGreaterThanOrEqual(1));
   const body = tierPuts[tierPuts.length - 1] as {
     policy: { domainRules: Array<{ domain: string }> };
@@ -611,29 +627,20 @@ it("点列表里的规则直接进那一条的编辑面板，行尾垃圾桶提�
   expect(body.policy.domainRules).toEqual([
     { domain: "*.b.example", action: "deny" },
   ]);
-
-  // 剩下的那一条点开就是它自己的编辑面板。
-  const remaining = screen.getAllByRole("button", { name: /^编辑规则/ });
-  expect(remaining.map((row) => (row.textContent ?? "").trim())).toEqual([
-    "*.b.example拦截",
-  ]);
-  const only = remaining[0];
-  if (!only) throw new Error("剩下的规则条目不见了");
-  act(() => only.click());
-  expect(await screen.findByLabelText("域名")).toHaveValue("*.b.example");
 });
 
-it("HTTP 放行与 SSL 证书校验归在网络规则这一组", async () => {
+it("HTTP 放行与 SSL 证书校验在网络规则的编辑弹窗里", async () => {
   openPermissionSection(EMPTY_SETTINGS);
-  // 两项都在网络规则之后，不再是独立的底部区块。
-  const network = await screen.findByLabelText("编辑网络规则");
-  const http = screen.getByRole("switch", { name: "HTTP 放行" });
-  const ssl = screen.getByRole("switch", { name: "SSL 证书校验" });
-  // 网络规则的「编辑」按钮先出现，HTTP / SSL 两行排在它后面。
-  const followsNetwork = (node: HTMLElement) =>
-    (network.compareDocumentPosition(node) &
-      Node.DOCUMENT_POSITION_FOLLOWING) !==
-    0;
-  expect(followsNetwork(http)).toBe(true);
-  expect(followsNetwork(ssl)).toBe(true);
+  // 页面上不再有这两项（用户口径：归到网络规则编辑弹窗里）。
+  expect(screen.queryByRole("switch", { name: "HTTP 放行" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "SSL 证书校验" })).toBeNull();
+
+  await openRuleDialog("网络规则");
+  expect(await screen.findByRole("switch", { name: "HTTP 放行" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "SSL 证书校验" })).toBeTruthy();
+
+  // 其它规则的弹窗里不出现这两项。
+  await closeRuleDialog();
+  await openRuleDialog("工具规则");
+  expect(screen.queryByRole("switch", { name: "HTTP 放行" })).toBeNull();
 });

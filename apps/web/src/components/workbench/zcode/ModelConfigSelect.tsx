@@ -221,10 +221,12 @@ const EFFORT_STARS: ReadonlyArray<{
 
 /** 滑块特效用的关键帧（组件级注入一次；WAAPI 不覆盖 infinite alternate 组合）。 */
 const EFFORT_KEYFRAMES = `
-@keyframes effort-glow {
-  0%, 100% { filter: brightness(1.03) saturate(1.02); }
-  50%      { filter: brightness(1.1) saturate(1.12); }
+/* 呼吸发光：只动 opacity（合成层属性），不再逐帧跑 brightness/saturate 滤镜。 */
+@keyframes effort-glow-breathe {
+  0%, 100% { opacity: .03; }
+  50%      { opacity: .14; }
 }
+.effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
   70%  { transform: translate(-50%,-50%) scale(1.35) rotate(8deg); opacity: 1; }
@@ -234,7 +236,7 @@ const EFFORT_KEYFRAMES = `
   from { opacity: .4; transform: translate(-50%,-50%) scale(.7) rotate(-25deg); }
   to   { opacity: 1;  transform: translate(-50%,-50%) scale(1.2) rotate(25deg);  }
 }
-.effort-star { opacity: 0; }
+.effort-star { opacity: 0; will-change: transform, opacity; }
 .effort-track-shine .effort-star {
   animation:
     effort-star-in .5s cubic-bezier(.34,1.56,.64,1) forwards,
@@ -311,6 +313,8 @@ function EffortSlider({
   const knobBumpRef = useRef<Animation | null>(null);
 
   // 闪光扫过（WAAPI）：速率随档位升高而加快，与设计稿同一手法。
+  // 动画句柄存 ref：档位变化时直接改 playbackRate，不再每帧 getAnimations() 查询。
+  const shimmerRef = useRef<{ first?: Animation; second?: Animation }>({});
   useEffect(() => {
     const flow = [
       { transform: "translateX(-130%) skewX(-18deg)" },
@@ -327,9 +331,11 @@ function EffortSlider({
       iterations: Infinity,
       easing: "linear",
     });
+    shimmerRef.current = { first, second };
     return () => {
       first?.cancel();
       second?.cancel();
+      shimmerRef.current = {};
     };
   }, []);
 
@@ -341,12 +347,16 @@ function EffortSlider({
   // 实测偏移 16px（手柄半径）——那正是「滑块手柄错位」的来源。
   useEffect(() => {
     const rate = 0.5 + 1.7 * ratio;
-    for (const animation of shimmerFirstRef.current?.getAnimations() ?? []) {
-      animation.playbackRate = rate;
+    if (shimmerRef.current.first) {
+      shimmerRef.current.first.playbackRate = rate;
     }
-    for (const animation of shimmerSecondRef.current?.getAnimations() ?? []) {
-      animation.playbackRate = rate;
+    if (shimmerRef.current.second) {
+      shimmerRef.current.second.playbackRate = rate;
     }
+  }, [ratio]);
+
+  // 回弹只跟「落到哪一档」走，与拖动状态无关：拖动中不重启动画。
+  useEffect(() => {
     if (dragging || !knobRef.current) return;
     knobBumpRef.current?.cancel();
     knobBumpRef.current = knobRef.current.animate(
@@ -357,7 +367,7 @@ function EffortSlider({
         composite: "replace",
       },
     );
-  }, [ratio, dragging]);
+  }, [committedIndex, dragging]);
 
   const selectNearest = useCallback(
     (clientX: number) => {
@@ -464,55 +474,77 @@ function EffortSlider({
             }
           }}
         >
-          {/* 渐变填充：按档位配色铺 stop，clip-path 裁到当前档位；整条做呼吸发光。 */}
+          {/*
+            渐变填充：按档位配色铺 stop，用**遮罩宽度**裁到当前档位。
+
+            动画流畅度（用户口径 2026-11-23「感觉动画有点卡卡的，改的流畅一点」）：
+            - 裁剪用 `mask-image`（线性渐变硬边）而不是 `clip-path: inset(round 999px)`：
+              后者每次变化都要重算圆角轮廓，整条轨道重绘；遮罩只让合成器改一层 alpha。
+            - 呼吸发光从 `filter: brightness()/saturate()` 换成 `opacity` 叠层：filter 每帧
+              都要重新跑像素级滤镜（含子元素的两个扫光），是这一块最贵的一步。
+            - 扫光与星星都加 `will-change: transform`，固定在合成层里跑。
+          */}
           <div
             ref={gradRef}
             aria-hidden="true"
-            className="absolute inset-0 rounded-full"
-            style={{
-              background:
-                coloredStops.length >= 2
-                  ? `linear-gradient(90deg, ${coloredStops
-                      .map(
-                        (stop) =>
-                          `${stop.color} calc(${EFFORT_KNOB / 2}px + ${stop.stop.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
-                      )
-                      .join(", ")})`
-                  : (coloredStops[0]?.color ?? "transparent"),
-              clipPath: `inset(0 calc((1 - ${ratio}) * (100% - ${EFFORT_KNOB}px)) 0 0 round 999px)`,
-              // 拖动时不做过渡：每一帧都重启动画会拖慢拖动并造成闪烁。
-              transition: dragging
-                ? "none"
-                : "clip-path .3s cubic-bezier(.3, 1.2, .4, 1)",
-              animation: isTop
-                ? undefined
-                : "effort-glow 2.6s ease-in-out infinite",
-              filter: isTop ? "brightness(1.12) saturate(1.15)" : undefined,
-            }}
+            className="absolute inset-0 overflow-hidden rounded-full"
           >
-            {/* 顶面高光（设计稿 rs-grad::after）。 */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute left-0 right-0 top-0 h-[52%] rounded-[999px_999px_40%_40%/999px_999px_70%_70%] bg-gradient-to-b from-white/30 to-transparent"
-            />
-            {/* 双闪光扫过：档位越高越亮、越快。 */}
-            <div
-              ref={shimmerFirstRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent"
+              className="absolute inset-0 rounded-full"
               style={{
-                opacity: plain ? 0 : Math.min(1, 0.06 + 0.165 * ratio),
-                transform: "translateX(-130%) skewX(-18deg)",
+                background:
+                  coloredStops.length >= 2
+                    ? `linear-gradient(90deg, ${coloredStops
+                        .map(
+                          (stop) =>
+                            `${stop.color} calc(${EFFORT_KNOB / 2}px + ${stop.stop.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
+                        )
+                        .join(", ")})`
+                    : (coloredStops[0]?.color ?? "transparent"),
+                // 硬边遮罩：只在 right 上让出一条到当前档位的宽度。
+                maskImage: `linear-gradient(90deg, #000 calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px)), transparent calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px) + 1px))`,
+                WebkitMaskImage: `linear-gradient(90deg, #000 calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px)), transparent calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px) + 1px))`,
+                // 拖动时不做过渡：每一帧都重启动画会拖慢拖动并造成闪烁。
+                transition: dragging
+                  ? "none"
+                  : "mask-image .28s cubic-bezier(.3, 1.2, .4, 1), -webkit-mask-image .28s cubic-bezier(.3, 1.2, .4, 1)",
+                willChange: dragging ? "mask-image" : undefined,
               }}
-            />
+            >
+              {/* 顶面高光（设计稿 rs-grad::after）。 */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-0 right-0 top-0 h-[52%] rounded-[999px_999px_40%_40%/999px_999px_70%_70%] bg-gradient-to-b from-white/30 to-transparent"
+              />
+              {/* 双闪光扫过：档位越高越亮、越快。 */}
+              <div
+                ref={shimmerFirstRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent will-change-transform"
+                style={{
+                  opacity: plain ? 0 : Math.min(1, 0.06 + 0.165 * ratio),
+                  transform: "translateX(-130%) skewX(-18deg)",
+                }}
+              />
+              <div
+                ref={shimmerSecondRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent will-change-transform"
+                style={{
+                  opacity: plain ? 0 : Math.max(0, (ratio - 0.4) * 0.25),
+                  transform: "translateX(-130%) skewX(-18deg)",
+                }}
+              />
+            </div>
+            {/* 呼吸发光：半透明白色叠层做透明度呼吸，替掉逐帧 brightness 滤镜。 */}
             <div
-              ref={shimmerSecondRef}
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-[-10%] left-0 w-[42%] skew-x-[-18deg] rounded-full bg-gradient-to-r from-transparent via-white/40 to-transparent"
-              style={{
-                opacity: plain ? 0 : Math.max(0, (ratio - 0.4) * 0.25),
-                transform: "translateX(-130%) skewX(-18deg)",
-              }}
+              className={cn(
+                "pointer-events-none absolute inset-0 rounded-full bg-white/10",
+                !plain && !isTop && "effort-glow-breathe",
+              )}
+              style={{ opacity: plain || isTop ? 0 : undefined }}
             />
           </div>
           {/* 最高档星星（设计稿 rs-stars）：只在顶档出现。
@@ -999,7 +1031,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         aria-label={triggerAriaLabel}
         onClick={guideTooltipOpen ? onGuideTooltipDismiss : undefined}
         className={cn(
-          "w-fit justify-between gap-1 rounded-lg pl-2 pr-1.5 text-ui-base whitespace-nowrap",
+          // 档位文字换长换短时触发器宽度会变：加过渡让它连续变化，菜单锚点跟着
+          // 平滑移动，而不是瞬间跳一格（用户口径：用动画过渡界面的变化）。
+          "w-fit justify-between gap-1 rounded-lg pl-2 pr-1.5 text-ui-base whitespace-nowrap transition-[width] duration-200 ease-out",
           triggerClassName,
         )}
       >
@@ -1022,14 +1056,15 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           <>
             <span className="text-foreground-subtle">·</span>
             {/*
-              档位读数与模型名同字重（用户口径「最高不要加粗」）。
-              宽度固定为两字：档位从「关闭 / 默认 / 低 / 中 / 高」变成「最高」等两字档时
-              触发器不再变宽——菜单锚定在触发器上，触发器一变宽菜单就跟着横跳（实测
-              宽度 145→192、x 851→865，即用户看到的「面板抖动」）。
+              档位读数与模型名同字重（用户口径「最高不要加粗」），也不留两侧空白
+              （用户口径 2026-11-23：「低」的时候中间有一块空格）。
+              所以这里**不定宽**（上一个版本用 w-[2em] 撑成两字，单字档就会空出一截）。
+
+              触发器宽度变化本身不再引起菜单横跳：之前是每帧重排直接跳，现在给触发器
+              加 `transition-[width]`，档位文字换长换短时宽度平滑过渡，菜单跟着连续移动
+              而不是瞬移（用户口径：用动画过渡界面的变化）。
             */}
-            <span className="w-[2em] shrink-0 text-right">
-              {effortTriggerLabel}
-            </span>
+            <span className="shrink-0 tabular-nums">{effortTriggerLabel}</span>
           </>
         ) : null}
         {triggerBadge}
