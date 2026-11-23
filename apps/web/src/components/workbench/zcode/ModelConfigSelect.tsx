@@ -238,6 +238,12 @@ const EFFORT_KEYFRAMES = `
   50%      { opacity: .14; }
 }
 .effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
+/* 档位读数换字时的过渡：淡入 + 轻微上移，用 opacity/transform（合成层属性）。 */
+@keyframes effort-readout-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.effort-readout { animation: effort-readout-in .22s cubic-bezier(.32,.72,.24,1) both; }
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
   70%  { transform: translate(-50%,-50%) scale(1.35) rotate(8deg); opacity: 1; }
@@ -425,9 +431,15 @@ function EffortSlider({
       <div className="px-2 pb-3 pt-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-ui-base text-foreground-subtle">思考强度</span>
-          {/* 档位读数与标签同字重（用户口径：最高不要加粗），只靠颜色区分。 */}
+          {/*
+            档位读数：与标签同字重、只靠颜色区分（用户口径「最高不要加粗」）。
+            换档时做一次淡入 + 轻微上移（用户口径 2026-11-23「这个文字也要给一个
+            过渡动画」）：`key` 换成档位值让元素重挂载，动画因此重播；
+            直接换文字是硬切，一眼能看出跳。
+          */}
           <span
-            className="text-ui-base tabular-nums"
+            key={label}
+            className="effort-readout text-ui-base tabular-nums"
             style={plain || !currentColor ? undefined : { color: currentColor }}
           >
             {label}

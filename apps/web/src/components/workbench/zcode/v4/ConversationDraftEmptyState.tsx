@@ -118,7 +118,11 @@ export function ConversationDraftEmptyState({
       : workbenchMode === "work"
         ? "Work with KenFutWork"
         : "Code with KenFutWork";
-  const HeroIcon = designHero ? Palette : workbenchMode === "work" ? Briefcase : Code2;
+  const HeroIcon = designHero
+    ? Palette
+    : workbenchMode === "work"
+      ? Briefcase
+      : Code2;
   const [greetingDate, setGreetingDate] = useState(() => new Date());
   const [greetingFontSizePx, setGreetingFontSizePx] = useState(
     GREETING_MAX_FONT_SIZE_PX,
@@ -265,16 +269,19 @@ export function ConversationDraftEmptyState({
             width="120%"
             height="120%"
           >
+            {/* 线宽（用户口径 2026-11-23：线条粗细改到现在的 1/4）。
+                环厚 = dilate 半径 + erode 半径，原来是 2+2；改成 0.5+0.5 正好是 1/4。
+                深浅色共用同一份滤镜，暗黑模式也跟着一起变细。 */}
             <feMorphology
               in="SourceAlpha"
               operator="dilate"
-              radius="2"
+              radius="0.5"
               result="kfw-dil"
             />
             <feMorphology
               in="SourceAlpha"
               operator="erode"
-              radius="2"
+              radius="0.5"
               result="kfw-ero"
             />
             <feComposite
