@@ -139,11 +139,22 @@ namespace KenFutWork {
 # 于是 Pick 抛 TypeNotFound，前端等一个永远不出现的对话框（这一条就是 bug 本体）。
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition $cs -ErrorAction Stop
+# 现代视觉样式（用户反馈「UI 老旧」）：
+# PowerShell 5.1 宿主默认没有 Common-Controls v6 的激活上下文，IFileDialog 会渲染成
+# Vista 时代的经典灰框（无现代圆角/浅色标题栏）。显式启用视觉样式后，
+# 对话框与资源管理器一致（返回 ClientAndNonClientAreasEnabled）。
+[System.Windows.Forms.Application]::EnableVisualStyles()
+# owner 用可见的窗体：Opacity=0 的隐形窗体做 owner 时对话框会被挂到不可见窗口上，
+# 既拿不到前台焦点、也不会被提升到顶层（用户反馈「没有显示到顶层」）。
 $owner = New-Object System.Windows.Forms.Form
-$owner.TopMost = $true
+$owner.FormBorderStyle = 'None'
 $owner.ShowInTaskbar = $false
-$owner.Opacity = 0
+$owner.TopMost = $true
+$owner.StartPosition = 'CenterScreen'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
 $owner.Show()
+$owner.Activate()
+[System.Windows.Forms.Application]::DoEvents()
 $picked = [KenFutWork.FolderDialog]::Pick($owner.Handle, '选择文件夹')
 $owner.Close()
 if ($picked) { [Console]::Out.Write($picked) }`;

@@ -48,6 +48,18 @@ describe("原生目录对话框命令", () => {
     expect(script).toContain("public interface IShellItem");
     expect(script).toContain("$ErrorActionPreference = 'Stop'");
     expect(script).toContain("Add-Type -TypeDefinition $cs -ErrorAction Stop");
+    /**
+     * 回归锁（用户口径 2026-11-23「没有显示到顶层 / UI 老旧」）：
+     *
+     * 1) `EnableVisualStyles()` 必须调用——PowerShell 5.1 宿主默认没有
+     *    Common-Controls v6 激活上下文，IFileDialog 会退回 Vista 时代的经典灰框。
+     * 2) owner 窗体必须**可见**且置顶：早先用 `Opacity = 0` 的隐形窗体当 owner，
+     *    对话框被挂到不可见窗口上，拿不到前台焦点也不会被提升到顶层。
+     */
+    expect(script).toContain("EnableVisualStyles()");
+    expect(script).toContain("FormBorderStyle = 'None'");
+    expect(script).toContain("$owner.Activate()");
+    expect(script).not.toContain("$owner.Opacity = 0");
   });
 
   it("macOS 用 osascript 的 choose folder", () => {
