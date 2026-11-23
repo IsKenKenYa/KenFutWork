@@ -639,8 +639,8 @@ function CommandReviewSection() {
           if (!open) void save({ mode, patterns });
         }}
       >
-        {/* 与规则弹窗同一约束：高度上限 + 内部滚动（条目多时不再撑出屏幕）。 */}
-        <DialogContent className="flex max-h-[80vh] w-[min(560px,calc(100vw-2rem))] max-w-none flex-col">
+        {/* 固定尺寸（用户口径 2026-11-23：宽 60%、高 80%）+ 内部滚动。 */}
+        <DialogContent className="flex h-[80vh] w-[60vw] max-w-none flex-col">
           <DialogHeader>
             <DialogTitle>高危命令</DialogTitle>
           </DialogHeader>
@@ -1078,9 +1078,8 @@ function PermissionPolicySection() {
           }
         }}
       >
-        {/* 高度上限 + 内部滚动：条目多时弹窗不会撑出屏幕。
-            宽度随视口收缩，窄窗口下也留出左右边距。 */}
-        <DialogContent className="flex max-h-[min(80vh,calc(100vh-4rem))] w-[min(560px,calc(100vw-2rem))] max-w-none flex-col">
+        {/* 固定尺寸（用户口径 2026-11-23：宽 60%、高 80%）+ 内部滚动。 */}
+        <DialogContent className="flex h-[80vh] w-[60vw] max-w-none flex-col">
           <DialogHeader>
             <DialogTitle>{editorGroup?.title ?? "规则"}</DialogTitle>
           </DialogHeader>
