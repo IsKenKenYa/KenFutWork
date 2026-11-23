@@ -2,6 +2,7 @@ import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -22,7 +23,7 @@ import {
   SettingsRow,
   SettingsSubheading,
 } from "@zui/settings/SettingsPageParts.js";
-import { Trash2 } from "lucide-react";
+import { ShieldCheck, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
@@ -1079,43 +1080,61 @@ function PermissionPolicySection() {
         }}
       >
         {/* 固定尺寸（用户口径 2026-11-23：宽 60%、高 80%）+ 内部滚动。 */}
-        <DialogContent className="flex h-[80vh] w-[60vw] max-w-none flex-col">
-          <DialogHeader>
-            <DialogTitle>{editorGroup?.title ?? "规则"}</DialogTitle>
+        <DialogContent
+          showCloseButton={false}
+          className="flex h-[80vh] w-[60vw] max-w-none flex-col gap-0 overflow-hidden p-0"
+        >
+          {/* 标题栏：照知识库弹窗的样子（左侧图标 + 标题，右侧窗控，细底线）。 */}
+          <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-12">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-base font-medium">
+              <ShieldCheck
+                className="size-4 shrink-0 text-foreground-subtle"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 truncate">
+                {editorGroup?.title ?? "规则"}
+              </span>
+            </DialogTitle>
+            <DialogClose
+              className="absolute top-1/2 right-2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md border border-transparent text-foreground transition-colors hover:bg-muted"
+              aria-label="关闭"
+              title="关闭"
+            >
+              <X className="size-[18px]" strokeWidth={1.4} aria-hidden="true" />
+            </DialogClose>
           </DialogHeader>
-          {/* 网络规则的两项协议开关放在**最上方**（用户口径 2026-11-23：放到顶部），
-              用自己的紧凑行样式，不再套 SettingsRow 的多余留白。 */}
-          {editor?.kind === "domain" ? (
-            <div className="shrink-0 space-y-0 divide-y divide-border rounded-lg border border-border">
-              <NetworkToggleRow
-                label="HTTP 放行"
-                ariaLabel="HTTP 放行"
-                value={networkPolicy.httpAllowed}
-                disabled={saving}
-                onChange={(next) => {
-                  setNetworkPolicy((current) => ({
-                    ...current,
-                    httpAllowed: next,
-                  }));
-                  void savePolicy({ httpAllowed: next });
-                }}
-              />
-              <NetworkToggleRow
-                label="SSL 证书校验"
-                ariaLabel="SSL 证书校验"
-                value={networkPolicy.tlsVerification}
-                disabled={saving}
-                onChange={(next) => {
-                  setNetworkPolicy((current) => ({
-                    ...current,
-                    tlsVerification: next,
-                  }));
-                  void savePolicy({ tlsVerification: next });
-                }}
-              />
-            </div>
-          ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
+            {/* 网络规则的协议开关（用户口径：放最上方）。 */}
+            {editor?.kind === "domain" ? (
+              <div className="shrink-0 divide-y divide-border rounded-lg border border-border">
+                <NetworkToggleRow
+                  label="HTTP 放行"
+                  ariaLabel="HTTP 放行"
+                  value={networkPolicy.httpAllowed}
+                  disabled={saving}
+                  onChange={(next) => {
+                    setNetworkPolicy((current) => ({
+                      ...current,
+                      httpAllowed: next,
+                    }));
+                    void savePolicy({ httpAllowed: next });
+                  }}
+                />
+                <NetworkToggleRow
+                  label="SSL 证书校验"
+                  ariaLabel="SSL 证书校验"
+                  value={networkPolicy.tlsVerification}
+                  disabled={saving}
+                  onChange={(next) => {
+                    setNetworkPolicy((current) => ({
+                      ...current,
+                      tlsVerification: next,
+                    }));
+                    void savePolicy({ tlsVerification: next });
+                  }}
+                />
+              </div>
+            ) : null}
             {editor === null || editorGroup === undefined
               ? null
               : (() => {
@@ -1135,26 +1154,28 @@ function PermissionPolicySection() {
                       onEditRow={(index) => setEditorDetail(index)}
                     />
                   ) : (
-                    <RuleDetail
-                      row={detailRow}
-                      placeholder={editorGroup.placeholder}
-                      ariaLabel={editorGroup.ariaLabel}
-                      disabled={saving}
-                      showOperation={editorGroup.showOperation === true}
-                      onChange={(next) =>
-                        table.setRows(
-                          table.rows.map((row, i) =>
-                            i === editorDetail ? next : row,
-                          ),
-                        )
-                      }
-                      onBack={() => setEditorDetail(null)}
-                    />
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                      <RuleDetail
+                        row={detailRow}
+                        placeholder={editorGroup.placeholder}
+                        ariaLabel={editorGroup.ariaLabel}
+                        disabled={saving}
+                        showOperation={editorGroup.showOperation === true}
+                        onChange={(next) =>
+                          table.setRows(
+                            table.rows.map((row, i) =>
+                              i === editorDetail ? next : row,
+                            ),
+                          )
+                        }
+                        onBack={() => setEditorDetail(null)}
+                      />
+                    </div>
                   );
                 })()}
             {/* 失败时的说明：成功不打扰（操作完自动保存）。 */}
             {message && message !== "已保存" ? (
-              <p role="alert" className="mt-3 text-ui-sm text-destructive">
+              <p role="alert" className="text-ui-sm text-destructive">
                 {message}
               </p>
             ) : null}
@@ -1231,64 +1252,111 @@ function RuleEditor({
     onChange([...rows, { value: "", action: "ask" }]);
     onEditRow(rows.length);
   };
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  /** 搜索只影响展示，不改动数据顺序——下标仍按原表算，编辑/删除指向同一条。 */
+  const visible = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) =>
+      normalizedQuery
+        ? row.value.toLowerCase().includes(normalizedQuery)
+        : true,
+    );
+
+  // 表格列：匹配值占满剩余，操作/动作定宽，行尾固定操作列。
+  const gridCols = showOperation
+    ? "grid-cols-[minmax(0,1fr)_72px_96px_56px]"
+    : "grid-cols-[minmax(0,1fr)_96px_56px]";
 
   return (
-    <div className="space-y-3">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={disabled}
-        onClick={addRow}
-      >
-        添加
-      </Button>
-      {rows.length === 0 ? (
-        <p className="text-ui-base text-foreground-subtle">还没有规则</p>
-      ) : (
-        <div className="space-y-1">
-          {rows.map((row, index) => (
-            <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
-              key={index}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-hover"
-            >
-              <button
-                type="button"
-                disabled={disabled}
-                aria-label={`编辑规则 ${row.value || placeholder}`}
-                onClick={() => onEditRow(index)}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* 工具条：添加在左、搜索在右（用户口径 2026-11-23：添加按钮放左边不变，
+          列表参照快捷键页的搜索框样式）。 */}
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          disabled={disabled}
+          onClick={addRow}
+          className="bg-input"
+        >
+          添加
+        </Button>
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索"
+          aria-label={`搜索${ariaLabel}`}
+          className="w-64"
+        />
+      </div>
+      {/* 表格：表头 + 分隔线行（参照快捷键页）。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div
+            className={cn(
+              "grid items-center bg-card px-4 py-3 text-ui-sm text-foreground-subtle",
+              gridCols,
+            )}
+          >
+            <span>{ariaLabel}</span>
+            {/* 「读 / 写 / 删」这一列叫「权限」，避免与行尾操作列同名。 */}
+            {showOperation ? <span>权限</span> : null}
+            <span>动作</span>
+            <span className="sr-only">操作</span>
+          </div>
+          {visible.length === 0 ? (
+            <div className="border-t border-border px-4 py-8 text-center text-ui-sm text-foreground-subtle">
+              {rows.length === 0 ? "还没有规则" : "没有匹配的规则"}
+            </div>
+          ) : (
+            visible.map(({ row, index }) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: 规则表允许重复值，索引是唯一稳定键。
+                key={index}
+                className={cn(
+                  "grid items-center border-t border-border px-4 py-3 text-ui-base",
+                  gridCols,
+                )}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-ui-base text-foreground">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`编辑规则 ${row.value || placeholder}`}
+                  onClick={() => onEditRow(index)}
+                  className="min-w-0 truncate text-left font-mono text-foreground hover:underline"
+                >
                   {row.value || placeholder}
-                </span>
+                </button>
                 {showOperation ? (
-                  <span className="shrink-0 text-ui-base text-foreground-subtle">
+                  <span className="text-foreground-subtle">
                     {FILE_OPERATIONS.find(
                       (entry) => entry.value === (row.operation ?? "read"),
                     )?.label ?? "读"}
                   </span>
                 ) : null}
-                <span className="shrink-0 text-ui-base text-foreground-subtle">
+                <span className="text-foreground-subtle">
                   {RULE_ACTIONS.find((entry) => entry.value === row.action)
                     ?.label ?? ""}
                 </span>
-              </button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`删除规则 ${row.value || ariaLabel}`}
-                disabled={disabled}
-                onClick={() => onChange(rows.filter((_, i) => i !== index))}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
+                <span className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`删除规则 ${row.value || ariaLabel}`}
+                    disabled={disabled}
+                    onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </span>
+              </div>
+            ))
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

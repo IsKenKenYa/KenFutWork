@@ -201,11 +201,11 @@ async function openRuleDetail(index = 0): Promise<void> {
 /**
  * 关闭当前弹窗（用户口径 2026-11-23：不要「完成」按钮，操作完自动保存）。
  *
- * 关闭动作走弹窗右上角的关闭按钮；关闭时组件统一提交一次策略，
- * 所以各用例照旧可以在关闭后断言请求体。
+ * 关闭动作走标题栏右上角的关闭按钮（照知识库弹窗，`aria-label` 是「关闭」）；
+ * 关闭时组件统一提交一次策略，所以各用例照旧可以在关闭后断言请求体。
  */
 async function closeRuleDialog(): Promise<void> {
-  const close = await screen.findByRole("button", { name: "Close" });
+  const close = await screen.findByRole("button", { name: "关闭" });
   act(() => close.click());
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), {
     timeout: 3000,
@@ -227,12 +227,13 @@ it("读回已保存的三张规则表与禁用清单", async () => {
 
   // 禁用清单读回时折成排在最前的「工具规则 + 拦截」：两条都在同一张工具规则表里。
   // 弹窗先列条目，点第几条就进那条的编辑面板（用户口径：点击对应的规则直接编辑）。
+  // 表格化后可点的是「值」这一格，动作在独立列。
   await openRuleDialog("工具规则");
   expect(
     screen
       .getAllByRole("button", { name: /^编辑规则/ })
       .map((row) => (row.textContent ?? "").trim()),
-  ).toEqual(["shell_*拦截", "mcp__*拦截"]);
+  ).toEqual(["shell_*", "mcp__*"]);
   await openRuleDetail(0);
   expect(await screen.findByLabelText("工具名或前缀")).toHaveValue("shell_*");
   await closeRuleDialog();
@@ -335,7 +336,7 @@ it("域名规则（网络安全）读得回、存得出", async () => {
     (await screen.findAllByRole("button", { name: /^编辑规则/ })).map((row) =>
       (row.textContent ?? "").trim(),
     ),
-  ).toEqual(["*.internal.example拦截"]);
+  ).toEqual(["*.internal.example"]);
   await user.click(screen.getByRole("button", { name: "添加" }));
   // 新条目直接进编辑面板，填完返回列表继续操作。
   await user.type(await screen.findByLabelText("域名"), "docs.example.com");
@@ -532,6 +533,8 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
   act(() => screen.getByRole("button", { name: "编辑高危命令" }).click());
   expect(await screen.findAllByLabelText("高危命令前缀")).toHaveLength(2);
   // 关掉弹窗再切档，避免同一个 dialog 遮挡断言（关闭即保存，不需要「完成」）。
+  // 高危命令弹窗仍用 DialogContent 自带的关闭按钮（aria-label 是 Close），
+  // 与规则弹窗（照知识库样式，标题栏自绘「关闭」）不同，这里按各自的名字取。
   act(() => screen.getByRole("button", { name: "Close" }).click());
   await waitFor(() => expect(tierPuts).toHaveLength(1));
 
@@ -611,8 +614,8 @@ it("页面上不铺规则条目；条目都在弹窗里，可点开编辑、行�
   await openRuleDialog("网络规则");
   const listed = await screen.findAllByRole("button", { name: /^编辑规则/ });
   expect(listed.map((row) => (row.textContent ?? "").trim())).toEqual([
-    "*.a.example每次询问",
-    "*.b.example拦截",
+    "*.a.example",
+    "*.b.example",
   ]);
 
   // 点某一条进那一条的编辑面板。
