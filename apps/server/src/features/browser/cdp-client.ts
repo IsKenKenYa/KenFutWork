@@ -36,44 +36,82 @@ export class CdpError extends Error {
   }
 }
 
-/** 常见安装位置（可用 `KENFUTWORK_CHROME_PATH` 覆盖）。 */
-export function findBrowserExecutable(
-  explicit?: string | undefined,
-): string | null {
-  if (explicit && existsSync(explicit)) return explicit;
-  const envPath = process.env.KENFUTWORK_CHROME_PATH;
-  if (envPath && existsSync(envPath)) return envPath;
+/** 可被受控启动的浏览器品牌（用户口径 2026-11-23：外部浏览器要能选 Edge / Chrome）。 */
+export type BrowserBrand = "chrome" | "edge" | "chromium";
 
-  const candidates: string[] = [];
+/** 每个品牌的候选可执行文件（按平台）。顺序即探测优先级。 */
+function brandCandidates(brand: BrowserBrand): string[] {
   if (process.platform === "win32") {
     const roots = [
       process.env.PROGRAMFILES,
       process.env["PROGRAMFILES(X86)"],
       process.env.LOCALAPPDATA,
     ].filter((root): root is string => Boolean(root));
+    const out: string[] = [];
     for (const root of roots) {
-      candidates.push(
-        join(root, "Google", "Chrome", "Application", "chrome.exe"),
-      );
-      candidates.push(
-        join(root, "Microsoft", "Edge", "Application", "msedge.exe"),
-      );
+      if (brand === "chrome")
+        out.push(join(root, "Google", "Chrome", "Application", "chrome.exe"));
+      if (brand === "edge")
+        out.push(join(root, "Microsoft", "Edge", "Application", "msedge.exe"));
+      if (brand === "chromium")
+        out.push(join(root, "Chromium", "Application", "chrome.exe"));
     }
-  } else if (process.platform === "darwin") {
-    candidates.push(
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    return out;
+  }
+  if (process.platform === "darwin") {
+    if (brand === "chrome")
+      return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"];
+    if (brand === "edge")
+      return ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"];
+    return ["/Applications/Chromium.app/Contents/MacOS/Chromium"];
+  }
+  if (brand === "chrome")
+    return ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"];
+  if (brand === "edge") return ["/usr/bin/microsoft-edge"];
+  return ["/usr/bin/chromium", "/usr/bin/chromium-browser"];
+}
+
+/**
+ * 本机可用的浏览器（按品牌）。只报**确实存在**的，前端据此决定选项是否可选。
+ *
+ * 用户口径 2026-11-23：外部浏览器要能选 Edge 或 Chrome，所以不能只回「找到的第一个」。
+ */
+export function listAvailableBrowsers(): Array<{
+  brand: BrowserBrand;
+  executable: string;
+}> {
+  const brands: BrowserBrand[] = ["chrome", "edge", "chromium"];
+  const out: Array<{ brand: BrowserBrand; executable: string }> = [];
+  for (const brand of brands) {
+    const found = brandCandidates(brand).find((candidate) =>
+      existsSync(candidate),
     );
-  } else {
-    candidates.push(
-      "/usr/bin/google-chrome",
-      "/usr/bin/google-chrome-stable",
-      "/usr/bin/chromium",
-      "/usr/bin/chromium-browser",
-      "/usr/bin/microsoft-edge",
+    if (found) out.push({ brand, executable: found });
+  }
+  return out;
+}
+
+/** 常见安装位置（可用 `KENFUTWORK_CHROME_PATH` 覆盖）。 */
+export function findBrowserExecutable(
+  explicit?: string | undefined,
+  brand?: BrowserBrand | undefined,
+): string | null {
+  if (explicit && existsSync(explicit)) return explicit;
+  const envPath = process.env.KENFUTWORK_CHROME_PATH;
+  if (envPath && existsSync(envPath)) return envPath;
+
+  // 指定了品牌就只在该品牌里找：用户选了 Edge 就不该悄悄起 Chrome。
+  if (brand) {
+    return (
+      brandCandidates(brand).find((candidate) => existsSync(candidate)) ?? null
     );
   }
+
+  const candidates = [
+    ...brandCandidates("chrome"),
+    ...brandCandidates("edge"),
+    ...brandCandidates("chromium"),
+  ];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 

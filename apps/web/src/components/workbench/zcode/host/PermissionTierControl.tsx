@@ -1,3 +1,4 @@
+import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
@@ -89,9 +90,24 @@ const TIERS: ReadonlyArray<{
   { value: "custom", label: "自定义", hint: "按下面的规则表判定" },
 ];
 
+/** 读取出错时给人看的一句话。 */
 function readableError(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "保存失败";
 }
+
+/**
+ * 设置行里控件的宽度（用户口径 2026-11-23「按钮和输入框只要下拉框的一半」）。
+ *
+ * 下拉框占满整列 192px（要装下「删除前询问」「命令执行前审查」这类长文案）；
+ * 按钮与数字输入框只要它的一半 96px，右对齐——按钮本来就短，占满整列显得空。
+ *
+ * 白底是同一个口径里的「颜色统一」（用户原话：颜色也统一一下，白色）：
+ * 下拉框走 `input` 变体本来就是白底（`--color-input` 在浅色主题就是白色），
+ * 而 `outline` 按钮默认透明底，两者并排会一透一白。
+ */
+const CONTROL_FULL_WIDTH = "w-full";
+const CONTROL_HALF_WIDTH = "w-24 shrink-0";
+const CONTROL_BUTTON_SURFACE = "bg-input";
 
 /** 读取当前默认档；端点不可用时返回 null（调用方隐藏控件）。 */
 export function usePermissionTier() {
@@ -360,7 +376,7 @@ function AutoBackupSection() {
               setMaxSnapshots(Math.max(0, Number(event.target.value) || 0))
             }
             onBlur={() => void save({ enabled, maxSnapshots })}
-            className="w-full"
+            className={CONTROL_HALF_WIDTH}
           />
         }
       />
@@ -600,7 +616,7 @@ function CommandReviewSection() {
               aria-label="编辑高危命令"
               disabled={mode === "off" || saving}
               onClick={() => setEditorOpen(true)}
-              className="w-full"
+              className={cn(CONTROL_HALF_WIDTH, CONTROL_BUTTON_SURFACE)}
             >
               编辑
             </Button>
@@ -1043,7 +1059,7 @@ function PermissionPolicySection() {
               aria-label={`编辑${group.title}`}
               disabled={saving}
               onClick={() => openEditor(group.kind, null)}
-              className="w-full"
+              className={cn(CONTROL_HALF_WIDTH, CONTROL_BUTTON_SURFACE)}
             >
               编辑
             </Button>

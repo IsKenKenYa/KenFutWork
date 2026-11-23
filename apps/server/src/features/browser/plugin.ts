@@ -6,6 +6,7 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import type { LocalAccessVerifier } from "../local-access/types.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { listAvailableBrowsers } from "./cdp-client.js";
 import { createCdpBrowserSession } from "./cdp-session.js";
 import { type BrowserService, createBrowserService } from "./fetch-page.js";
 import {
@@ -537,6 +538,17 @@ export function registerBrowserRoutes(
     return reply.code(200).send({ cdp: { ...status, responsive } });
   });
 
+  /**
+   * 本机可用的外部浏览器（用户口径 2026-11-23：外部浏览器要能选 Edge / Chrome）。
+   *
+   * 只列出**确实安装**的品牌，前端据此决定哪些选项可选；一个都没有时前端如实说明。
+   */
+  app.get("/api/browser/cdp/browsers", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    return reply.code(200).send({ browsers: listAvailableBrowsers() });
+  });
+
   app.post("/api/browser/cdp/connect", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
@@ -544,12 +556,21 @@ export function registerBrowserRoutes(
      * 无头与否：默认读设置（「设置 → 浏览器 → 通用」）。右栏面板会显式传 `true`——
      * 面板里看的就是这个浏览器的画面，再弹一个窗口出来纯属多余（用户口径：「不要跳转外部」）。
      */
-    const body = (request.body ?? {}) as { headless?: unknown };
+    const body = (request.body ?? {}) as {
+      headless?: unknown;
+      brand?: unknown;
+    };
     const headless =
       typeof body.headless === "boolean"
         ? body.headless
         : (options.settingsForHeadless?.() ?? false);
-    const status = await options.browser.cdp.connect({ headless });
+    const brand =
+      body.brand === "chrome" ||
+      body.brand === "edge" ||
+      body.brand === "chromium"
+        ? body.brand
+        : undefined;
+    const status = await options.browser.cdp.connect({ headless, brand });
     return reply
       .code(status.status === "connected" ? 200 : 502)
       .send({ cdp: status });

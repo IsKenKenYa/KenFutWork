@@ -78,6 +78,13 @@ const OPEN_TARGETS: ReadonlyArray<{ value: BrowserOpenTarget; label: string }> =
     { value: "system", label: "外部浏览器" },
   ];
 
+/** 可被受控启动的品牌在界面上的名字（与服务端探测的品牌一一对应）。 */
+const BROWSER_BRAND_LABELS: Record<"chrome" | "edge" | "chromium", string> = {
+  chrome: "Chrome",
+  edge: "Edge",
+  chromium: "Chromium",
+};
+
 function readOpenTarget(): BrowserOpenTarget {
   try {
     return window.localStorage.getItem(OPEN_TARGET_KEY) === "system"
@@ -100,6 +107,18 @@ export function BrowserSettingsSection(
   const [cdp, setCdp] = useState<CdpStatus | null>(null);
   const [cdpBusy, setCdpBusy] = useState(false);
   const [openTarget, setOpenTarget] = useState<BrowserOpenTarget>("panel");
+  /**
+   * 外部浏览器品牌（用户口径 2026-11-23：要能选 Edge / Chrome）。
+   *
+   * 只列出服务端**确实探测到**的品牌——没装的给个选项等于摆假开关。
+   * 默认取第一个可用（服务端顺序是 Chrome → Edge → Chromium）。
+   */
+  const [browsers, setBrowsers] = useState<
+    Array<{ brand: "chrome" | "edge" | "chromium"; executable: string }>
+  >([]);
+  const [browserBrand, setBrowserBrand] = useState<
+    "chrome" | "edge" | "chromium"
+  >("chrome");
 
   useEffect(() => {
     setOpenTarget(readOpenTarget());
@@ -113,6 +132,19 @@ export function BrowserSettingsSection(
     surfaceJson<{ cdp: CdpStatus }>("/api/browser/cdp/status")
       .then((payload) => {
         if (!cancelled) setCdp(payload.cdp);
+      })
+      .catch(() => {});
+    surfaceJson<{
+      browsers: Array<{
+        brand: "chrome" | "edge" | "chromium";
+        executable: string;
+      }>;
+    }>("/api/browser/cdp/browsers")
+      .then((payload) => {
+        if (cancelled) return;
+        setBrowsers(payload.browsers);
+        const first = payload.browsers[0];
+        if (first) setBrowserBrand(first.brand);
       })
       .catch(() => {});
     return () => {
@@ -149,7 +181,7 @@ export function BrowserSettingsSection(
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ brand: browserBrand }),
         },
       );
       setCdp(payload.cdp);
@@ -217,6 +249,40 @@ export function BrowserSettingsSection(
           外部浏览器
         </div>
         <SettingsGroupCard>
+          {/* 浏览器选择（用户口径 2026-11-23：外部浏览器只是「连接到 Chrome」，
+              要能选 Edge / Chrome 等）。只列服务端探测到的品牌，没装就不出现。 */}
+          <SettingsRow
+            label="外部浏览器"
+            control={
+              <Select
+                value={browserBrand}
+                onValueChange={(next) => {
+                  if (
+                    next === "chrome" ||
+                    next === "edge" ||
+                    next === "chromium"
+                  )
+                    setBrowserBrand(next);
+                }}
+                disabled={cdpBusy || cdp?.status === "connected"}
+              >
+                <SelectTrigger
+                  size="lg"
+                  aria-label="外部浏览器"
+                  className="w-full min-w-0 justify-between"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {browsers.map((entry) => (
+                    <SelectItem key={entry.brand} value={entry.brand}>
+                      {BROWSER_BRAND_LABELS[entry.brand]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          />
           <SettingsRow
             label="连接状态"
             control={
@@ -227,7 +293,7 @@ export function BrowserSettingsSection(
                   variant="outline"
                   disabled={cdpBusy}
                   onClick={() => void disconnectCdp()}
-                  className="w-full"
+                  className="w-24 shrink-0 bg-input"
                 >
                   断开
                 </Button>
@@ -235,11 +301,12 @@ export function BrowserSettingsSection(
                 <Button
                   type="button"
                   size="lg"
+                  variant="outline"
                   disabled={cdpBusy || cdp === null}
                   onClick={() => void connectCdp()}
-                  className="w-full"
+                  className="w-24 shrink-0 bg-input"
                 >
-                  {cdpBusy ? "连接中…" : "连接到 Chrome"}
+                  {cdpBusy ? "连接中…" : "连接"}
                 </Button>
               )
             }
