@@ -240,7 +240,7 @@ function PermissionTierSelect({
       onValueChange={(next) => onChange(next as PermissionTier)}
       disabled={busy}
     >
-      <SelectTrigger size="lg" aria-label={ariaLabel} className="w-56">
+      <SelectTrigger size="lg" aria-label={ariaLabel} className="w-full">
         <SelectValue placeholder="读取中" />
       </SelectTrigger>
       <SelectContent>
@@ -360,7 +360,7 @@ function AutoBackupSection() {
               setMaxSnapshots(Math.max(0, Number(event.target.value) || 0))
             }
             onBlur={() => void save({ enabled, maxSnapshots })}
-            className="w-24"
+            className="w-full"
           />
         }
       />
@@ -453,7 +453,7 @@ function DeleteModeSection() {
             onValueChange={(next) => void save(next as typeof mode)}
             disabled={saving}
           >
-            <SelectTrigger size="lg" aria-label="删除模式" className="w-56">
+            <SelectTrigger size="lg" aria-label="删除模式" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -572,7 +572,7 @@ function CommandReviewSection() {
             <SelectTrigger
               size="lg"
               aria-label="命令执行前审查"
-              className="w-56"
+              className="w-full"
             >
               <SelectValue />
             </SelectTrigger>
@@ -596,10 +596,11 @@ function CommandReviewSection() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="lg"
               aria-label="编辑高危命令"
               disabled={mode === "off" || saving}
               onClick={() => setEditorOpen(true)}
+              className="w-full"
             >
               编辑
             </Button>
@@ -614,7 +615,14 @@ function CommandReviewSection() {
           </span>
         </div>
       ) : null}
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          // 关闭即保存（用户口径 2026-11-23：不要「完成」按钮）。
+          if (!open) void save({ mode, patterns });
+        }}
+      >
         {/* 与规则弹窗同一约束：高度上限 + 内部滚动（条目多时不再撑出屏幕）。 */}
         <DialogContent className="flex max-h-[80vh] w-[min(560px,calc(100vw-2rem))] max-w-none flex-col">
           <DialogHeader>
@@ -667,18 +675,7 @@ function CommandReviewSection() {
               </div>
             ))}
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving}
-              onClick={() => {
-                void save({ mode, patterns }).then(() => setEditorOpen(false));
-              }}
-            >
-              完成
-            </Button>
-          </DialogFooter>
+          {/* 关闭即保存（用户口径 2026-11-23：不需要「完成」按钮，操作完自动保存）。 */}
         </DialogContent>
       </Dialog>
     </>
@@ -1018,7 +1015,7 @@ function PermissionPolicySection() {
               void savePolicy({ networkMode: mode });
             }}
           >
-            <SelectTrigger size="lg" aria-label="放行策略" className="w-40">
+            <SelectTrigger size="lg" aria-label="放行策略" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1046,6 +1043,7 @@ function PermissionPolicySection() {
               aria-label={`编辑${group.title}`}
               disabled={saving}
               onClick={() => openEditor(group.kind, null)}
+              className="w-full"
             >
               编辑
             </Button>
@@ -1056,17 +1054,52 @@ function PermissionPolicySection() {
         open={editor !== null}
         onOpenChange={(open) => {
           if (!open) {
+            // 关闭即保存（用户口径 2026-11-23：不需要「完成」按钮，操作完自动保存）。
+            // 规则表与两个协议开关都已在改动时写进 state，这里统一提交一次。
+            void savePolicy();
             setEditor(null);
             setEditorDetail(null);
           }
         }}
       >
-        {/* 高度上限 + 内部滚动：条目多时弹窗不会撑出屏幕（原本会溢出）。
+        {/* 高度上限 + 内部滚动：条目多时弹窗不会撑出屏幕。
             宽度随视口收缩，窄窗口下也留出左右边距。 */}
         <DialogContent className="flex max-h-[min(80vh,calc(100vh-4rem))] w-[min(560px,calc(100vw-2rem))] max-w-none flex-col">
           <DialogHeader>
             <DialogTitle>{editorGroup?.title ?? "规则"}</DialogTitle>
           </DialogHeader>
+          {/* 网络规则的两项协议开关放在**最上方**（用户口径 2026-11-23：放到顶部），
+              用自己的紧凑行样式，不再套 SettingsRow 的多余留白。 */}
+          {editor?.kind === "domain" ? (
+            <div className="shrink-0 space-y-0 divide-y divide-border rounded-lg border border-border">
+              <NetworkToggleRow
+                label="HTTP 放行"
+                ariaLabel="HTTP 放行"
+                value={networkPolicy.httpAllowed}
+                disabled={saving}
+                onChange={(next) => {
+                  setNetworkPolicy((current) => ({
+                    ...current,
+                    httpAllowed: next,
+                  }));
+                  void savePolicy({ httpAllowed: next });
+                }}
+              />
+              <NetworkToggleRow
+                label="SSL 证书校验"
+                ariaLabel="SSL 证书校验"
+                value={networkPolicy.tlsVerification}
+                disabled={saving}
+                onChange={(next) => {
+                  setNetworkPolicy((current) => ({
+                    ...current,
+                    tlsVerification: next,
+                  }));
+                  void savePolicy({ tlsVerification: next });
+                }}
+              />
+            </div>
+          ) : null}
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             {editor === null || editorGroup === undefined
               ? null
@@ -1104,65 +1137,54 @@ function PermissionPolicySection() {
                     />
                   );
                 })()}
-            {/* 网络规则弹窗内追加两项协议开关（用户口径 2026-11-23：
-                HTTP 放行与 SSL 证书校验归到网络规则编辑弹窗里）。 */}
-            {editor?.kind === "domain" ? (
-              <div className="mt-4 space-y-3 border-t border-border pt-4">
-                <SettingsRow
-                  label="HTTP 放行"
-                  control={
-                    <ToggleSelect
-                      ariaLabel="HTTP 放行"
-                      value={networkPolicy.httpAllowed}
-                      disabled={saving}
-                      onChange={(next) => {
-                        setNetworkPolicy((current) => ({
-                          ...current,
-                          httpAllowed: next,
-                        }));
-                        void savePolicy({ httpAllowed: next });
-                      }}
-                    />
-                  }
-                />
-                <SettingsRow
-                  label="SSL 证书校验"
-                  control={
-                    <ToggleSelect
-                      ariaLabel="SSL 证书校验"
-                      value={networkPolicy.tlsVerification}
-                      disabled={saving}
-                      onChange={(next) => {
-                        setNetworkPolicy((current) => ({
-                          ...current,
-                          tlsVerification: next,
-                        }));
-                        void savePolicy({ tlsVerification: next });
-                      }}
-                    />
-                  }
-                />
-              </div>
+            {/* 失败时的说明：成功不打扰（操作完自动保存）。 */}
+            {message && message !== "已保存" ? (
+              <p role="alert" className="mt-3 text-ui-sm text-destructive">
+                {message}
+              </p>
             ) : null}
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving}
-              onClick={() => {
-                void savePolicy().then(() => {
-                  setEditor(null);
-                  setEditorDetail(null);
-                });
-              }}
-            >
-              完成
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </SettingsGroupCard>
+  );
+}
+
+/**
+ * 网络规则弹窗里的协议开关行。
+ *
+ * 行高与设置页其他行一致（用户口径 2026-11-23「和设置其他部分一样高」）：
+ * `px-4 py-3` + 32px 控件，实测就是设置页标准行的 57px。
+ * 用自己的紧凑结构而不套 `SettingsRow`：后者会给整行画 `border-t`，
+ * 放进这个带外框的分组里会出现双线。
+ */
+function NetworkToggleRow({
+  label,
+  ariaLabel,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  value: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <span className="text-ui-base font-medium text-foreground">{label}</span>
+      {/* 开关只有 18px 高，行会矮于设置页其它行（那里控件是 32px 的下拉）。
+          用一个 32px 高的容器兜住，行高才与「设置其他部分」一致。 */}
+      <span className="flex h-8 w-[192px] shrink-0 items-center justify-end">
+        <ToggleSelect
+          ariaLabel={ariaLabel}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      </span>
+    </div>
   );
 }
 

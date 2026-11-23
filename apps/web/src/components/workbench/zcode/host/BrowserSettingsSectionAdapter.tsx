@@ -227,6 +227,7 @@ export function BrowserSettingsSection(
                   variant="outline"
                   disabled={cdpBusy}
                   onClick={() => void disconnectCdp()}
+                  className="w-full"
                 >
                   断开
                 </Button>
@@ -236,6 +237,7 @@ export function BrowserSettingsSection(
                   size="lg"
                   disabled={cdpBusy || cdp === null}
                   onClick={() => void connectCdp()}
+                  className="w-full"
                 >
                   {cdpBusy ? "连接中…" : "连接到 Chrome"}
                 </Button>
@@ -275,7 +277,7 @@ export function BrowserSettingsSection(
                 <SelectTrigger
                   size="lg"
                   aria-label="AI 任务默认浏览器"
-                  className="w-[192px] min-w-0 justify-between"
+                  className="w-full min-w-0 justify-between"
                 >
                   <SelectValue />
                 </SelectTrigger>

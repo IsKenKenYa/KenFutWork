@@ -198,9 +198,18 @@ async function openRuleDetail(index = 0): Promise<void> {
   act(() => row.click());
 }
 
-/** 关闭当前弹窗（弹窗里的主按钮叫「完成」）。 */
+/**
+ * 关闭当前弹窗（用户口径 2026-11-23：不要「完成」按钮，操作完自动保存）。
+ *
+ * 关闭动作走弹窗右上角的关闭按钮；关闭时组件统一提交一次策略，
+ * 所以各用例照旧可以在关闭后断言请求体。
+ */
 async function closeRuleDialog(): Promise<void> {
-  act(() => screen.getByRole("button", { name: "完成" }).click());
+  const close = await screen.findByRole("button", { name: "Close" });
+  act(() => close.click());
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), {
+    timeout: 3000,
+  });
 }
 
 it("读回已保存的三张规则表与禁用清单", async () => {
@@ -522,8 +531,8 @@ it("命令执行前审查：三档写回，严格档不展示高危字典", asyn
   // 自动档可进字典弹窗编辑（条数由弹窗里的输入框体现）
   act(() => screen.getByRole("button", { name: "编辑高危命令" }).click());
   expect(await screen.findAllByLabelText("高危命令前缀")).toHaveLength(2);
-  // 关掉弹窗再切档，避免同一个 dialog 遮挡断言。
-  act(() => screen.getByRole("button", { name: "完成" }).click());
+  // 关掉弹窗再切档，避免同一个 dialog 遮挡断言（关闭即保存，不需要「完成」）。
+  act(() => screen.getByRole("button", { name: "Close" }).click());
   await waitFor(() => expect(tierPuts).toHaveLength(1));
 
   const trigger = await screen.findByLabelText("命令执行前审查");
