@@ -165,6 +165,17 @@ function effortLevelLabel(value: string): string {
 const EFFORT_KNOB = 32;
 
 /**
+ * 触发器里档位读数的宽度（单位 em，`1em` = 一个中文字宽）。
+ *
+ * 用具体 em 值而不是让文字自然撑开：自然宽度是 `fit-content`，`transition: width`
+ * 对它不生效，档位换长换短会瞬时跳（用户口径 2026-11-23 反复要求「加过渡动画」）。
+ * 这里单字档给 1em（正好一个字的墨迹，不留空白），每多一个字加 1em。
+ */
+function effortReadoutWidthEm(label: string): number {
+  return Math.max(1, label.length);
+}
+
+/**
  * 菜单里的分割线（模型菜单的两条、思考强度上方的那条）。
  *
  * 为什么是「2px 高 + 一半透明度」而不是 1px 实线：1px 线落在哪个物理像素取决于它在
@@ -475,14 +486,16 @@ function EffortSlider({
           }}
         >
           {/*
-            渐变填充：按档位配色铺 stop，用**遮罩宽度**裁到当前档位。
+            渐变填充：按档位配色铺 stop，用 `clip-path: inset()` 裁到当前档位。
 
-            动画流畅度（用户口径 2026-11-23「感觉动画有点卡卡的，改的流畅一点」）：
-            - 裁剪用 `mask-image`（线性渐变硬边）而不是 `clip-path: inset(round 999px)`：
-              后者每次变化都要重算圆角轮廓，整条轨道重绘；遮罩只让合成器改一层 alpha。
-            - 呼吸发光从 `filter: brightness()/saturate()` 换成 `opacity` 叠层：filter 每帧
-              都要重新跑像素级滤镜（含子元素的两个扫光），是这一块最贵的一步。
-            - 扫光与星星都加 `will-change: transform`，固定在合成层里跑。
+            这里必须是 `clip-path` 而不是 `mask-image`：遮罩里的渐变**不能插值**，
+            `transition: mask-image` 等于没写，档位变化会瞬跳（用户连问六遍
+            「为什么你不加过渡动画」就是这个原因）。`inset()` 的四个 inset 值与
+            父级圆角无关，可以逐帧插值，所以填充宽度是真的在动。
+
+            圆角由外层 `overflow-hidden rounded-full` 提供，所以 inset 不带 `round`
+            ——带 `round 999px` 时每次变化都要重算圆角轮廓，是之前「有点卡」的一半原因。
+            呼吸发光同样不用 `filter`（每帧跑像素级滤镜），改透明度叠层。
           */}
           <div
             ref={gradRef}
@@ -502,14 +515,12 @@ function EffortSlider({
                         )
                         .join(", ")})`
                     : (coloredStops[0]?.color ?? "transparent"),
-                // 硬边遮罩：只在 right 上让出一条到当前档位的宽度。
-                maskImage: `linear-gradient(90deg, #000 calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px)), transparent calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px) + 1px))`,
-                WebkitMaskImage: `linear-gradient(90deg, #000 calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px)), transparent calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px) + 1px))`,
-                // 拖动时不做过渡：每一帧都重启动画会拖慢拖动并造成闪烁。
+                clipPath: `inset(0 calc(${((1 - ratio) * 100).toFixed(2)}% - ${((1 - ratio) * EFFORT_KNOB).toFixed(2)}px) 0 0)`,
+                // 拖动时不做过渡：每一帧都重启动画会让拖动发飘。
                 transition: dragging
                   ? "none"
-                  : "mask-image .28s cubic-bezier(.3, 1.2, .4, 1), -webkit-mask-image .28s cubic-bezier(.3, 1.2, .4, 1)",
-                willChange: dragging ? "mask-image" : undefined,
+                  : "clip-path .32s cubic-bezier(.32, .72, .24, 1)",
+                willChange: dragging ? "clip-path" : undefined,
               }}
             >
               {/* 顶面高光（设计稿 rs-grad::after）。 */}
@@ -1031,9 +1042,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         aria-label={triggerAriaLabel}
         onClick={guideTooltipOpen ? onGuideTooltipDismiss : undefined}
         className={cn(
-          // 档位文字换长换短时触发器宽度会变：加过渡让它连续变化，菜单锚点跟着
-          // 平滑移动，而不是瞬间跳一格（用户口径：用动画过渡界面的变化）。
-          "w-fit justify-between gap-1 rounded-lg pl-2 pr-1.5 text-ui-base whitespace-nowrap transition-[width] duration-200 ease-out",
+          "w-fit justify-between gap-1 rounded-lg pl-2 pr-1.5 text-ui-base whitespace-nowrap",
           triggerClassName,
         )}
       >
@@ -1056,15 +1065,24 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           <>
             <span className="text-foreground-subtle">·</span>
             {/*
-              档位读数与模型名同字重（用户口径「最高不要加粗」），也不留两侧空白
-              （用户口径 2026-11-23：「低」的时候中间有一块空格）。
-              所以这里**不定宽**（上一个版本用 w-[2em] 撑成两字，单字档就会空出一截）。
+              档位读数：与模型名同字重（用户口径「最高不要加粗」），宽度按字数取
+              `em`（1 字 = 1em ≈ 墨迹宽度，所以单字档不会空出一截，用户口径
+              2026-11-23「低的时候中间有一块空格」）。
 
-              触发器宽度变化本身不再引起菜单横跳：之前是每帧重排直接跳，现在给触发器
-              加 `transition-[width]`，档位文字换长换短时宽度平滑过渡，菜单跟着连续移动
-              而不是瞬移（用户口径：用动画过渡界面的变化）。
+              为什么宽度用 `em` 而不是让它自然撑开：自然宽度走 `fit-content`，
+              `transition: width` 对 `fit-content` **不生效**，档位从「高」变「最高」
+              时整块瞬时跳一下——用户连问六遍要过渡动画就是这个。
+
+              现在宽度是具体值（1em / 1.4em），可以对它做过渡：触发器与
+              菜单锚点一起连续变化。1.4em 给「最高」这类两字档留一点排布余量，
+              单字档正好 1em，不产生额外留白。
             */}
-            <span className="shrink-0 tabular-nums">{effortTriggerLabel}</span>
+            <span
+              className="inline-block shrink-0 text-center tabular-nums transition-[width] duration-300 ease-out"
+              style={{ width: `${effortReadoutWidthEm(effortTriggerLabel)}em` }}
+            >
+              {effortTriggerLabel}
+            </span>
           </>
         ) : null}
         {triggerBadge}
