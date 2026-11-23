@@ -239,12 +239,12 @@ const EFFORT_KEYFRAMES = `
 }
 .effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
 /* 档位读数换字时的过渡：淡入 + 轻微上移，用 opacity/transform（合成层属性）。
-   时长按用户口径 2026-11-23 放慢（.22s → .45s，约两倍），缓出曲线让收尾更稳。 */
+   时长按用户口径 2026-11-23 定为 1s（.22s → .45s → 1s），缓出曲线让收尾更稳。 */
 @keyframes effort-readout-in {
   from { opacity: 0; transform: translateY(3px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.effort-readout { animation: effort-readout-in .45s cubic-bezier(.32,.72,.24,1) both; }
+.effort-readout { animation: effort-readout-in 1s cubic-bezier(.32,.72,.24,1) both; }
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
   70%  { transform: translate(-50%,-50%) scale(1.35) rotate(8deg); opacity: 1; }
