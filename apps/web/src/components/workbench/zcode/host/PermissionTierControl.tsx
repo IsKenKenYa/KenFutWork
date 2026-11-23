@@ -110,6 +110,14 @@ function readableError(error: unknown): string {
 const CONTROL_FULL_WIDTH = "w-full";
 const CONTROL_HALF_WIDTH = "w-24 shrink-0";
 const CONTROL_BUTTON_SURFACE = "bg-input";
+/**
+ * 「添加」按钮：黑底白字，深浅主题都是黑底。
+ *
+ * 不用 `variant="default"`：它走 `bg-primary`，深色主题下 `primary` 是白色，
+ * 按钮会变成白底黑字，与用户口径「添加按钮改成黑色」相反。
+ */
+const CONTROL_ADD_BUTTON =
+  "bg-black text-white hover:bg-black/85 hover:text-white";
 
 /** 读取当前默认档；端点不可用时返回 null（调用方隐藏控件）。 */
 export function usePermissionTier() {
@@ -519,6 +527,8 @@ function CommandReviewSection() {
   const [mode, setMode] = useState<"auto" | "strict" | "off">("auto");
   const [patterns, setPatterns] = useState<string[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
+  /** 高危命令列表的搜索（用户口径 2026-11-23：这边也要有搜索框）。 */
+  const [patternQuery, setPatternQuery] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -574,6 +584,16 @@ function CommandReviewSection() {
       setSaving(false);
     }
   };
+
+  /** 搜索只影响展示，下标回指原表（编辑/删除指向同一条）。 */
+  const normalizedPatternQuery = patternQuery.trim().toLowerCase();
+  const visiblePatterns = patterns
+    .map((pattern, index) => ({ pattern, index }))
+    .filter(({ pattern }) =>
+      normalizedPatternQuery
+        ? pattern.toLowerCase().includes(normalizedPatternQuery)
+        : true,
+    );
 
   return (
     <>
@@ -660,28 +680,41 @@ function CommandReviewSection() {
             </DialogClose>
           </DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
-            {/* 添加：黑底、在左（与规则弹窗一致）。 */}
-            <Button
-              type="button"
-              variant="default"
-              size="lg"
-              onClick={() => setPatterns((current) => [...current, ""])}
-              className="self-start"
-            >
-              添加
-            </Button>
+            {/* 工具条：添加在左（黑底、与设置页「编辑」按钮同宽 96px）、
+                搜索框在右（与规则弹窗同一套）。 */}
+            <div className="flex shrink-0 items-center justify-between gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="lg"
+                onClick={() => setPatterns((current) => [...current, ""])}
+                className={cn(CONTROL_HALF_WIDTH, CONTROL_ADD_BUTTON)}
+              >
+                添加
+              </Button>
+              <SettingsSearchInput
+                value={patternQuery}
+                onChange={(event) => setPatternQuery(event.target.value)}
+                placeholder="搜索"
+                aria-label="搜索高危命令"
+                containerClassName="w-64"
+                clearLabel="清空搜索"
+                onClear={() => setPatternQuery("")}
+              />
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="overflow-hidden rounded-xl border border-border bg-card">
-                <div className="grid grid-cols-[minmax(0,1fr)_56px] items-center bg-card px-4 py-3 text-ui-base text-foreground-subtle">
+              {/* 卡片底色写死白色（用户口径：卡片颜色改为白色）。 */}
+              <div className="overflow-hidden rounded-xl border border-border bg-white">
+                <div className="grid grid-cols-[minmax(0,1fr)_56px] items-center bg-white px-4 py-3 text-ui-base text-foreground-subtle">
                   <span>命令前缀</span>
                   <span className="sr-only">操作</span>
                 </div>
-                {patterns.length === 0 ? (
+                {visiblePatterns.length === 0 ? (
                   <div className="border-t border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
-                    还没有条目
+                    {patterns.length === 0 ? "还没有条目" : "没有匹配的条目"}
                   </div>
                 ) : (
-                  patterns.map((pattern, index) => (
+                  visiblePatterns.map(({ pattern, index }) => (
                     <div
                       // biome-ignore lint/suspicious/noArrayIndexKey: 前缀可重复，索引是唯一稳定键。
                       key={index}
@@ -1300,13 +1333,16 @@ function RuleEditor({
       {/* 工具条：添加在左、搜索在右（用户口径 2026-11-23：添加按钮放左边不变，
           列表参照快捷键页的搜索框样式）。 */}
       <div className="flex shrink-0 items-center justify-between gap-3">
-        {/* 添加按钮：黑底（用户口径 2026-11-23）。 */}
+        {/* 添加按钮：黑底（用户口径 2026-11-23），宽度与设置页「编辑」按钮一致（96px）。
+            显式写 `bg-black` 而不是 `variant="default"`：后者走 `bg-primary`，
+            在深色主题下会变白，与「黑底」的口径相反。 */}
         <Button
           type="button"
-          variant="default"
+          variant="ghost"
           size="lg"
           disabled={disabled}
           onClick={addRow}
+          className={cn(CONTROL_HALF_WIDTH, CONTROL_ADD_BUTTON)}
         >
           添加
         </Button>
@@ -1321,14 +1357,16 @@ function RuleEditor({
           onClear={() => setQuery("")}
         />
       </div>
-      {/* 表格：表头 + 分隔线行（参照快捷键页）。 */}
+      {/* 表格：表头 + 分隔线行（参照快捷键页）。
+          卡片底色写死白色（用户口径 2026-11-23「卡片颜色改为白色」）：
+          `bg-card` 在深色主题下会变成深灰，这里要的是白色。 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-hidden rounded-xl border border-border bg-white">
           {/* 表头字号与数据行一致（用户口径：表头字号和下面保持一致），
               只靠颜色低一档区分层级。 */}
           <div
             className={cn(
-              "grid items-center bg-card px-4 py-3 text-ui-base text-foreground-subtle",
+              "grid items-center bg-white px-4 py-3 text-ui-base text-foreground-subtle",
               gridCols,
             )}
           >
