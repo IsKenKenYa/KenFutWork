@@ -60,6 +60,13 @@ describe("原生目录对话框命令", () => {
     expect(script).toContain("FormBorderStyle = 'None'");
     expect(script).toContain("$owner.Activate()");
     expect(script).not.toContain("$owner.Opacity = 0");
+    /**
+     * owner 必须**移出屏幕**：它是 1×1 的可见窗体（可见才能让对话框拿到前台焦点
+     * 与置顶），但停在屏幕内会在左上角露出一个小方块（用户反馈
+     * 「为什么有一个莫名其妙的方块」）。-32000 是 Windows 约定的屏幕外坐标。
+     */
+    expect(script).toContain("Point(-32000, -32000)");
+    expect(script).not.toContain("StartPosition = 'CenterScreen'");
   });
 
   it("macOS 用 osascript 的 choose folder", () => {

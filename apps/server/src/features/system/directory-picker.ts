@@ -144,13 +144,16 @@ Add-Type -TypeDefinition $cs -ErrorAction Stop
 # Vista 时代的经典灰框（无现代圆角/浅色标题栏）。显式启用视觉样式后，
 # 对话框与资源管理器一致（返回 ClientAndNonClientAreasEnabled）。
 [System.Windows.Forms.Application]::EnableVisualStyles()
-# owner 用可见的窗体：Opacity=0 的隐形窗体做 owner 时对话框会被挂到不可见窗口上，
-# 既拿不到前台焦点、也不会被提升到顶层（用户反馈「没有显示到顶层」）。
+# owner 必须是**可见**窗体：Opacity=0 的隐形窗体做 owner 时，对话框会被挂到不可见
+# 窗口上，既拿不到前台焦点、也不会被提升到顶层（用户反馈「没有显示到顶层」）。
+# 但 1×1 的可见窗体在屏幕左上角会露出一个小方块（用户反馈「有个莫名其妙的方块」），
+# 所以把它放到所有屏幕之外：仍然可见（满足 owner 条件），但一个像素都不落在桌面里。
 $owner = New-Object System.Windows.Forms.Form
 $owner.FormBorderStyle = 'None'
 $owner.ShowInTaskbar = $false
 $owner.TopMost = $true
-$owner.StartPosition = 'CenterScreen'
+$owner.StartPosition = 'Manual'
+$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
 $owner.Size = New-Object System.Drawing.Size(1, 1)
 $owner.Show()
 $owner.Activate()
