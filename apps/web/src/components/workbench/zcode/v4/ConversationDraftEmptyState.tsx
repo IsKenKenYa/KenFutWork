@@ -5,7 +5,6 @@
  * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
  */
 
-import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import { cn } from "@zui/components/lib/utils.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
@@ -15,7 +14,6 @@ import { Briefcase, Code2, Palette } from "lucide-react";
 import {
   type CSSProperties,
   useEffect,
-  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -95,14 +93,56 @@ function resolveGreetingFontSizePx({
   );
 }
 
+/**
+ * 空态背景那个「半个 K」的轮廓路径（viewBox 400×400）。
+ *
+ * 为什么从位图换成矢量路径：原来用 `<image>` 引 PNG、再用 `feMorphology` 在 alpha 上
+ * 取一圈环当描边。位图每处笔画的粗细与抗锯齿不同，取出来的环宽就跟着变——同一张图上
+ * 实测 1.33px 到 20px 都有，用户反复反馈「粗细不统一」。矢量路径配 `stroke-width`
+ * 是一笔常量宽度，任何位置都一样。
+ *
+ * 路径由 `kenfutwork-mark.png` 自动提取（逐行扫描 alpha 区间拼轮廓），
+ * 三段对应原图的三块形状：左竖条、右上斜块、右下斜块。改图时重跑提取脚本即可，
+ * 不要手改坐标。
+ */
+const KENFUTWORK_MARK_PATH = [
+  // 左侧竖条
+  "M 47.70 22.86 L 31.80 27.83 L 19.88 35.78 L 8.94 48.70",
+  "L 4.97 57.14 L 1.99 68.57 L 1.99 330.93 L 3.48 338.39",
+  "L 8.45 350.31 L 15.90 360.75 L 23.85 367.70 L 33.29 373.17",
+  "L 40.25 375.65 L 47.20 377.14 L 60.62 377.14 L 75.53 372.67",
+  "L 86.46 365.71 L 93.42 358.76 L 99.88 349.32 L 105.34 333.42",
+  "L 105.34 204.72 L 107.83 204.22 L 107.83 173.42 L 105.84 172.92",
+  "L 105.84 72.05 L 104.35 61.12 L 101.86 53.66 L 95.40 42.24",
+  "L 87.95 34.29 L 79.01 28.32 L 71.06 24.84 L 62.61 22.86",
+  "Z",
+  // 右上斜块
+  "M 313.54 43.23 L 244.47 43.73 L 227.08 48.20 L 213.17 55.65",
+  "L 202.73 63.60 L 121.74 145.09 L 114.78 154.53 L 108.32 166.96",
+  "L 106.83 171.43 L 108.32 175.40 L 195.28 175.40 L 200.75 167.95",
+  "L 212.67 156.52 L 225.59 148.07 L 235.53 144.10 L 243.48 142.61",
+  "L 312.55 141.12 L 328.94 137.14 L 349.81 127.20 L 363.23 117.27",
+  "L 373.66 106.83 L 385.09 91.43 L 392.55 77.52 L 396.02 68.07",
+  "L 398.01 59.63 L 397.52 49.19 L 395.03 45.71 L 391.55 43.73",
+  "Z",
+  // 右下斜块
+  "M 240.99 175.90 L 230.56 177.39 L 215.16 182.36 L 204.22 187.83",
+  "L 190.31 197.27 L 108.32 197.76 L 108.32 204.22 L 106.34 204.72",
+  "L 107.83 210.68 L 118.76 238.01 L 132.17 261.37 L 165.47 308.57",
+  "L 202.73 356.77 L 210.68 365.22 L 221.12 372.17 L 234.04 376.15",
+  "L 304.60 375.65 L 309.07 373.66 L 313.54 368.20 L 314.53 360.25",
+  "L 312.55 354.29 L 286.71 321.49 L 229.07 252.42 L 308.07 251.93",
+  "L 315.53 250.43 L 323.98 246.96 L 331.93 241.99 L 340.37 234.04",
+  "L 351.80 218.14 L 359.75 200.25 L 360.75 195.78 L 360.25 185.34",
+  "L 355.28 178.88 L 347.83 175.90 Z",
+].join(" ");
+
 export function ConversationDraftEmptyState({
   className,
 }: {
   className?: string;
 }) {
   const { intl } = useZCodeIntl();
-  // 线稿描边滤镜 id：组件可能多处挂载（手机远控复用），id 不能撞
-  const outlineFilterId = `kfw-mark-outline-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const isOfficeMode = useIsOfficeMode();
   // Design 是壳内主区视图，原树 interfaceMode 恒为 coding，标题只能读工作台模式。
   const workbenchNavigation = useOptionalPlatform()?.workbenchNavigation;
@@ -262,44 +302,19 @@ export function ConversationDraftEmptyState({
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <filter
-            id={outlineFilterId}
-            x="-10%"
-            y="-10%"
-            width="120%"
-            height="120%"
-          >
-            {/* 线宽（用户口径 2026-11-23 两轮）：环厚 = dilate 半径 + erode 半径。
-                原始 2+2 太粗、0.5+0.5 又淡到看不见，取中间 1+1
-                ——是上一版的两倍，也是原始值的 1/2。
-                深浅色共用同一份滤镜，暗黑模式同步。 */}
-            <feMorphology
-              in="SourceAlpha"
-              operator="dilate"
-              radius="1"
-              result="kfw-dil"
-            />
-            <feMorphology
-              in="SourceAlpha"
-              operator="erode"
-              radius="1"
-              result="kfw-ero"
-            />
-            <feComposite
-              in="kfw-dil"
-              in2="kfw-ero"
-              operator="xor"
-              result="kfw-ring"
-            />
-            <feFlood floodColor="currentColor" />
-            <feComposite in2="kfw-ring" operator="in" />
-          </filter>
-          <image
-            href={kenfutworkMarkUrl}
-            width="400"
-            height="400"
-            preserveAspectRatio="xMidYMax meet"
-            filter={`url(#${outlineFilterId})`}
+          {/* 线宽（用户口径 2026-11-24 三轮）：
+              粗细**统一**只能靠矢量描边。此前这里是 PNG 位图 + feMorphology 取环，
+              环宽随原图每处笔画的粗细与抗锯齿变化（同一张图上实测 1.33px 到 20px
+              都有），所以永远「粗细不统一」。
+              现在改为矢量路径 + stroke-width：一笔常量宽度，任何位置都一样。
+              0.9 是用户圈出那一段的粗细。 */}
+          <path
+            d={KENFUTWORK_MARK_PATH}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={0.9}
+            strokeLinejoin="round"
+            strokeLinecap="round"
           />
         </svg>
       </div>
