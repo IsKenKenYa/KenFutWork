@@ -279,23 +279,26 @@ export function ConversationDraftEmptyState({
       <div
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute left-1/2 top-1/2 aspect-[5/4] w-[min(72vw,25rem)] -mt-10",
+          // 尺寸与位置（用户口径 2026-11-24「露出多一点」）：原先 25rem 且渐隐从 55%
+          // 就开始，只剩上半截。改为 26rem、渐隐推到 72%，整块 K 的结构看得清，
+          // 又不至于压到问候语与下方控件。
+          "pointer-events-none absolute left-1/2 top-1/2 aspect-[5/4] w-[min(74vw,26rem)] -mt-12",
           "-translate-x-1/2 -translate-y-1/2",
         )}
       >
         {/* 用户口径：对话面板背景那「半个 K」一律用线稿，暗色也不再是白色实心剪影。
-            深浅同款一张 SVG：feMorphology 内缩/外扩取环 + feFlood(currentColor) 描边，
-            描边颜色与不透明度由 styles.css 按 .dark 切换（浅色浅墨、深色白线）。
-            向下渐隐遮罩保留，只露出上半段 K。 */}
+            深浅同款一张 SVG，描边颜色与不透明度由 styles.css 按 .dark 切换。
+            渐隐遮罩保留但**大幅后移**（55% → 88%）：原来太早开始淡出，用户看不出
+            这是一整块 K；现在只在最底部收一点，避免压到问候语。 */}
         <svg
           aria-hidden="true"
           data-v4-draft-logo="outline"
           className={cn(
             className,
             "h-full w-full object-contain",
-            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_72%,transparent_100%)]",
             "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
-            "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[mask-image:linear-gradient(to_bottom,black_0%,black_72%,transparent_100%)]",
             "[mask-repeat:no-repeat] [mask-size:100%_100%]",
           )}
           viewBox="0 0 400 400"

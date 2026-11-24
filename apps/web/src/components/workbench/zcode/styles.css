@@ -311,14 +311,16 @@ body {
 
 /* 空态草稿标：深浅同款「线稿」，不再有暗色实心剪影（用户口径：背景半个 K 改线稿）。
    跟 Code 主题类（.dark）而不是 OS 配色——Tailwind 的 dark: 变体在本包跟
-   prefers-color-scheme 走，应用内主题切换时不生效。 */
+   prefers-color-scheme 走，应用内主题切换时不生效。
+   用户口径 2026-11-24「要明显一点、颜色黑一点」：颜色用 foreground（浅色下近黑）
+   且不透明度提到 0.5——线细，靠颜色与不透明度一起提高才看得出，只提一处仍然发灰。 */
 [data-v4-draft-logo="outline"] {
-  color: var(--color-foreground-subtlest);
-  opacity: 0.45;
+  color: var(--color-foreground);
+  opacity: 0.5;
 }
 .dark [data-v4-draft-logo="outline"] {
-  color: rgba(255, 255, 255, 0.72);
-  opacity: 0.55;
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 0.42;
 }
 
 /* 品牌标：浅色纯黑墨迹、深色纯白剪影（用户口径「深色模式 logo 改成白色」）。 */
