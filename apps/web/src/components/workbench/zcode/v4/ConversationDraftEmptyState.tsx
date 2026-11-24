@@ -286,19 +286,18 @@ export function ConversationDraftEmptyState({
         {/* 用户口径：对话面板背景那「半个 K」一律用线稿，暗色也不再是白色实心剪影。
             深浅同款一张 SVG，描边颜色与不透明度由 styles.css 按 .dark 切换。
 
-            渐隐（用户口径 2026-11-24「绿色区域隐藏掉，用渐变，刚刚好绿色区域一下看不见」）：
-            面板下方那一段要**在该区域内就完全消失**，不能露出半截线。实测面板下沿约在
-            SVG 的 82% 高度处，所以把渐变设为 `black 0% → black 58% → transparent 82%`：
-            58% 之后开始淡出，到 82% 恰好全透明，绿框区域内已经看不见任何线条。 */}
+            渐隐（用户口径 2026-11-24 两轮）：第一轮把淡出压到 82% 仍嫌靠下，
+            「需要再往上一点」——改为 `black 0% → black 44% → transparent 68%`：
+            44% 开始淡出、68% 全透明，K 的下半段在问候语上方就已经收干净。 */}
         <svg
           aria-hidden="true"
           data-v4-draft-logo="outline"
           className={cn(
             className,
             "h-full w-full object-contain",
-            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_58%,transparent_82%)]",
+            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_44%,transparent_68%)]",
             "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
-            "[mask-image:linear-gradient(to_bottom,black_0%,black_58%,transparent_82%)]",
+            "[mask-image:linear-gradient(to_bottom,black_0%,black_44%,transparent_68%)]",
             "[mask-repeat:no-repeat] [mask-size:100%_100%]",
           )}
           viewBox="0 0 400 400"
