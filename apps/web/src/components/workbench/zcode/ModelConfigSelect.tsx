@@ -238,23 +238,29 @@ const EFFORT_KEYFRAMES = `
   50%      { opacity: .14; }
 }
 .effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
-/* 档位读数换字的**交叉淡入淡出**（用户口径 2026-11-25「像闪过去、接触不良」）。
-   旧实现是 key 重挂载 + 从 0 开始的淡入，切换瞬间文字完全消失，中间那段空白就是
-   「接触不良」的来源。现在新旧两层同时存在：新字淡入、旧字淡出，全程不空。
-   只动 opacity（合成层属性），不做位移——位移会让两个重叠的字看起来在打架。 */
-@keyframes effort-readout-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+/* 档位读数换字：**日历翻页**（用户口径 2026-11-25「我要翻页效果，日历翻页那种」）。
+   上一版是交叉淡入淡出，用户觉得「比原来还丑」——两个字同时半透明地叠着，读起来糊。
+   现在改成翻页：旧字绕上边缘向后翻起并消失，新字从下边缘翻上来落定。
+   每条轴独立（rotateX），父级给 perspective 才有立体感。 */
+@keyframes effort-readout-flip-out {
+  from { transform: rotateX(0deg);   opacity: 1; }
+  to   { transform: rotateX(-88deg); opacity: 0; }
 }
-@keyframes effort-readout-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-.effort-readout-in {
-  animation: effort-readout-in .34s cubic-bezier(.32,.72,.24,1) both;
+@keyframes effort-readout-flip-in {
+  from { transform: rotateX(88deg);  opacity: 0; }
+  to   { transform: rotateX(0deg);   opacity: 1; }
 }
 .effort-readout-out {
-  animation: effort-readout-out .34s cubic-bezier(.32,.72,.24,1) both;
+  animation: effort-readout-flip-out .26s cubic-bezier(.55,.06,.68,.19) both;
+  /* 翻出去的那半页压在下面，避免它盖住新字 */
+  z-index: 1;
+}
+.effort-readout-in {
+  /* 起点与旧字的翻出重合（不留空档）：旧字一开始翻、新字同时开始翻入，
+     只在中间短暂共现。之前给了 .16s 延迟，旧字翻完后新字还没到，
+     实测出现 1 帧「两个都不可见」——正是用户说的「闪现」来源。 */
+  animation: effort-readout-flip-in .32s cubic-bezier(.22,1,.36,1) both;
+  z-index: 2;
 }
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
@@ -320,31 +326,28 @@ function EffortSlider({
   const plain = current ? isEffortPlainLevel(current.value) : true;
 
   /**
-   * 交叉淡出用的「正在淡出的旧读数」。
+   * 翻页动画用的「正在翻出的旧读数」。
    *
-   * 语义：切换的那一小段时间里，`fadingLabel` 是旧字；它淡出的同时新字淡入，
-   * 因此屏幕上始终有文字——不会出现「闪过去」的空白间隙
-   * （用户口径 2026-11-25「像闪现过去一样，接触不良」）。
+   * 语义：切换那一小段里 `fadingLabel` 是旧字，它绕上边翻出去，同时新字从下边翻进来。
    *
-   * 为什么不用 `prevLabel !== label` 判断：render 期 setState 会立刻触发重渲染，
-   * 那一次渲染里 `prevLabel` 已经是新值，判断恒假、淡出层根本不出现（实测 0 帧）。
-   * 这里改用「定时器清空」：记下旧值并保留一个动画时长，期间淡出层存在；
-   * 到时清掉，避免它一直叠在下面。
+   * **必须在 render 期同步设**（而不是放 useEffect）：新字那层用 `key={label}`，
+   * 换档时它同一次渲染就重挂载、动画立刻开始；若旧字要等 effect 才出现，中间就有
+   * 一帧两字都不可见（实测 1 帧空白）。render 期设好，两层同一帧一起进入动画。
+   * 清空仍用定时器（动画结束后把旧层移除，避免长期叠着）。
    */
   const [fadingLabel, setFadingLabel] = useState<string | null>(null);
   const lastLabelRef = useRef(label);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
+  if (lastLabelRef.current !== label) {
     const previous = lastLabelRef.current;
-    if (previous === label) return;
     lastLabelRef.current = label;
     setFadingLabel(previous);
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     fadeTimerRef.current = setTimeout(() => {
       setFadingLabel(null);
       fadeTimerRef.current = null;
-    }, 360);
-  }, [label]);
+    }, 380);
+  }
   useEffect(
     () => () => {
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
@@ -487,13 +490,17 @@ function EffortSlider({
           {/*
             档位读数：与标签同字重、只靠颜色区分（用户口径「最高不要加粗」）。
 
-            换档过渡（用户口径 2026-11-25「文字切换不够优雅，像闪过去、接触不良」）：
-            上一版用 `key` 重挂载 + 1s 淡入——每次切换文字先**完全消失**再慢慢浮现，
-            中间那段空白就是用户说的「接触不良」。现在改成**交叉淡入淡出**：
-            旧字淡出、新字同时淡入，全程都有字，观感连续。
-            实现：外层保持固定宽度与位置，两个文字层叠，只对 opacity 做过渡。
+            换档过渡＝**日历翻页**（用户口径 2026-11-25）。演进过程：
+            ① `key` 重挂载 + 淡入 → 切换瞬间字消失，像「接触不良」；
+            ② 交叉淡入淡出 → 两个字半透明叠着，用户说「比原来还丑」；
+            ③ 现在是翻页：旧字绕上边翻出去、新字从下方翻进来。
+            实现要点：容器给 `perspective`（否则 rotateX 只是横向压扁，没有翻页的立体感），
+            两层各自 `transform-origin` 在上/下边缘，翻动才像翻纸。
           */}
-          <span className="relative inline-grid text-ui-base tabular-nums">
+          <span
+            className="relative inline-grid text-ui-base tabular-nums"
+            style={{ perspective: "48px" }}
+          >
             {/* 占位层：让容器宽度取两者的较大值，切换时不抖。 */}
             <span className="invisible col-start-1 row-start-1">{label}</span>
             {fadingLabel ? (
@@ -501,23 +508,33 @@ function EffortSlider({
                 {fadingLabel}
               </span>
             ) : null}
-            {/* 淡出层：只在切换后的这一小段存在，画的是旧字。 */}
+            {/* 翻出层：只在切换后的这一小段存在，画的是旧字。
+                同样用 `key` 保证每次切换都重新挂载、动画重播。 */}
             {fadingLabel ? (
               <span
+                key={`out-${fadingLabel}`}
                 aria-hidden="true"
                 className="effort-readout-out col-start-1 row-start-1"
-                style={
-                  plain || !currentColor ? undefined : { color: currentColor }
-                }
+                style={{
+                  transformOrigin: "top center",
+                  ...(plain || !currentColor ? {} : { color: currentColor }),
+                }}
               >
                 {fadingLabel}
               </span>
             ) : null}
+            {/*
+              新字：用 `key={label}` 让它每次换档都**重新挂载**，翻页动画才会重播。
+              不加 key 时元素一直在，CSS animation 只在首次挂载跑一次，后续换档
+              就只剩旧字在翻、新字直接定格（实测新字 transform 只有 1 种）。
+            */}
             <span
+              key={label}
               className="effort-readout-in col-start-1 row-start-1"
-              style={
-                plain || !currentColor ? undefined : { color: currentColor }
-              }
+              style={{
+                transformOrigin: "bottom center",
+                ...(plain || !currentColor ? {} : { color: currentColor }),
+              }}
             >
               {label}
             </span>
