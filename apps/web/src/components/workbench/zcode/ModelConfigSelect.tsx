@@ -272,7 +272,7 @@ const EFFORT_KEYFRAMES = `
 
 /**
  * 思考强度滑块：按用户给定的设计稿实现（档位吸附 + 呼吸发光 + 双闪光扫过 +
- * 最高档星星 + 手柄回弹），档位越高特效越强。
+ * 最高档星星），档位越高特效越强。
  *
  * 为什么是滑块而不是下拉：档位是**有序**的少量档（低→高），滑块让「现在偏哪一侧、
  * 还能往哪边推」一眼可见；下拉只给出当前值，要读完全部选项才知道位置。
@@ -295,13 +295,41 @@ function EffortSlider({
   const levels = option.options ?? [];
   const currentValue =
     typeof option.currentValue === "string" ? option.currentValue : "";
-  const committedIndex = Math.max(
-    0,
-    levels.findIndex((level) => level.value === currentValue),
+  const upstreamIndex = levels.findIndex(
+    (level) => level.value === currentValue,
   );
   // 拖动中的预览档位：只在本地画，松手才提交。拖动时逐档提交会触发保存与
   // 整块重渲染，实测表现为「拖动很卡、界面一直闪」。
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  /**
+   * 松手后上游尚未回写的档位：`value` 是松手选的档，`from` 是松手那一刻的上游值。
+   *
+   * 为什么需要：`option.currentValue` 是异步回写的。选档 → 草稿变化 →
+   * `useModelSelectionServiceView` 重新读取 → 视图回来，`currentValue` 才变，
+   * 实测 41–59ms。松手时若直接清掉预览，这几帧会按旧档位画：填充先缩再涨
+   * （实测最长缩掉三分之一）、手柄往回走再被拉回、读数往回滚
+   * （用户口径 2026-11-25「进度条闪烁」「按钮有概率回弹」）。
+   * 所以松手后继续画选中的档，上游值离开 `from` 时再交还给上游。
+   */
+  const [pendingChange, setPendingChange] = useState<{
+    value: string;
+    from: string;
+  } | null>(null);
+  const heldIndex =
+    pendingChange && currentValue === pendingChange.from
+      ? levels.findIndex((level) => level.value === pendingChange.value)
+      : -1;
+  const committedIndex =
+    heldIndex >= 0 ? heldIndex : Math.max(0, upstreamIndex);
+  /** 界面正显示的档位值：回写未到时是本地占位，否则是上游值。 */
+  const shownValue =
+    heldIndex >= 0 && pendingChange ? pendingChange.value : currentValue;
+  // 上游回写完成，或被别处改成了第三个值：撤掉本地占位。
+  useEffect(() => {
+    if (pendingChange && currentValue !== pendingChange.from) {
+      setPendingChange(null);
+    }
+  }, [currentValue, pendingChange]);
   const currentIndex = dragIndex ?? committedIndex;
   const dragging = dragIndex !== null;
   const current = levels[currentIndex];
@@ -389,13 +417,21 @@ function EffortSlider({
     [last, levels.length],
   );
 
-  /** 松手才提交：整段拖动只写一次，避免逐档保存与重渲染。 */
+  /**
+   * 松手才提交：整段拖动只写一次，避免逐档保存与重渲染。
+   *
+   * 提交条件取「界面正显示的档」。回写未到时界面显示的是上一次松手的档：
+   * 再松手到同一档不需要重发；松手回到上游原档则必须重发，
+   * 否则上一次还在路上的回写会把它盖掉。
+   */
   const commitDrag = useCallback(() => {
     const index = dragIndex;
     setDragIndex(null);
     const next = index === null ? undefined : levels[index];
-    if (next && next.value !== currentValue) onValueChange(next.value);
-  }, [dragIndex, levels, onValueChange, currentValue]);
+    if (!next || next.value === shownValue) return;
+    setPendingChange({ value: next.value, from: currentValue });
+    onValueChange(next.value);
+  }, [currentValue, dragIndex, levels, onValueChange, shownValue]);
 
   const move = useCallback(
     (delta: number) => {
@@ -621,10 +657,8 @@ function EffortSlider({
             className={cn(
               // 手柄与轨道同高（32px）：不再上下各露一截，滑块与轨道对齐。
               //
-              // 居中方式：`top-1/2` + 负 margin，**不用** `-translate-x-1/2 -translate-y-1/2`。
-              // Tailwind 4 把 translate 工具类编译成独立的 `translate` 属性，而回弹动画
-              // （knob.animate）用的是 `transform`——两者会叠加成双倍位移（实测偏 16px，
-              // 正是用户看到的「手柄错位」）。负 margin 只受 left 控制，与 transform 不冲突。
+              // 居中方式：`top-1/2` + 负 margin。手柄的位置过渡只动 `left`，
+              // 居中不占用 `transform` / `translate`，不会被别的变换叠加出偏移。
               "pointer-events-none absolute top-1/2 z-[2] size-8 -mt-4 -ml-4 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
               // 拖动时手柄跟手、不做位置过渡（过渡会让拖动看起来发飘）。
               !dragging && "transition-[left] duration-300",
