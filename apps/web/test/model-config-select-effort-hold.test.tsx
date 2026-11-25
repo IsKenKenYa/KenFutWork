@@ -7,12 +7,18 @@ import { ModelConfigSelect } from "@zui/ModelConfigSelect.js";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 /**
- * 思考强度滑块：松手后到上游回写之间的档位显示
- * （用户口径 2026-11-25「进度条闪烁」「按钮有概率回弹」）。
+ * 思考强度滑块的指针交互。
  *
+ * ① 松手后到上游回写之间的档位显示（用户口径 2026-11-25「进度条闪烁」「按钮有概率回弹」）：
  * `effort.option.currentValue` 由上游异步回写（草稿变化 → ModelSelectionView 重新读取，
  * 实测 41–59ms）。这里让父组件只在测试明确要求时才更新它，
  * 复现「已经松手、回写还没到」的那几帧：滑块必须停在松手选的档上。
+ *
+ * ② 点击与拖动的过渡（用户口径 2026-11-25「加一点点过渡动画，就像下面的选择器文本一样」）：
+ * 按下后带着过渡滑到按下的档位；指针拖离那一档之后改为跟手。
+ *
+ * ③ 按下不向祖先冒泡：模型菜单是弹层，React 事件会沿组件树冒泡到输入框表层，
+ * 那里的「按住说话」满 200ms 会抢走指针捕获并开始录音，滑块就收不到松手了。
  */
 
 const LEVELS = [
@@ -52,17 +58,40 @@ afterEach(() => {
   cleanup();
 });
 
-function renderMenu(initialValue: string, options = LEVELS) {
+const TRACK_RECT = {
+  left: 0,
+  top: 0,
+  right: TRACK_WIDTH,
+  bottom: KNOB_WIDTH,
+  width: TRACK_WIDTH,
+  height: KNOB_WIDTH,
+  x: 0,
+  y: 0,
+  toJSON: () => ({}),
+} as DOMRect;
+
+/** jsdom 不排版，所有矩形都是 0；按真实几何给出轨道矩形。 */
+function stubTrackRect(track: HTMLElement) {
+  vi.spyOn(track, "getBoundingClientRect").mockReturnValue(TRACK_RECT);
+}
+
+const MODEL_GROUPS = [
+  {
+    key: "p",
+    label: "p",
+    items: [{ key: "m", value: "p/m", name: "m" }],
+  },
+];
+
+function renderMenu(
+  initialValue: string,
+  options = LEVELS,
+  onAncestorPointerDown?: () => void,
+) {
   const onValueChange = vi.fn<(value: string) => void>();
-  const ui = (currentValue: string, currentOptions = options) => (
+  const menu = (currentValue: string, currentOptions = options) => (
     <ModelConfigSelect
-      modelGroups={[
-        {
-          key: "p",
-          label: "p",
-          items: [{ key: "m", value: "p/m", name: "m" }],
-        },
-      ]}
+      modelGroups={MODEL_GROUPS}
       normalizedValue="p/m"
       triggerLabel="m"
       showManageModelsAction={false}
@@ -77,20 +106,16 @@ function renderMenu(initialValue: string, options = LEVELS) {
       }}
     />
   );
+  const ui = (currentValue: string, currentOptions = options) =>
+    onAncestorPointerDown ? (
+      <div onPointerDown={onAncestorPointerDown}>
+        {menu(currentValue, currentOptions)}
+      </div>
+    ) : (
+      menu(currentValue, currentOptions)
+    );
   const view = render(ui(initialValue));
-  const track = screen.getByRole("slider", { name: "思考强度" });
-  // jsdom 不排版，所有矩形都是 0；按真实几何给出轨道矩形。
-  vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
-    left: 0,
-    top: 0,
-    right: TRACK_WIDTH,
-    bottom: KNOB_WIDTH,
-    width: TRACK_WIDTH,
-    height: KNOB_WIDTH,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  } as DOMRect);
+  stubTrackRect(screen.getByRole("slider", { name: "思考强度" }));
   return {
     onValueChange,
     /** 上游回写：父组件带着新值重新渲染。 */
@@ -108,6 +133,22 @@ function expectLevel(index: string, text: string) {
   expect(slider()).toHaveAttribute("aria-valuenow", index);
   expect(slider()).toHaveAttribute("aria-valuetext", text);
 }
+
+/** 填充层的过渡：拖离按下的档位后是 `none`（跟手），其余时候过渡 `clip-path`。 */
+const fillTransition = () => {
+  const fill = [...slider().querySelectorAll<HTMLElement>("div")].find(
+    (div) => div.style.clipPath,
+  );
+  return fill?.style.transition ?? null;
+};
+
+/** jsdom 不加载样式表，手柄的过渡只能从类名上看。 */
+const knobHasTransition = () =>
+  [...slider().querySelectorAll<HTMLElement>("span")].some(
+    (span) =>
+      span.className.includes("size-8") &&
+      span.className.includes("transition-[left]"),
+  );
 
 /** 回写还没到：让出几个事件循环，等价于真实界面里过去了几帧。 */
 async function passFrames() {
@@ -247,4 +288,71 @@ test("松手位置就是当前档位：不提交也不进入占位", async () =>
 
   writeBack("low");
   expectLevel("0", "低");
+});
+
+test("点一下轨道：按住时与松手后手柄和填充都带着过渡", async () => {
+  const user = userEvent.setup();
+  const { onValueChange } = renderMenu("high");
+
+  await user.pointer([
+    {
+      target: slider(),
+      keys: "[MouseLeft>]",
+      coords: { x: levelX(2), y: 16 },
+    },
+  ]);
+  expectLevel("2", "最高");
+  expect(knobHasTransition()).toBe(true);
+  expect(fillTransition()).toContain("clip-path");
+
+  await user.pointer([{ keys: "[/MouseLeft]" }]);
+  expect(onValueChange).toHaveBeenCalledTimes(1);
+  expect(knobHasTransition()).toBe(true);
+  expect(fillTransition()).toContain("clip-path");
+});
+
+test("拖离按下的那一档后不再带过渡，松手后恢复", async () => {
+  const user = userEvent.setup();
+  renderMenu("high");
+
+  await user.pointer([
+    {
+      target: slider(),
+      keys: "[MouseLeft>]",
+      coords: { x: levelX(2), y: 16 },
+    },
+    // 还在「最高」这一档的范围内移动：档位没变，继续带过渡
+    { coords: { x: levelX(2) - 20, y: 16 } },
+  ]);
+  expectLevel("2", "最高");
+  expect(knobHasTransition()).toBe(true);
+  expect(fillTransition()).toContain("clip-path");
+
+  // 拖到「高」：跨档，改为跟手
+  await user.pointer([{ coords: { x: levelX(1), y: 16 } }]);
+  expectLevel("1", "高");
+  expect(knobHasTransition()).toBe(false);
+  expect(fillTransition()).toBe("none");
+
+  // 拖回「最高」仍然是拖动
+  await user.pointer([{ coords: { x: levelX(2), y: 16 } }]);
+  expectLevel("2", "最高");
+  expect(knobHasTransition()).toBe(false);
+  expect(fillTransition()).toBe("none");
+
+  await user.pointer([{ keys: "[/MouseLeft]" }]);
+  expect(knobHasTransition()).toBe(true);
+  expect(fillTransition()).toContain("clip-path");
+});
+
+test("在轨道上按下不向祖先冒泡", async () => {
+  const user = userEvent.setup();
+  const onAncestorPointerDown = vi.fn();
+  const { onValueChange } = renderMenu("high", LEVELS, onAncestorPointerDown);
+
+  await clickLevel(user, 2);
+
+  expect(onAncestorPointerDown).not.toHaveBeenCalled();
+  expect(onValueChange).toHaveBeenCalledTimes(1);
+  expect(onValueChange).toHaveBeenLastCalledWith("max");
 });
