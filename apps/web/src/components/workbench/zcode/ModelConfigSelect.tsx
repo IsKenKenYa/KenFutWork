@@ -238,13 +238,24 @@ const EFFORT_KEYFRAMES = `
   50%      { opacity: .14; }
 }
 .effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
-/* 档位读数换字时的过渡：淡入 + 轻微上移，用 opacity/transform（合成层属性）。
-   时长按用户口径 2026-11-23 定为 1s（.22s → .45s → 1s），缓出曲线让收尾更稳。 */
+/* 档位读数换字的**交叉淡入淡出**（用户口径 2026-11-25「像闪过去、接触不良」）。
+   旧实现是 key 重挂载 + 从 0 开始的淡入，切换瞬间文字完全消失，中间那段空白就是
+   「接触不良」的来源。现在新旧两层同时存在：新字淡入、旧字淡出，全程不空。
+   只动 opacity（合成层属性），不做位移——位移会让两个重叠的字看起来在打架。 */
 @keyframes effort-readout-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.effort-readout { animation: effort-readout-in 1s cubic-bezier(.32,.72,.24,1) both; }
+@keyframes effort-readout-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.effort-readout-in {
+  animation: effort-readout-in .34s cubic-bezier(.32,.72,.24,1) both;
+}
+.effort-readout-out {
+  animation: effort-readout-out .34s cubic-bezier(.32,.72,.24,1) both;
+}
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
   70%  { transform: translate(-50%,-50%) scale(1.35) rotate(8deg); opacity: 1; }
@@ -307,6 +318,39 @@ function EffortSlider({
   // 用 name 会继续把原始值摆到界面上（用户口径：不露英文原始值）。
   const label = current ? effortLevelLabel(current.value) : "—";
   const plain = current ? isEffortPlainLevel(current.value) : true;
+
+  /**
+   * 交叉淡出用的「正在淡出的旧读数」。
+   *
+   * 语义：切换的那一小段时间里，`fadingLabel` 是旧字；它淡出的同时新字淡入，
+   * 因此屏幕上始终有文字——不会出现「闪过去」的空白间隙
+   * （用户口径 2026-11-25「像闪现过去一样，接触不良」）。
+   *
+   * 为什么不用 `prevLabel !== label` 判断：render 期 setState 会立刻触发重渲染，
+   * 那一次渲染里 `prevLabel` 已经是新值，判断恒假、淡出层根本不出现（实测 0 帧）。
+   * 这里改用「定时器清空」：记下旧值并保留一个动画时长，期间淡出层存在；
+   * 到时清掉，避免它一直叠在下面。
+   */
+  const [fadingLabel, setFadingLabel] = useState<string | null>(null);
+  const lastLabelRef = useRef(label);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const previous = lastLabelRef.current;
+    if (previous === label) return;
+    lastLabelRef.current = label;
+    setFadingLabel(previous);
+    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    fadeTimerRef.current = setTimeout(() => {
+      setFadingLabel(null);
+      fadeTimerRef.current = null;
+    }, 360);
+  }, [label]);
+  useEffect(
+    () => () => {
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    },
+    [],
+  );
 
   // 各档位颜色：关闭档灰、其余按设计稿色相坡铺开；渐变stop落在手柄行程上。
   const colored = levels.filter((level) => !isEffortPlainLevel(level.value));
@@ -374,8 +418,16 @@ function EffortSlider({
   }, [ratio]);
 
   // 回弹只跟「落到哪一档」走，与拖动状态无关：拖动中不重启动画。
+  //
+  // **首帧不回弹**（用户口径 2026-11-25「第一次加载的时候会回弹一下，这是个 bug」）：
+  // 这个 effect 依赖 `committedIndex`，挂载时就会跑一次，把手柄从 1 缩到 0.85 再弹回
+  // ——纯粹是初始化的副作用。ref 的**初值就是当前档位**，因此挂载时不构成「变化」；
+  // 只有后续真正切换档位才会回弹。
+  const lastBumpedIndexRef = useRef(committedIndex);
   useEffect(() => {
     if (dragging || !knobRef.current) return;
+    if (lastBumpedIndexRef.current === committedIndex) return;
+    lastBumpedIndexRef.current = committedIndex;
     knobBumpRef.current?.cancel();
     knobBumpRef.current = knobRef.current.animate(
       [{ scale: "1" }, { scale: "0.85" }, { scale: "1" }],
@@ -434,16 +486,41 @@ function EffortSlider({
           <span className="text-ui-base text-foreground-subtle">思考强度</span>
           {/*
             档位读数：与标签同字重、只靠颜色区分（用户口径「最高不要加粗」）。
-            换档时做一次淡入 + 轻微上移（用户口径 2026-11-23「这个文字也要给一个
-            过渡动画」）：`key` 换成档位值让元素重挂载，动画因此重播；
-            直接换文字是硬切，一眼能看出跳。
+
+            换档过渡（用户口径 2026-11-25「文字切换不够优雅，像闪过去、接触不良」）：
+            上一版用 `key` 重挂载 + 1s 淡入——每次切换文字先**完全消失**再慢慢浮现，
+            中间那段空白就是用户说的「接触不良」。现在改成**交叉淡入淡出**：
+            旧字淡出、新字同时淡入，全程都有字，观感连续。
+            实现：外层保持固定宽度与位置，两个文字层叠，只对 opacity 做过渡。
           */}
-          <span
-            key={label}
-            className="effort-readout text-ui-base tabular-nums"
-            style={plain || !currentColor ? undefined : { color: currentColor }}
-          >
-            {label}
+          <span className="relative inline-grid text-ui-base tabular-nums">
+            {/* 占位层：让容器宽度取两者的较大值，切换时不抖。 */}
+            <span className="invisible col-start-1 row-start-1">{label}</span>
+            {fadingLabel ? (
+              <span className="invisible col-start-1 row-start-1">
+                {fadingLabel}
+              </span>
+            ) : null}
+            {/* 淡出层：只在切换后的这一小段存在，画的是旧字。 */}
+            {fadingLabel ? (
+              <span
+                aria-hidden="true"
+                className="effort-readout-out col-start-1 row-start-1"
+                style={
+                  plain || !currentColor ? undefined : { color: currentColor }
+                }
+              >
+                {fadingLabel}
+              </span>
+            ) : null}
+            <span
+              className="effort-readout-in col-start-1 row-start-1"
+              style={
+                plain || !currentColor ? undefined : { color: currentColor }
+              }
+            >
+              {label}
+            </span>
           </span>
         </div>
         {/* 轨道固定高度、手柄不再超出轨道：手柄改成与轨道同高（h-8），
