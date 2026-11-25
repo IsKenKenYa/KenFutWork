@@ -238,29 +238,16 @@ const EFFORT_KEYFRAMES = `
   50%      { opacity: .14; }
 }
 .effort-glow-breathe { animation: effort-glow-breathe 2.6s ease-in-out infinite; }
-/* 档位读数换字：**日历翻页**（用户口径 2026-11-25「我要翻页效果，日历翻页那种」）。
-   上一版是交叉淡入淡出，用户觉得「比原来还丑」——两个字同时半透明地叠着，读起来糊。
-   现在改成翻页：旧字绕上边缘向后翻起并消失，新字从下边缘翻上来落定。
-   每条轴独立（rotateX），父级给 perspective 才有立体感。 */
-@keyframes effort-readout-flip-out {
-  from { transform: rotateX(0deg);   opacity: 1; }
-  to   { transform: rotateX(-88deg); opacity: 0; }
-}
-@keyframes effort-readout-flip-in {
-  from { transform: rotateX(88deg);  opacity: 0; }
-  to   { transform: rotateX(0deg);   opacity: 1; }
-}
-.effort-readout-out {
-  animation: effort-readout-flip-out .26s cubic-bezier(.55,.06,.68,.19) both;
-  /* 翻出去的那半页压在下面，避免它盖住新字 */
-  z-index: 1;
-}
-.effort-readout-in {
-  /* 起点与旧字的翻出重合（不留空档）：旧字一开始翻、新字同时开始翻入，
-     只在中间短暂共现。之前给了 .16s 延迟，旧字翻完后新字还没到，
-     实测出现 1 帧「两个都不可见」——正是用户说的「闪现」来源。 */
-  animation: effort-readout-flip-in .32s cubic-bezier(.22,1,.36,1) both;
-  z-index: 2;
+/* 档位读数：**机械电表滚动**（用户口径 2026-11-25「跟机械电表度数一样的那种」）。
+   做法：把整列档位纵向排列成一条长带，容器只开一行的窗口（overflow hidden），
+   换档时整条带子平移，当前档滚到窗口里——就是电表数字轮的动作。
+
+   为什么比翻页好：翻页是「半页翻过去」，两字会短暂重叠造成重影；滚动是刚体平移，
+   任何时刻窗口里只有一个档位，没有叠影也没有空白。
+   曲线用 ease-out 收尾（电表停下有惯性感），时长与手感都在下面一处调。 */
+.effort-readout-reel {
+  transition: transform .42s cubic-bezier(.22, .61, .36, 1);
+  will-change: transform;
 }
 @keyframes effort-star-in {
   0%   { transform: translate(-50%,-50%) scale(0) rotate(-90deg); opacity: 0; }
@@ -320,40 +307,12 @@ function EffortSlider({
   const current = levels[currentIndex];
   const last = levels.length - 1;
   const ratio = last <= 0 ? 1 : currentIndex / last;
+  /** 滚动带要停在第几档：拖动中跟预览档走（跟手），否则用已落定的档位。 */
+  const reelIndex = currentIndex;
   // 档位标签**必须**查 `value`：上游把 `name` 原样填成 `"max"`/`"xhigh"`，
   // 用 name 会继续把原始值摆到界面上（用户口径：不露英文原始值）。
   const label = current ? effortLevelLabel(current.value) : "—";
   const plain = current ? isEffortPlainLevel(current.value) : true;
-
-  /**
-   * 翻页动画用的「正在翻出的旧读数」。
-   *
-   * 语义：切换那一小段里 `fadingLabel` 是旧字，它绕上边翻出去，同时新字从下边翻进来。
-   *
-   * **必须在 render 期同步设**（而不是放 useEffect）：新字那层用 `key={label}`，
-   * 换档时它同一次渲染就重挂载、动画立刻开始；若旧字要等 effect 才出现，中间就有
-   * 一帧两字都不可见（实测 1 帧空白）。render 期设好，两层同一帧一起进入动画。
-   * 清空仍用定时器（动画结束后把旧层移除，避免长期叠着）。
-   */
-  const [fadingLabel, setFadingLabel] = useState<string | null>(null);
-  const lastLabelRef = useRef(label);
-  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  if (lastLabelRef.current !== label) {
-    const previous = lastLabelRef.current;
-    lastLabelRef.current = label;
-    setFadingLabel(previous);
-    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-    fadeTimerRef.current = setTimeout(() => {
-      setFadingLabel(null);
-      fadeTimerRef.current = null;
-    }, 380);
-  }
-  useEffect(
-    () => () => {
-      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-    },
-    [],
-  );
 
   // 各档位颜色：关闭档灰、其余按设计稿色相坡铺开；渐变stop落在手柄行程上。
   const colored = levels.filter((level) => !isEffortPlainLevel(level.value));
@@ -375,7 +334,6 @@ function EffortSlider({
   const shimmerFirstRef = useRef<HTMLDivElement | null>(null);
   const shimmerSecondRef = useRef<HTMLDivElement | null>(null);
   const knobRef = useRef<HTMLSpanElement | null>(null);
-  const knobBumpRef = useRef<Animation | null>(null);
 
   // 闪光扫过（WAAPI）：速率随档位升高而加快，与设计稿同一手法。
   // 动画句柄存 ref：档位变化时直接改 playbackRate，不再每帧 getAnimations() 查询。
@@ -404,12 +362,7 @@ function EffortSlider({
     };
   }, []);
 
-  // 档位变化：特效强度与速率跟着档位走；手柄回弹一下（设计稿 bump）。
-  // 拖动期间不做回弹——每帧重启动画就是「一直在闪」的来源。
-  //
-  // 回弹**只缩放、不改位移**：手柄的水平/垂直居中由 `left` + `margin` 完成（见下方 style），
-  // 动画里再写 translate(-50%,-50%) 会与 Tailwind 4 的 `translate` 属性叠加，
-  // 实测偏移 16px（手柄半径）——那正是「滑块手柄错位」的来源。
+  // 档位变化：特效强度与速率跟着档位走。
   useEffect(() => {
     const rate = 0.5 + 1.7 * ratio;
     if (shimmerRef.current.first) {
@@ -419,28 +372,6 @@ function EffortSlider({
       shimmerRef.current.second.playbackRate = rate;
     }
   }, [ratio]);
-
-  // 回弹只跟「落到哪一档」走，与拖动状态无关：拖动中不重启动画。
-  //
-  // **首帧不回弹**（用户口径 2026-11-25「第一次加载的时候会回弹一下，这是个 bug」）：
-  // 这个 effect 依赖 `committedIndex`，挂载时就会跑一次，把手柄从 1 缩到 0.85 再弹回
-  // ——纯粹是初始化的副作用。ref 的**初值就是当前档位**，因此挂载时不构成「变化」；
-  // 只有后续真正切换档位才会回弹。
-  const lastBumpedIndexRef = useRef(committedIndex);
-  useEffect(() => {
-    if (dragging || !knobRef.current) return;
-    if (lastBumpedIndexRef.current === committedIndex) return;
-    lastBumpedIndexRef.current = committedIndex;
-    knobBumpRef.current?.cancel();
-    knobBumpRef.current = knobRef.current.animate(
-      [{ scale: "1" }, { scale: "0.85" }, { scale: "1" }],
-      {
-        duration: 350,
-        easing: "cubic-bezier(.34, 1.56, .64, 1)",
-        composite: "replace",
-      },
-    );
-  }, [committedIndex, dragging]);
 
   const selectNearest = useCallback(
     (clientX: number) => {
@@ -490,53 +421,35 @@ function EffortSlider({
           {/*
             档位读数：与标签同字重、只靠颜色区分（用户口径「最高不要加粗」）。
 
-            换档过渡＝**日历翻页**（用户口径 2026-11-25）。演进过程：
-            ① `key` 重挂载 + 淡入 → 切换瞬间字消失，像「接触不良」；
-            ② 交叉淡入淡出 → 两个字半透明叠着，用户说「比原来还丑」；
-            ③ 现在是翻页：旧字绕上边翻出去、新字从下方翻进来。
-            实现要点：容器给 `perspective`（否则 rotateX 只是横向压扁，没有翻页的立体感），
-            两层各自 `transform-origin` 在上/下边缘，翻动才像翻纸。
+            换档过渡＝**机械电表滚动**（用户口径 2026-11-25「跟机械电表度数一样的那种」）。
+            演进：① key 重挂载淡入（瞬断）→ ② 交叉淡入淡出（重影，用户说更丑）
+            → ③ 日历翻页（用户觉得不够优雅）→ ④ 现在：整列档位排成一条纵带，
+            窗口只开一行，换档时整条带子平移、当前档滚进窗口。
+
+            为什么滚动更像电表：刚体平移任何时刻窗口里只有一档，没有重影、没有空白。
+            `reelIndex` 用拖动中的预览档（拖到哪滚到哪，跟手），松手后再提交。
           */}
-          <span
-            className="relative inline-grid text-ui-base tabular-nums"
-            style={{ perspective: "48px" }}
-          >
-            {/* 占位层：让容器宽度取两者的较大值，切换时不抖。 */}
-            <span className="invisible col-start-1 row-start-1">{label}</span>
-            {fadingLabel ? (
-              <span className="invisible col-start-1 row-start-1">
-                {fadingLabel}
-              </span>
-            ) : null}
-            {/* 翻出层：只在切换后的这一小段存在，画的是旧字。
-                同样用 `key` 保证每次切换都重新挂载、动画重播。 */}
-            {fadingLabel ? (
-              <span
-                key={`out-${fadingLabel}`}
-                aria-hidden="true"
-                className="effort-readout-out col-start-1 row-start-1"
-                style={{
-                  transformOrigin: "top center",
-                  ...(plain || !currentColor ? {} : { color: currentColor }),
-                }}
-              >
-                {fadingLabel}
-              </span>
-            ) : null}
-            {/*
-              新字：用 `key={label}` 让它每次换档都**重新挂载**，翻页动画才会重播。
-              不加 key 时元素一直在，CSS animation 只在首次挂载跑一次，后续换档
-              就只剩旧字在翻、新字直接定格（实测新字 transform 只有 1 种）。
-            */}
+          <span className="relative block h-[1.4em] overflow-hidden text-ui-base tabular-nums">
             <span
-              key={label}
-              className="effort-readout-in col-start-1 row-start-1"
+              className="effort-readout-reel block"
               style={{
-                transformOrigin: "bottom center",
+                transform: `translateY(${-reelIndex * 1.4}em)`,
                 ...(plain || !currentColor ? {} : { color: currentColor }),
               }}
             >
-              {label}
+              {levels.map((level) => {
+                const text = effortLevelLabel(level.value);
+                return (
+                  <span
+                    key={level.value}
+                    // 每格固定 1.4em 行高：带子的位移量、窗口高度、格子高度
+                    // 三者必须同源，否则滚到位会差几像素（读起来像没对齐）。
+                    className="block h-[1.4em] leading-[1.4em]"
+                  >
+                    {text}
+                  </span>
+                );
+              })}
             </span>
           </span>
         </div>
