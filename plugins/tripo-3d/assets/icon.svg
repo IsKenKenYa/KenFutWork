@@ -1,10 +1,10 @@
 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tripo 3D">
-  <!-- 图形取自 Lucide 的 shapes（ISC，lucide-static 0.469.0）：
-       三角 / 方块 / 圆三种基本体的并列，对应「由文字或图片生成 3D 模型与素材」。
-       笔画宽度按插件图标口径调到 1.6（同族图标一致），改用 currentColor 随主题反白。 -->
+  <!-- 按 Tripo 官方标志（www.tripo3d.com/logo-48x48.png）的轮廓抽象成单色线稿：
+       外层 V 形 + 中心圆形节点（官方那枚黄色圆点代表生成出的模型）。
+       官网只有位图、没有矢量版，这里按轮廓重画，与同族图标的线宽/圆角一致。 -->
   <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <circle cx="17.5" cy="17.5" r="3.5" />
+    <path d="M3.6 4.4 12 19.6l8.4-15.2" />
+    <path d="M8.2 4.4h7.6" />
+    <circle cx="12" cy="11.6" r="2.6" fill="currentColor" stroke="none" />
   </g>
 </svg>

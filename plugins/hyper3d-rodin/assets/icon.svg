@@ -1,11 +1,12 @@
 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hyper3D Rodin">
-  <!-- 图形取自 Lucide 的 boxes（ISC，lucide-static 0.469.0）：
-       三个立方体组合，对应「把生成的模型拆分为独立部件」。
-       原图在 16px 下线条过密，这里只保留外轮廓与三条分割棱，笔画 1.6 与同族一致。 -->
-  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 3.2 16.4 5.7v5l-4.4 2.5-4.4-2.5v-5z" />
-    <path d="M7.6 12.6 12 15.1v5.7l-4.4-2.5-4-2.3v-5l4 1.6z" />
-    <path d="M16.4 12.6 20.4 14.6v5l-4 2.3L12 20.8v-5.7z" />
-    <path d="M7.6 12.6 12 15.1l4.4-2.5M12 15.1v5.7" />
+  <!-- 按 Hyper3D 官方标志（www.hyper3d.com/favicon-32x32.webp）的轮廓抽象：
+       三片粗壮旋瓣紧凑环绕中心圆点。官方三瓣彼此紧贴、端头圆钝、整体像风车；
+       前几版线条太细、瓣间空隙过大，读成散开的曲线。这版用较粗笔画 + 短弧，
+       三瓣按 120° 均布，中心圆点加大。 -->
+  <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+    <path d="M12.9 8.4c.6-1.9 2.4-3 4-2.5 1.7.5 2.4 2.4 1.7 4.5" />
+    <path d="M15.9 13.1c1.9.6 3 2.4 2.5 4-.5 1.7-2.4 2.4-4.5 1.7" />
+    <path d="M10.9 15.5c-.6 1.9-2.4 3-4 2.5-1.7-.5-2.4-2.4-1.7-4.5" />
   </g>
+  <circle cx="12" cy="11.8" r="3" fill="currentColor" />
 </svg>
