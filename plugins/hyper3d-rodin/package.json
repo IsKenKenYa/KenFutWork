@@ -11,14 +11,17 @@
     "README.md",
     "LICENSE",
     "skills",
-    "mcp.json"
+    "mcp.json",
+    "assets/icon.svg"
   ],
   "kenfutwork": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "title": "Hyper3D Rodin",
-    "category": "游戏与 3D"
+    "category": "游戏与 3D",
+    "assets": true,
+    "icon": "assets/icon.svg"
   },
   "main": "index.js"
 }

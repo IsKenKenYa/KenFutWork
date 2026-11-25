@@ -1,0 +1,25 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hyper3D Rodin">
+  <g stroke-linecap="round" stroke-linejoin="round">
+  <!-- 自绘：模型方块 + 生成星芒（由文字/图片生成 3D 模型），与同族图标同口径。
+       星芒是四角十字加两点，不用五角星：16px 下五角星会糊成一个点。 -->
+  <path
+    d="M3.6 9.6 11 5.6l7.4 4v5.6L11 19.2l-7.4-4z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+  />
+  <path
+    d="M3.6 9.6 11 13.6l7.4-4M11 13.6v5.6"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+  />
+  <path
+    d="M18.8 4.2v4M16.8 6.2h4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  />
+  </g>
+</svg>

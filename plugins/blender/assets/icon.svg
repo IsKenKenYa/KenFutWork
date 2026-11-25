@@ -1,0 +1,22 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Blender">
+  <g stroke-linecap="round" stroke-linejoin="round">
+  <!-- 自绘：建模工作区的三维网格面（细分网格 + 顶点），多边形建模的编辑态。
+       前一版是四格方框，16px 下像电子表格；这版改成带透视的四边形面 + 对角细分线，
+       缩到 16px 仍读成「一块被切开的三维面」。顶点平滑把线角收圆。 -->
+  <path
+    d="M6.2 4.6h11.6l2.6 4.4-11.6 10.4H3.6z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M6.2 4.6 8.8 9l11.6 0M8.8 9l-5.2 10.4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  />
+  <circle cx="8.8" cy="9" r="1.5" fill="currentColor" />
+  </g>
+</svg>
