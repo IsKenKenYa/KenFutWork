@@ -1,10 +1,15 @@
+import {
+  EMPTY_PERMISSION_POLICY,
+  type PermissionPolicy,
+} from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-
 import {
   createPermissionService,
   isDangerousCall,
   isDangerousTool,
+  type PermissionService,
 } from "./permission-service.js";
+import { DEFAULT_PERMISSION_SETTINGS } from "./tier-store.js";
 
 describe("permissions 缝（DEC-4）", () => {
   it("不带调用绑定的 once 不再假装授权成功", () => {
@@ -55,6 +60,7 @@ describe("permissions 缝（DEC-4）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       approvedForever: ["execute", "mcp__py__run"],
       browserControlEnabled: false,
       browserAutoScreenshot: false,
@@ -181,6 +187,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
         allow: ["write_file", "mcp__py-helper__echo"],
         deny: ["mcp__py-helper__add"],
       },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -206,6 +213,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "custom",
       automationTier: "default",
       rules: { allow: [], deny: ["mcp__*"] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -229,6 +237,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "full-access",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -250,6 +259,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "auto-approve",
       rules: { allow: [], deny: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -272,6 +282,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       tier: "default",
       automationTier: "default",
       rules: { allow: [], deny: [] },
+      policy: EMPTY_PERMISSION_POLICY,
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
@@ -287,5 +298,653 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
         scenario: "automation",
       }).decision,
     ).toBe("allow");
+  });
+});
+
+describe("工具策略：三态规则与禁用清单", () => {
+  const withPolicy = (
+    policy: Partial<PermissionPolicy>,
+    tier: "default" | "full-access" = "default",
+  ) => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy: { ...EMPTY_PERMISSION_POLICY, ...policy },
+    });
+    return svc;
+  };
+
+  it("禁用清单是硬拒绝：完全访问档也拦，且不给审批机会", () => {
+    const svc = withPolicy(
+      { rules: [], disabledTools: ["shell_*"] },
+      "full-access",
+    );
+    const decision = svc.evaluate({ toolName: "shell_exec" });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBe(true);
+  });
+
+  it("三态 deny 是硬拒绝，ask 只阻断但不带 blocked（照常弹审批）", () => {
+    const denied = withPolicy({
+      rules: [{ pattern: "mcp__*", action: "deny" }],
+      disabledTools: [],
+    }).evaluate({ toolName: "mcp__fs__write" });
+    expect(denied.decision).toBe("deny");
+    expect(denied.blocked).toBe(true);
+
+    const asked = withPolicy({
+      rules: [{ pattern: "execute", action: "ask" }],
+      disabledTools: [],
+    }).evaluate({ toolName: "execute" });
+    expect(asked.decision).toBe("deny");
+    expect(asked.blocked).toBeUndefined();
+  });
+
+  it("三态 allow 直接放行，不看档位", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "write_file", action: "allow" }],
+      disabledTools: [],
+    });
+    expect(svc.evaluate({ toolName: "write_file" }).decision).toBe("allow");
+  });
+
+  it("规则按表内顺序取第一条命中", () => {
+    const svc = withPolicy({
+      rules: [
+        { pattern: "mcp__fs__*", action: "allow" },
+        { pattern: "mcp__*", action: "deny" },
+      ],
+      disabledTools: [],
+    });
+    expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("allow");
+    expect(svc.evaluate({ toolName: "mcp__other__run" }).decision).toBe("deny");
+  });
+
+  it("策略未命中时回落档位判定，行为与改造前一致", () => {
+    const svc = withPolicy({ rules: [], disabledTools: [] });
+    // default 档下危险工具仍需审批（deny 但非 blocked）
+    const decision = svc.evaluate({ toolName: "write_file" });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBeUndefined();
+  });
+
+  it("checkToolPolicy 只报策略命中，未命中返回 undefined", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "execute", action: "deny" }],
+      disabledTools: ["shell_*"],
+    });
+    expect(svc.checkToolPolicy("execute")?.blocked).toBe(true);
+    expect(svc.checkToolPolicy("shell_exec")?.blocked).toBe(true);
+    expect(svc.checkToolPolicy("read_file")).toBeUndefined();
+  });
+
+  it("路径规则按前缀判：规则目录及其下层命中，同前缀的邻居目录不命中", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo/app", operation: "write", action: "deny" }],
+    });
+    const write = (filePath: string) =>
+      svc.evaluate({ toolName: "write_file", args: { file_path: filePath } });
+
+    expect(write("/repo/app").blocked).toBe(true);
+    expect(write("/repo/app/src/index.ts").blocked).toBe(true);
+    // `/repo/app-old` 与 `/repo/app` 是邻居，前缀相同但不是同一棵树
+    expect(write("/repo/app-old/x.ts").blocked).toBeUndefined();
+    // 规则外的路径不受影响，回落档位（default 档写文件需审批）
+    const outside = write("/repo/other/x.ts");
+    expect(outside.decision).toBe("deny");
+    expect(outside.blocked).toBeUndefined();
+  });
+
+  it("路径规则两种分隔符与小写都认（Windows 路径大小写不敏感）", () => {
+    const svc = withPolicy({
+      pathRules: [
+        { path: "C:\\Users\\me\\secrets", operation: "write", action: "deny" },
+      ],
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { path: "c:/users/ME/secrets/token.txt" },
+      }).blocked,
+    ).toBe(true);
+  });
+
+  it("命令规则按前缀判；未带命令参数的工具不受命令规则影响", () => {
+    const svc = withPolicy({
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /data" } })
+        .blocked,
+    ).toBe(true);
+    // 同前缀但更短/更长都不该命中
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -r x" } })
+        .blocked,
+    ).toBeUndefined();
+    // 写文件没有 command 字段 → 命令规则不参与判定
+    expect(
+      svc.evaluate({ toolName: "write_file", args: { file_path: "a.txt" } })
+        .blocked,
+    ).toBeUndefined();
+  });
+
+  it("读 / 写 / 删各自独立配：只读允许不放开写入，删除单独一条", () => {
+    const svc = withPolicy({
+      pathRules: [
+        { path: "/repo/data", operation: "read", action: "allow" },
+        { path: "/repo/data", operation: "write", action: "deny" },
+        { path: "/repo/data", operation: "delete", action: "ask" },
+      ],
+    });
+    const decide = (
+      toolName: string,
+      args: Record<string, unknown>,
+    ): ReturnType<typeof svc.evaluate> => svc.evaluate({ toolName, args });
+
+    // 读：放行（同目录的 allow 规则）
+    expect(
+      decide("read_file", { file_path: "/repo/data/a.txt" }).decision,
+    ).toBe("allow");
+    // 写：硬拒绝（同目录的 deny 规则）
+    const write = decide("write_file", {
+      file_path: "/repo/data/a.txt",
+      content: "x",
+    });
+    expect(write.decision).toBe("deny");
+    expect(write.blocked).toBe(true);
+    // 删：询问（不硬拦，交给审批）
+    const remove = decide("delete_file", { file_path: "/repo/data/a.txt" });
+    expect(remove.decision).toBe("deny");
+    expect(remove.blocked).toBeUndefined();
+  });
+
+  it("操作类型从工具名与参数推断；不碰文件系统的工具不受路径规则影响", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo", operation: "read", action: "deny" }],
+    });
+    // 命令类工具的路径在命令字符串里、不在参数里 → 路径规则不参与（由命令规则管）
+    expect(
+      svc.evaluate({
+        toolName: "execute",
+        args: { command: "rm /repo/a.txt" },
+      }).source,
+    ).not.toBe("path-rule");
+    // 读类工具命中 read 规则
+    expect(
+      svc.evaluate({
+        toolName: "read_file",
+        args: { file_path: "/repo/a.txt" },
+      }).source,
+    ).toBe("path-rule");
+    // 写类工具即使只给路径，也按 write 判，不命中 read 规则
+    expect(
+      svc.evaluate({ toolName: "write_file", args: { file_path: "/repo/a" } })
+        .source,
+    ).not.toBe("path-rule");
+  });
+
+  it("路径/命令的 allow 规则可越过档位，但硬拒绝仍然优先", () => {
+    const svc = withPolicy({
+      pathRules: [{ path: "/repo/app", operation: "write", action: "allow" }],
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "/repo/app/x.ts" },
+      }).decision,
+    ).toBe("allow");
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /" } })
+        .blocked,
+    ).toBe(true);
+  });
+
+  it("工具规则先于路径/命令规则命中", () => {
+    const svc = withPolicy({
+      rules: [{ pattern: "execute", action: "allow" }],
+      commandRules: [{ prefix: "rm -rf", action: "deny" }],
+    });
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf /" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("域名规则拦下指定站点，allow 规则可越过档位", () => {
+    const svc = withPolicy(
+      {
+        domainRules: [
+          { domain: "*.internal.example", action: "deny" },
+          { domain: "docs.example.com", action: "allow" },
+        ],
+      },
+      "default",
+    );
+
+    // 工具门：browser_open 带 url，按域名判
+    const denied = svc.evaluate({
+      toolName: "browser_open",
+      args: { url: "https://secret.internal.example/wiki" },
+    });
+    expect(denied.decision).toBe("deny");
+    expect(denied.blocked).toBe(true);
+
+    // 放行域名在默认档也放行（策略先于档位）
+    expect(
+      svc.evaluate({
+        toolName: "browser_open",
+        args: { url: "https://docs.example.com/guide" },
+      }).decision,
+    ).toBe("allow");
+
+    // 未命中规则的地址按档位判（默认档下 browser_open 走浏览器控制门，不看这里）
+    expect(
+      svc.evaluate({
+        toolName: "browser_open",
+        args: { url: "https://elsewhere.example.org" },
+      }).blocked,
+    ).toBeUndefined();
+  });
+
+  it("checkUrlPolicy 只报域名命中；非 http(s) 与解析不出的地址不参与", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "example.com", action: "deny" }],
+    });
+    expect(svc.checkUrlPolicy("https://example.com/x")?.blocked).toBe(true);
+    expect(svc.checkUrlPolicy("https://sub.example.com/x")?.blocked).toBe(true);
+    expect(svc.checkUrlPolicy("https://other.com")).toBeUndefined();
+    expect(svc.checkUrlPolicy("file:///C:/x")).toBeUndefined();
+    expect(svc.checkUrlPolicy("不是地址")).toBeUndefined();
+  });
+
+  it("域名「询问」不硬拦，交给审批链路", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "example.com", action: "ask" }],
+    });
+    const decision = svc.checkUrlPolicy("https://example.com");
+    expect(decision?.decision).toBe("deny");
+    expect(decision?.blocked).toBeUndefined();
+  });
+
+  it("整体策略：白名单模式只放行域名表允许的，其余一律拦", () => {
+    const svc = withPolicy({
+      domainRules: [{ domain: "allowed.example", action: "allow" }],
+      networkPolicy: {
+        networkMode: "whitelist",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
+    });
+    expect(svc.checkUrlPolicy("https://allowed.example/x")?.decision).toBe(
+      "allow",
+    );
+    const other = svc.checkUrlPolicy("https://other.example");
+    expect(other?.decision).toBe("deny");
+    // 硬拦：白名单模式下「不在名单里」就是拒绝，不给审批机会
+    expect(other?.blocked).toBe(true);
+  });
+
+  it("整体策略：全部放行/黑名单只在域名表拒绝时拦", () => {
+    for (const networkMode of ["allow-all", "blacklist"] as const) {
+      const svc = withPolicy({
+        domainRules: [{ domain: "bad.example", action: "deny" }],
+        networkPolicy: {
+          networkMode,
+          httpAllowed: true,
+          tlsVerification: true,
+        },
+      });
+      expect(svc.checkUrlPolicy("https://bad.example")?.blocked).toBe(true);
+      // 未命中表 → 放行（不再回落 undefined 让调用方各自解释）
+      expect(svc.checkUrlPolicy("https://other.example")?.decision).toBe(
+        "allow",
+      );
+    }
+  });
+
+  it("整体策略：默认询问模式下未命中表的地址要过问，不硬拦", () => {
+    const svc = withPolicy({
+      networkPolicy: {
+        networkMode: "ask",
+        httpAllowed: true,
+        tlsVerification: true,
+      },
+    });
+    const decision = svc.checkUrlPolicy("https://other.example");
+    expect(decision?.decision).toBe("deny");
+    expect(decision?.blocked).toBeUndefined();
+  });
+
+  it("关闭「HTTP 放行」后明文 http 一律硬拦，https 不受影响", () => {
+    const svc = withPolicy({
+      networkPolicy: {
+        networkMode: "auto",
+        httpAllowed: false,
+        tlsVerification: true,
+      },
+    });
+    const plain = svc.checkUrlPolicy("http://example.com");
+    expect(plain?.decision).toBe("deny");
+    expect(plain?.blocked).toBe(true);
+    expect(plain?.reason).toMatch(/HTTP 放行/);
+    // https 未命中表 → auto 档不下结论
+    expect(svc.checkUrlPolicy("https://example.com")).toBeUndefined();
+  });
+});
+
+describe("审计中心：判定流水", () => {
+  const withSink = (policy: Partial<PermissionPolicy> = {}) => {
+    const records: Parameters<
+      NonNullable<Parameters<PermissionService["setAuditSink"]>[0]>
+    >[0][] = [];
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      policy: { ...EMPTY_PERMISSION_POLICY, ...policy },
+    });
+    svc.setAuditSink((record) => records.push(record));
+    return { svc, records };
+  };
+
+  it("工具门每条结论都记：放行与拦截都在，且带命中来源", () => {
+    const { svc, records } = withSink({
+      rules: [{ pattern: "blocked_tool", action: "deny" }],
+    });
+    svc.evaluate({ toolName: "preview_file" });
+    svc.evaluate({ toolName: "blocked_tool" });
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      toolName: "preview_file",
+      decision: "allow",
+      blocked: false,
+    });
+    expect(records[1]).toMatchObject({
+      toolName: "blocked_tool",
+      decision: "deny",
+      source: "tool-rule",
+      blocked: true,
+    });
+  });
+
+  it("审批入口只在命中策略时记一条（未命中留给档位判定，不重复记）", () => {
+    const { svc, records } = withSink({
+      disabledTools: ["shell_*"],
+    });
+    expect(svc.checkToolPolicy("read_file")).toBeUndefined();
+    expect(records).toHaveLength(0);
+
+    svc.checkToolPolicy("shell_exec");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ source: "disabled", blocked: true });
+  });
+
+  it("不记工具参数与命令原文（只记命中的规则，理由可定位）", () => {
+    const { svc, records } = withSink({
+      pathRules: [{ path: "/secret", operation: "write", action: "deny" }],
+      commandRules: [{ prefix: "curl -H Authorization", action: "deny" }],
+    });
+    svc.evaluate({
+      toolName: "write_file",
+      args: { file_path: "/secret/token.txt", content: "top-secret-value" },
+    });
+    svc.evaluate({
+      toolName: "execute",
+      args: { command: "curl -H Authorization: Bearer sk-live-123 https://x" },
+    });
+
+    const serialized = JSON.stringify(records);
+    // 内容与凭据一个字都不落库
+    expect(serialized).not.toContain("top-secret-value");
+    expect(serialized).not.toContain("Bearer");
+    expect(serialized).not.toContain("sk-live-123");
+    // 也不记被操作的路径/命令原文
+    expect(serialized).not.toContain("token.txt");
+    // 理由指向**命中的规则**，用户据此能定位是哪条配错了
+    expect(records[0]).toMatchObject({ source: "path-rule", blocked: true });
+    expect(records[0]?.reason).toContain("/secret");
+    expect(records[1]).toMatchObject({ source: "command-rule", blocked: true });
+    expect(records[1]?.reason).toContain("curl -H Authorization");
+  });
+
+  it("记录器抛错不影响判定（审计是旁路）", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        rules: [{ pattern: "blocked_tool", action: "deny" }],
+      },
+    });
+    svc.setAuditSink(() => {
+      throw new Error("落库失败");
+    });
+    expect(svc.evaluate({ toolName: "blocked_tool" }).blocked).toBe(true);
+    expect(svc.evaluate({ toolName: "preview_file" }).decision).toBe("allow");
+  });
+
+  it("摘掉记录器后不再记流水", () => {
+    const { svc, records } = withSink();
+    svc.setAuditSink(null);
+    svc.evaluate({ toolName: "preview_file" });
+    expect(records).toHaveLength(0);
+  });
+});
+
+/** 数据安全：删除模式（询问 / 自动审批 / 回收站 / 完全删除）。 */
+describe("数据安全：删除模式", () => {
+  const withPolicy = (
+    deleteMode: "ask" | "auto-approve" | "trash" | "permanent",
+    batchThreshold = 50,
+    batchEnabled = true,
+    tier: "default" | "full-access" = "full-access",
+  ) => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        deleteMode,
+        deleteProtection: { enabled: batchEnabled, batchThreshold },
+      },
+    });
+    return svc;
+  };
+
+  it("自动审批：删除命令直接放行，不再过问", () => {
+    const svc = withPolicy("auto-approve");
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm -rf build" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("自动审批下批量阈值也不拦：用户已明确表达「不问」", () => {
+    const svc = withPolicy("auto-approve", 2);
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "rm a b c" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("询问：单目标删除要审批（完全访问档也拦），理由点名删除模式", () => {
+    const svc = withPolicy("ask");
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm build/out.log" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.source).toBe("delete-protection");
+    // 不是硬拒绝：用户可以在审批里放行
+    expect(decision.blocked).toBeUndefined();
+    expect(decision.reason).toMatch(/删除前询问/);
+  });
+
+  it("达到批量阈值时理由说明批量，与单目标区分开", () => {
+    const svc = withPolicy("ask", 3);
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm a.txt b.txt c.txt" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.reason).toMatch(/批量删除阈值 3/);
+  });
+
+  it("回收站：删除命令硬拦并给出「先移到回收站」的改写建议", () => {
+    const svc = withPolicy("trash");
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm -rf build" },
+    });
+    expect(decision.decision).toBe("deny");
+    // 硬拦：不给审批机会——用户要求的是「先备份再删」，放行就等于绕过
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toMatch(/移到回收站/);
+    expect(decision.reason).toMatch(/mv/);
+  });
+
+  it("回收站优先于批量阈值判定（两条同时满足时按硬拦处理）", () => {
+    const svc = withPolicy("trash", 2);
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm a b c" },
+    });
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toMatch(/移到回收站/);
+  });
+
+  it("完全删除：仍要过问，理由说明不进回收站", () => {
+    const svc = withPolicy("permanent");
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: { command: "rm -rf dist" },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.reason).toMatch(/完全删除/);
+  });
+
+  it("回收站模式只影响删除命令；其它命令照常走档位", () => {
+    const svc = withPolicy("trash");
+    expect(
+      svc.evaluate({ toolName: "execute", args: { command: "ls -la" } })
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("识别常见删除命令；非删除命令不误拦", () => {
+    const svc = withPolicy("ask");
+    for (const command of [
+      "del old.txt",
+      "rd /s build",
+      "Remove-Item -Recurse node_modules",
+      "rmdir empty",
+    ]) {
+      expect(
+        svc.evaluate({ toolName: "execute", args: { command } }).source,
+        command,
+      ).toBe("delete-protection");
+    }
+    for (const command of ["ls -la", "git status", "npm run build"]) {
+      // 未命中删除模式 → 落到档位判定（完全访问档 source=tier）
+      expect(
+        svc.evaluate({ toolName: "execute", args: { command } }).source,
+        command,
+      ).not.toBe("delete-protection");
+    }
+  });
+});
+
+describe("数据安全：敏感保护", () => {
+  const withPolicy = (tier: "default" | "full-access" = "full-access") => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier,
+      policy: { ...EMPTY_PERMISSION_POLICY },
+    });
+    return svc;
+  };
+
+  it("参数里出现令牌格式即硬拒绝，理由指出类型且不回显令牌", () => {
+    const svc = withPolicy();
+    const decision = svc.evaluate({
+      toolName: "execute",
+      args: {
+        command:
+          "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456'",
+      },
+    });
+    expect(decision.decision).toBe("deny");
+    expect(decision.blocked).toBe(true);
+    expect(decision.source).toBe("sensitive-data");
+    expect(decision.reason).toMatch(/Bearer 凭据/);
+    // 理由里不能出现令牌本身
+    expect(decision.reason).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
+  });
+
+  it("常见令牌格式都能识别；普通文本不误报", () => {
+    const svc = withPolicy();
+    const cases: Array<[string, RegExp]> = [
+      ["sk-abcdefghijklmnopqrstuvwx", /OpenAI 密钥/u],
+      ["ghp_abcdefghijklmnopqrstuvwxyz", /GitHub 令牌/u],
+      ["AKIAIOSFODNN7EXAMPLE", /AWS 访问密钥/u],
+    ];
+    for (const [secret, label] of cases) {
+      const decision = svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "a.txt", content: secret },
+      });
+      expect(decision.source, secret).toBe("sensitive-data");
+      expect(decision.reason, secret).toMatch(label);
+    }
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { file_path: "a.txt", content: "普通的文件内容，没有凭据" },
+      }).source,
+    ).not.toBe("sensitive-data");
+  });
+
+  it("关闭后不再检测", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier: "full-access",
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        sensitiveProtection: { enabled: false, patterns: [] },
+      },
+    });
+    expect(
+      svc.evaluate({
+        toolName: "write_file",
+        args: { content: "sk-abcdefghijklmnopqrstuvwx" },
+      }).decision,
+    ).toBe("allow");
+  });
+
+  it("自定义正则命中同样拒绝", () => {
+    const svc = createPermissionService();
+    svc.applySettings({
+      ...DEFAULT_PERMISSION_SETTINGS,
+      tier: "full-access",
+      policy: {
+        ...EMPTY_PERMISSION_POLICY,
+        sensitiveProtection: {
+          enabled: true,
+          patterns: ["内部工号\\s*\\d{6}"],
+        },
+      },
+    });
+    const decision = svc.evaluate({
+      toolName: "write_file",
+      args: { content: "内部工号 123456" },
+    });
+    expect(decision.source).toBe("sensitive-data");
+    expect(decision.reason).toMatch(/自定义规则/u);
   });
 });

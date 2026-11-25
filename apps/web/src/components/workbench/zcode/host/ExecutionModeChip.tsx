@@ -1,11 +1,15 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
+import { Button } from "@zui/components/ui/button.js";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import {
   BotIcon,
+  ChevronDownIcon,
   LightbulbIcon,
   type LucideIcon,
   MessageSquareIcon,
@@ -18,7 +22,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 type ModeOption = { id: ExecutionMode; label: string };
-const executionModeIcons: Partial<Record<ExecutionMode, LucideIcon>> = {
+/** 执行方式 → 图标（composer 合并菜单与独立 chip 共用一张表）。 */
+export const executionModeIcons: Partial<Record<ExecutionMode, LucideIcon>> = {
   agent: BotIcon,
   plan: LightbulbIcon,
   solo: MessageSquareIcon,
@@ -85,7 +90,7 @@ export function useExecutionModeController({
         .catch(() => {})
         .then(() =>
           surfaceJson(
-            "/api/execution-modes/" + encodeURIComponent(targetSessionId),
+            `/api/execution-modes/${encodeURIComponent(targetSessionId)}`,
             {
               method: "PUT",
               headers: { "content-type": "application/json" },
@@ -141,7 +146,7 @@ export function useExecutionModeController({
         const [list, current] = await Promise.all([
           surfaceJson<{ modes: ModeOption[] }>("/api/execution-modes"),
           surfaceJson<{ mode: ExecutionMode }>(
-            "/api/execution-modes/" + encodeURIComponent(sessionId),
+            `/api/execution-modes/${encodeURIComponent(sessionId)}`,
           ),
         ]);
         if (
@@ -282,8 +287,8 @@ export type ExecutionModeController = ReturnType<
   typeof useExecutionModeController
 >;
 
-/** 受控选项：执行方式全档（含「计划」）在此单选；planEnabled 仍由 controller 与 Composer 双向同步。 */
-export function ExecutionModeMenuItems({
+/** 受控菜单：执行方式独立成一块，与权限档并排，各自只改自己那一项。 */
+export function ExecutionModeChip({
   controller,
   disabled,
 }: {
@@ -292,28 +297,47 @@ export function ExecutionModeMenuItems({
 }) {
   const { mode, modes, saving, select } = controller;
   if (!modes || modes.length === 0 || !mode) return null;
+  const current = modes.find((entry) => entry.id === mode);
+  const ModeIcon = executionModeIcons[mode] ?? WorkflowIcon;
   return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuRadioGroup
-        value={mode}
-        onValueChange={select}
-        aria-label="执行方式"
-      >
-        {modes.map((entry) => {
-          const ModeIcon = executionModeIcons[entry.id] ?? WorkflowIcon;
-          return (
-            <DropdownMenuRadioItem
-              key={entry.id}
-              value={entry.id}
-              disabled={disabled || saving}
-            >
-              <ModeIcon className="size-4 shrink-0" />
-              <span>{entry.label}</span>
-            </DropdownMenuRadioItem>
-          );
-        })}
-      </DropdownMenuRadioGroup>
-    </>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={disabled || saving}
+          aria-label="执行方式"
+          data-testid="execution-mode-chip"
+          data-execution-mode={mode}
+          data-execution-mode-saving={saving}
+          className="h-7 gap-1 rounded-lg px-2 text-ui-base"
+        >
+          <ModeIcon className="size-4 shrink-0" />
+          <span>{current?.label ?? mode}</span>
+          <ChevronDownIcon className="size-3.5 text-foreground-subtle" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" sideOffset={4}>
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={select}
+          aria-label="执行方式"
+        >
+          {modes.map((entry) => {
+            const EntryIcon = executionModeIcons[entry.id] ?? WorkflowIcon;
+            return (
+              <DropdownMenuRadioItem
+                key={entry.id}
+                value={entry.id}
+                disabled={disabled || saving}
+              >
+                <EntryIcon className="size-4 shrink-0" />
+                <span>{entry.label}</span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

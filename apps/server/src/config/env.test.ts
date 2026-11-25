@@ -109,15 +109,19 @@ describe("部署形态与第三方插件开关", () => {
   });
 
   it("cloud：默认禁止；显式 true 才开", () => {
+    // 这里只测插件开关；cloud 形态默认要求 TLS，显式声明由外层终结以聚焦本用例。
     expect(
-      loadServerEnv({}, { KENFUTWORK_DEPLOYMENT: "cloud" })
-        .allowThirdPartyPlugins,
+      loadServerEnv(
+        {},
+        { KENFUTWORK_DEPLOYMENT: "cloud", KENFUTWORK_TLS_DISABLED: "1" },
+      ).allowThirdPartyPlugins,
     ).toBe(false);
     expect(
       loadServerEnv(
         {},
         {
           KENFUTWORK_DEPLOYMENT: "cloud",
+          KENFUTWORK_TLS_DISABLED: "1",
           KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS: "true",
         },
       ).allowThirdPartyPlugins,
@@ -130,6 +134,7 @@ describe("部署形态与第三方插件开关", () => {
         {},
         {
           KENFUTWORK_DEPLOYMENT: "self-hosted",
+          KENFUTWORK_TLS_DISABLED: "1",
           KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS: "false",
         },
       ).allowThirdPartyPlugins,
@@ -317,3 +322,68 @@ it.each(["KENFUTWORK_FLOW_GATEWAY_URL", "KENFUTWORK_FLOW_FRONTEND_URL"])(
     expect(failure.message).not.toContain("credential-marker");
   },
 );
+
+/**
+ * 传输加密（自托管 / 局域网部署）：TLS 证书与私钥必须成对配置。
+ *
+ * 只配一项时启动期直接报错——用户以为开了 HTTPS 而实际跑明文，比启动失败危险。
+ */
+describe("TLS 配置", () => {
+  it("证书与私钥成对配置才算启用", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        KENFUTWORK_TLS_CERT_PATH: " /etc/tls/cert.pem ",
+        KENFUTWORK_TLS_KEY_PATH: "/etc/tls/key.pem",
+      },
+    );
+    expect(env.tlsCertificatePath).toBe("/etc/tls/cert.pem");
+    expect(env.tlsKeyPath).toBe("/etc/tls/key.pem");
+  });
+
+  it("两项都没配置时保持明文（桌面与本机回环形态）", () => {
+    const env = loadServerEnv({}, {});
+    expect(env.tlsCertificatePath).toBeUndefined();
+    expect(env.tlsKeyPath).toBeUndefined();
+  });
+
+  it("只配一项直接报错，不静默退回明文", () => {
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_TLS_CERT_PATH: "/etc/tls/cert.pem" }),
+    ).toThrow(/同时配置/u);
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_TLS_KEY_PATH: "/etc/tls/key.pem" }),
+    ).toThrow(/同时配置/u);
+  });
+
+  /**
+   * 「传输加密默认开启」在本仓库的表达方式：自托管 / 云端形态**不配证书就起不来**，
+   * 除非显式声明 TLS 由外层反向代理终结（`KENFUTWORK_TLS_DISABLED=1`）。
+   *
+   * 本机形态（桌面 / 回环开发）不要求：通信不出本机。
+   */
+  it("自托管/云端形态默认要求 TLS：不配证书就启动失败", () => {
+    for (const deployment of ["self-hosted", "cloud"] as const) {
+      expect(
+        () => loadServerEnv({}, { KENFUTWORK_DEPLOYMENT: deployment }),
+        deployment,
+      ).toThrow(/KENFUTWORK_TLS_CERT_PATH/u);
+    }
+    // 本机形态不要求
+    expect(
+      loadServerEnv({}, { KENFUTWORK_DEPLOYMENT: "local" }).tlsKeyPath,
+    ).toBeUndefined();
+  });
+
+  it("显式声明 TLS 由外层终结时允许明文（自托管常见部署）", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        KENFUTWORK_DEPLOYMENT: "self-hosted",
+        KENFUTWORK_TLS_DISABLED: "1",
+      },
+    );
+    expect(env.tlsCertificatePath).toBeUndefined();
+    expect(env.tlsKeyPath).toBeUndefined();
+  });
+});

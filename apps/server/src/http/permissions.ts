@@ -1,12 +1,15 @@
 import {
   type ApplicationErrorResponse,
   applicationErrorResponseSchema,
+  permissionAuditEntrySchema,
+  permissionPolicySchema,
   permissionRulesSchema,
   permissionTierSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { PermissionAuditStore } from "../features/permissions/audit-store.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PermissionSettingsStore } from "../features/permissions/tier-store.js";
 import { describeErrorDetail } from "../utils/error-sanitizer.js";
@@ -38,6 +41,8 @@ export async function registerPermissionRoutes(
     permissions: PermissionService;
     /** 设置写穿（app_config）；缺省时仅内存生效（部分装配/单测）。 */
     tierStore?: PermissionSettingsStore;
+    /** 审计中心落库；缺省时不提供审计端点（部分装配/单测）。 */
+    auditStore?: PermissionAuditStore;
   },
 ) {
   // GET /api/permissions/tier — 当前权限设置（档位 / 自动化档位 / 自定义规则 / 浏览器控制）
@@ -58,6 +63,7 @@ export async function registerPermissionRoutes(
       tier: permissionTierSchema.parse(settings.tier),
       automationTier: permissionTierSchema.parse(settings.automationTier),
       rules: permissionRulesSchema.parse(settings.rules),
+      policy: permissionPolicySchema.parse(settings.policy),
       browserControlEnabled: settings.browserControlEnabled,
       browserAutoScreenshot: settings.browserAutoScreenshot,
       browserHeadless: settings.browserHeadless,
@@ -84,6 +90,7 @@ export async function registerPermissionRoutes(
       tier?: unknown;
       automationTier?: unknown;
       rules?: unknown;
+      policy?: unknown;
       browserControlEnabled?: unknown;
       browserAutoScreenshot?: unknown;
       browserHeadless?: unknown;
@@ -104,6 +111,9 @@ export async function registerPermissionRoutes(
       }
       if (body.rules !== undefined) {
         next = { ...next, rules: permissionRulesSchema.parse(body.rules) };
+      }
+      if (body.policy !== undefined) {
+        next = { ...next, policy: permissionPolicySchema.parse(body.policy) };
       }
       if (body.browserControlEnabled !== undefined) {
         next = {
@@ -157,6 +167,7 @@ export async function registerPermissionRoutes(
       tier: next.tier,
       automationTier: next.automationTier,
       rules: next.rules,
+      policy: next.policy,
       browserControlEnabled: next.browserControlEnabled,
       browserAutoScreenshot: next.browserAutoScreenshot,
       browserHeadless: next.browserHeadless,
@@ -216,5 +227,65 @@ export async function registerPermissionRoutes(
         }),
       );
     }
+  });
+
+  // GET /api/permissions/audit — 审计中心的最近记录（新的在前）
+  app.get("/api/permissions/audit", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) {
+      return reply.code(401).send(
+        unauthenticatedErrorResponseSchema.parse({
+          error: {
+            code: "unauthorized",
+            message: "Missing or invalid bearer token.",
+          },
+        }),
+      );
+    }
+    if (!options.auditStore) {
+      return reply.code(404).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "not_found",
+            message: "审计中心未启用。",
+          },
+        }),
+      );
+    }
+    const query = request.query as { limit?: string };
+    const limit = Number.parseInt(query.limit ?? "", 10);
+    const entries = await options.auditStore.list(
+      Number.isFinite(limit) ? { limit } : {},
+    );
+    return reply.code(200).send({
+      entries: entries.map((entry) => permissionAuditEntrySchema.parse(entry)),
+    });
+  });
+
+  // DELETE /api/permissions/audit — 清空记录
+  app.delete("/api/permissions/audit", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) {
+      return reply.code(401).send(
+        unauthenticatedErrorResponseSchema.parse({
+          error: {
+            code: "unauthorized",
+            message: "Missing or invalid bearer token.",
+          },
+        }),
+      );
+    }
+    if (!options.auditStore) {
+      return reply.code(404).send(
+        applicationErrorResponseSchema.parse({
+          error: {
+            code: "not_found",
+            message: "审计中心未启用。",
+          },
+        }),
+      );
+    }
+    await options.auditStore.clear();
+    return reply.code(204).send();
   });
 }

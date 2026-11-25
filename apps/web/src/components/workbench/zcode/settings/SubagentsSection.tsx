@@ -1,23 +1,21 @@
 /* eslint-disable max-lines -- 子智能体管理页集中维护作用域列表、表单和启用状态，避免状态分散 */
-import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
-import { hasExplicitModelChanged } from "@zui/lib/startPlanRecommendation.js";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Bot, Check, Plus, Trash2 } from "lucide-react";
+
 import { completeNewModelSelection } from "@zcode/provider";
+import type { ModelSelectionView } from "@zcode/services";
 import {
-  TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
-  TID_SUBAGENT_ROW,
-  ZCODE_AGENT_PROVIDER,
-  testId,
   type AgentColor,
+  type AgentSummary,
   type AgentsCapability,
   type AgentsListResult,
-  type AgentSummary,
   type BuiltInSubagentName,
   type ModelSelection,
   type SubAgentConfig,
+  TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
+  TID_SUBAGENT_ROW,
+  testId,
+  ZCODE_AGENT_PROVIDER,
 } from "@zcode/shared";
-import type { ModelSelectionView } from "@zcode/services";
+import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import { Input } from "@zui/components/ui/input.js";
 import {
@@ -28,19 +26,10 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { Switch } from "@zui/components/ui/switch.js";
-import { SettingsSearchInput } from "@zui/settings/SettingsSearchInput.js";
-import { SettingsFormActions } from "@zui/settings/SettingsFormActions.js";
 import { toast } from "@zui/components/ui/toast.js";
-import {
-  ModelConfigSelect,
-  type ModelSelectFooterAction,
-  type ModelSelectGroup,
-} from "@zui/ModelConfigSelect.js";
-import { cn } from "@zui/components/lib/utils.js";
-import { logger } from "@zui/logger.js";
-import { settingsResourceRowInteraction } from "@zui/settings/settingsResourceRowInteraction.js";
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { useModelSelectionServiceView } from "@zui/hooks/useModelSelectionView.js";
+import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
@@ -48,39 +37,64 @@ import {
   resolveModelDisplayName,
 } from "@zui/lib/modelSelectionGroups.js";
 import { resolveModelThoughtOption } from "@zui/lib/modelThoughtOption.js";
-import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
+import { hasExplicitModelChanged } from "@zui/lib/startPlanRecommendation.js";
+import {
+  SUBAGENT_COLOR_CLASS,
+  SUBAGENT_COLORS,
+} from "@zui/lib/subagentColors.js";
 import { encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
-import { SUBAGENT_COLORS, SUBAGENT_COLOR_CLASS } from "@zui/lib/subagentColors.js";
-import { SettingsResourceGroupHeader } from "@zui/settings/SettingsResourceGroupHeader.js";
-import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
-import { SettingsBreadcrumbReporter } from "@zui/settings/SettingsHeaderBreadcrumb.js";
-import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
-import { AgentsInstructionRow, resolveAgentsInstructionPath } from "@zui/settings/AgentsInstructionRow.js";
+import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
+import { logger } from "@zui/logger.js";
+import {
+  ModelConfigSelect,
+  type ModelSelectFooterAction,
+  type ModelSelectGroup,
+} from "@zui/ModelConfigSelect.js";
 import { AgentsInstructionEditor } from "@zui/settings/AgentsInstructionEditor.js";
 import {
-  SubagentReasoningField,
-  type SubagentReasoningFieldState,
-} from "@zui/settings/SubagentReasoningField.js";
-import { refreshLoadedSubagentsStoreForWorkspace } from "@zui/store/subagentsStore.js";
-import {
-  PluginScopeMenu,
-  getPluginWorkspaceKey,
-  isPluginScopeWorkspaceConnected,
-} from "@zui/settings/PluginScopeMenu.js";
-import { useTabStore } from "@zui/store/TabStoreProvider.js";
-import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
+  AgentsInstructionInline,
+  resolveAgentsInstructionPath,
+} from "@zui/settings/AgentsInstructionRow.js";
 import {
   PluginInstallEmptyState,
   PluginLoadingState,
   PluginSearchEmptyState,
 } from "@zui/settings/PluginInstallEmptyState.js";
 import {
+  getPluginWorkspaceKey,
+  isPluginScopeWorkspaceConnected,
+  PluginScopeMenu,
+} from "@zui/settings/PluginScopeMenu.js";
+import { PluginStoreAvatar } from "@zui/settings/PluginStoreAvatar.js";
+import type { StorePluginItem } from "@zui/settings/pluginStoreListing.js";
+import {
   resolvePluginDisplayName,
   resolveUniquePluginListingByName,
 } from "@zui/settings/pluginStoreListing.js";
-import { PluginStoreAvatar } from "@zui/settings/PluginStoreAvatar.js";
-import type { StorePluginItem } from "@zui/settings/pluginStoreListing.js";
+import { SettingsFormActions } from "@zui/settings/SettingsFormActions.js";
+import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
+import { SettingsBreadcrumbReporter } from "@zui/settings/SettingsHeaderBreadcrumb.js";
+import { SettingsResourceGroupHeader } from "@zui/settings/SettingsResourceGroupHeader.js";
+import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
+import { SettingsSearchInput } from "@zui/settings/SettingsSearchInput.js";
+import {
+  SubagentReasoningField,
+  type SubagentReasoningFieldState,
+} from "@zui/settings/SubagentReasoningField.js";
+import { settingsResourceRowInteraction } from "@zui/settings/settingsResourceRowInteraction.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
+import { refreshLoadedSubagentsStoreForWorkspace } from "@zui/store/subagentsStore.js";
+import { useTabStore } from "@zui/store/TabStoreProvider.js";
+import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
+import { Bot, Check, Plus, Trash2 } from "lucide-react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const AGENT_COLORS: AgentColor[] = [...SUBAGENT_COLORS];
 const COLOR_DOT_CLASS: Record<AgentColor, string> = SUBAGENT_COLOR_CLASS;
@@ -109,7 +123,10 @@ interface AgentGroups {
 function projectSettingsSubagents(result: AgentsListResult): AgentSummary[] {
   // result.agents 是运行时调用投影，插件 agent 可能同时有规范名称与裸名称别名；
   // 设置页按已安装资源展示，插件部分必须改用一文件一条的 pluginAgents 投影。
-  return [...result.agents.filter((agent) => agent.source !== "plugin"), ...result.pluginAgents];
+  return [
+    ...result.agents.filter((agent) => agent.source !== "plugin"),
+    ...result.pluginAgents,
+  ];
 }
 
 interface SubagentFormInitialState {
@@ -159,11 +176,15 @@ function supportsModelOverride(agent: AgentSummary): boolean {
   return getBuiltInSubagentName(agent) !== null || agent.source === "plugin";
 }
 
-function getBuiltInSubagentName(agent: AgentSummary): BuiltInSubagentName | null {
+function getBuiltInSubagentName(
+  agent: AgentSummary,
+): BuiltInSubagentName | null {
   if (!isBuiltInAgent(agent)) {
     return null;
   }
-  return agent.name === "general-purpose" || agent.name === "Explore" ? agent.name : null;
+  return agent.name === "general-purpose" || agent.name === "Explore"
+    ? agent.name
+    : null;
 }
 
 function getKnownTools(values: readonly string[] | undefined): string[] {
@@ -186,12 +207,16 @@ function mergeTools(
 
 function allowsAllTools(tools: readonly string[] | undefined): boolean {
   // 通配符 * 表示全部工具，不能按数组长度显示成 1 个工具。
-  return !tools || tools.length === 0 || tools.some((tool) => tool.trim() === "*");
+  return (
+    !tools || tools.length === 0 || tools.some((tool) => tool.trim() === "*")
+  );
 }
 
 function toPersistedModel(model: string): string | undefined {
   const trimmedModel = model.trim();
-  return trimmedModel && trimmedModel !== INHERIT_MODEL_VALUE ? trimmedModel : undefined;
+  return trimmedModel && trimmedModel !== INHERIT_MODEL_VALUE
+    ? trimmedModel
+    : undefined;
 }
 
 function toSubagentModelValue(selection: ModelSelection | undefined): string {
@@ -269,12 +294,17 @@ function isSubagentThoughtLevelAvailable(
   }
   return Boolean(
     state.option.type === "select" &&
-    state.option.options?.some((entry) => entry.value === normalizedThoughtLevel),
+      state.option.options?.some(
+        (entry) => entry.value === normalizedThoughtLevel,
+      ),
   );
 }
 
-function resolvedSubagentThoughtLevel(state: SubagentThoughtOptionState): string | undefined {
-  return state.kind === "supported" && typeof state.option.currentValue === "string"
+function resolvedSubagentThoughtLevel(
+  state: SubagentThoughtOptionState,
+): string | undefined {
+  return state.kind === "supported" &&
+    typeof state.option.currentValue === "string"
     ? state.option.currentValue
     : undefined;
 }
@@ -291,7 +321,9 @@ function isSubagentModelAvailable(
   if (modelSelectionLoading) {
     return true;
   }
-  return modelGroups.some((group) => group.items.some((item) => item.value === trimmedModel));
+  return modelGroups.some((group) =>
+    group.items.some((item) => item.value === trimmedModel),
+  );
 }
 
 function createSubagentFormInitialState(
@@ -338,7 +370,9 @@ function resolveSubagentModelLabel(params: {
   }
   // Registry 只包含当前可选模型，但历史 Subagent 配置仍需展示原模型身份，
   // 方便用户理解并修复失效配置。候选列表与保存校验继续以 Registry 为准。
-  return resolveModelDisplayName(params.modelGroups, trimmedModel) ?? trimmedModel;
+  return (
+    resolveModelDisplayName(params.modelGroups, trimmedModel) ?? trimmedModel
+  );
 }
 
 function FormFieldLabel({ children }: { children: string }) {
@@ -361,7 +395,13 @@ function AgentColorDot({ color }: { color?: AgentColor }) {
   );
 }
 
-function AgentBadge({ children, className }: { children: string; className?: string }) {
+function AgentBadge({
+  children,
+  className,
+}: {
+  children: string;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -389,14 +429,21 @@ function groupAgentsByScope(agents: readonly AgentSummary[]): AgentGroups {
 }
 
 /** 按完整插件 ID 分组，避免同名 marketplace 的子智能体互相合并。 */
-function groupPluginAgentsById(agents: readonly AgentSummary[]): Array<[string, AgentSummary[]]> {
+function groupPluginAgentsById(
+  agents: readonly AgentSummary[],
+): Array<[string, AgentSummary[]]> {
   const groups = new Map<string, AgentSummary[]>();
   for (const agent of agents) {
     const key =
-      agent.pluginId?.trim() || agent.pluginName?.trim() || agent.name.split(":", 1)[0] || "Plugin";
+      agent.pluginId?.trim() ||
+      agent.pluginName?.trim() ||
+      agent.name.split(":", 1)[0] ||
+      "Plugin";
     groups.set(key, [...(groups.get(key) ?? []), agent]);
   }
-  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  return [...groups.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
 }
 
 function ToolCheckbox({
@@ -422,7 +469,10 @@ function ToolCheckbox({
         disabled ? "cursor-not-allowed opacity-60" : "hover:bg-surface-hover",
       )}
     >
-      <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
+      <span
+        className="flex size-6 shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
         <span
           className={cn(
             "flex size-4 items-center justify-center rounded-sm border transition-colors",
@@ -438,7 +488,10 @@ function ToolCheckbox({
         {label}
       </span>
       {RISKY_TOOLS.has(label) ? (
-        <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-destructive"
+          aria-hidden="true"
+        />
       ) : null}
     </button>
   );
@@ -490,7 +543,10 @@ function AgentListRow({
   const toolCount = agent.tools?.length ?? 0;
   const toolsLabel = allowsAllTools(agent.tools)
     ? intl.formatMessage({ id: "settings.subagents.tools.all" })
-    : intl.formatMessage({ id: "settings.subagents.toolsCount" }, { count: String(toolCount) });
+    : intl.formatMessage(
+        { id: "settings.subagents.toolsCount" },
+        { count: String(toolCount) },
+      );
   const displayName =
     agent.source === "plugin" && agent.name.includes(":")
       ? agent.name.slice(agent.name.indexOf(":") + 1)
@@ -506,7 +562,9 @@ function AgentListRow({
           ? "grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_auto]"
           : "grid-cols-[auto_minmax(0,1fr)_auto]",
       )}
-      {...settingsResourceRowInteraction(rowEditable ? () => onEdit(agent) : undefined)}
+      {...settingsResourceRowInteraction(
+        rowEditable ? () => onEdit(agent) : undefined,
+      )}
     >
       <div className="relative shrink-0" aria-hidden="true">
         {pluginIconItem ? (
@@ -530,12 +588,15 @@ function AgentListRow({
 
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate text-ui-base font-medium text-foreground">{displayName}</span>
+          <span className="truncate text-ui-base font-medium text-foreground">
+            {displayName}
+          </span>
           {showModelBadge ? <AgentBadge>{modelLabel}</AgentBadge> : null}
           <AgentBadge>{toolsLabel}</AgentBadge>
         </div>
         <p className="mt-0.5 line-clamp-2 text-ui-sm text-foreground-subtle">
-          {agent.description || intl.formatMessage({ id: "settings.subagents.noDescription" })}
+          {agent.description ||
+            intl.formatMessage({ id: "settings.subagents.noDescription" })}
         </p>
       </div>
 
@@ -606,7 +667,10 @@ function SubagentModelOverrideControl({
     config: { model?: string; thoughtLevel?: string },
   ) => Promise<void>;
 }) {
-  const recommendStartPlan = useStartPlanRecommendation(modelSelectionView, "subagent");
+  const recommendStartPlan = useStartPlanRecommendation(
+    modelSelectionView,
+    "subagent",
+  );
   const { intl } = useZCodeIntl();
   const [pending, setPending] = useState(false);
   const [config, setConfig] = useState<{
@@ -625,7 +689,11 @@ function SubagentModelOverrideControl({
     id: "settings.subagents.model.select",
   });
   const value = config.model ?? INHERIT_MODEL_VALUE;
-  const modelAvailable = isSubagentModelAvailable(modelGroups, value, modelSelectionLoading);
+  const modelAvailable = isSubagentModelAvailable(
+    modelGroups,
+    value,
+    modelSelectionLoading,
+  );
   const thoughtLevelState = resolveSubagentThoughtOptionState({
     model: value,
     modelAvailable,
@@ -635,8 +703,8 @@ function SubagentModelOverrideControl({
   });
   const thoughtLevelInvalid = Boolean(
     config.thoughtLevel &&
-    modelAvailable &&
-    !isSubagentThoughtLevelAvailable(thoughtLevelState, config.thoughtLevel),
+      modelAvailable &&
+      !isSubagentThoughtLevelAvailable(thoughtLevelState, config.thoughtLevel),
   );
   // Coding Plan 连接切换后，Builtin 的旧模型可能不再属于当前候选；仅隐藏 reasoning
   // 会让用户误以为模型仍有效，因此触发器改用“选择模型”提示，候选列表仍只展示当前连接。
@@ -670,7 +738,10 @@ function SubagentModelOverrideControl({
       try {
         let selectedConfig = nextConfig;
         if (nextConfig.model && nextConfig.model !== config.model) {
-          const selection = toSubagentModelSelection(nextConfig.model, nextConfig.thoughtLevel);
+          const selection = toSubagentModelSelection(
+            nextConfig.model,
+            nextConfig.thoughtLevel,
+          );
           const chosen = selection ? await recommendStartPlan(selection) : null;
           if (!chosen) {
             setConfig(previousConfig);
@@ -693,7 +764,8 @@ function SubagentModelOverrideControl({
   );
   const handleValueChange = useCallback(
     (nextValue: string) => {
-      const nextModel = nextValue === INHERIT_MODEL_VALUE ? undefined : nextValue;
+      const nextModel =
+        nextValue === INHERIT_MODEL_VALUE ? undefined : nextValue;
       if (nextModel === config.model) {
         return;
       }
@@ -709,8 +781,10 @@ function SubagentModelOverrideControl({
         modelSelectionLoading,
         thoughtLevel:
           nextModel && modelSelectionView
-            ? completeNewModelSelection(modelSelectionView, parseModelPickerValue(nextModel))
-                ?.options?.reasoningLevel
+            ? completeNewModelSelection(
+                modelSelectionView,
+                parseModelPickerValue(nextModel),
+              )?.options?.reasoningLevel
             : undefined,
       });
       // 控件会展示 Registry 的正常默认档位，持久化必须保存同一个值，
@@ -720,7 +794,13 @@ function SubagentModelOverrideControl({
         thoughtLevel: resolvedSubagentThoughtLevel(nextThoughtState),
       });
     },
-    [config.model, modelGroups, modelSelectionLoading, modelSelectionView, persistConfig],
+    [
+      config.model,
+      modelGroups,
+      modelSelectionLoading,
+      modelSelectionView,
+      persistConfig,
+    ],
   );
   const footerActions = useMemo<ModelSelectFooterAction[]>(
     () => [
@@ -814,7 +894,10 @@ function SubagentForm({
   workspaceTabs: WorkspaceTabState[];
   onScopeKeyChange: (scopeKey: string) => void;
 }) {
-  const recommendStartPlan = useStartPlanRecommendation(modelSelectionView, "subagent");
+  const recommendStartPlan = useStartPlanRecommendation(
+    modelSelectionView,
+    "subagent",
+  );
   const { intl } = useZCodeIntl();
   const initialFormStateKey = createSubagentFormInitialStateKey(initial);
   const initialFormState = useMemo(
@@ -826,11 +909,21 @@ function SubagentForm({
   const [description, setDescription] = useState(initialFormState.description);
   const [color, setColor] = useState<AgentColor>(initialFormState.color);
   const [model, setModel] = useState(initialFormState.model);
-  const [thoughtLevel, setThoughtLevel] = useState(initialFormState.thoughtLevel);
-  const [injectAgentsMd, setInjectAgentsMd] = useState(initialFormState.injectAgentsMd);
-  const [inheritAllTools, setInheritAllTools] = useState(initialFormState.inheritAllTools);
-  const [selectedTools, setSelectedTools] = useState<string[]>(initialFormState.selectedTools);
-  const [systemPrompt, setSystemPrompt] = useState(initialFormState.systemPrompt);
+  const [thoughtLevel, setThoughtLevel] = useState(
+    initialFormState.thoughtLevel,
+  );
+  const [injectAgentsMd, setInjectAgentsMd] = useState(
+    initialFormState.injectAgentsMd,
+  );
+  const [inheritAllTools, setInheritAllTools] = useState(
+    initialFormState.inheritAllTools,
+  );
+  const [selectedTools, setSelectedTools] = useState<string[]>(
+    initialFormState.selectedTools,
+  );
+  const [systemPrompt, setSystemPrompt] = useState(
+    initialFormState.systemPrompt,
+  );
   const [nameError, setNameError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [promptError, setPromptError] = useState<string | null>(null);
@@ -847,7 +940,10 @@ function SubagentForm({
       const identity = toPersistedModel(nextModel);
       const selected =
         identity && modelSelectionView
-          ? completeNewModelSelection(modelSelectionView, parseModelPickerValue(identity))
+          ? completeNewModelSelection(
+              modelSelectionView,
+              parseModelPickerValue(identity),
+            )
           : undefined;
       setThoughtLevel(selected?.options?.reasoningLevel ?? "");
       setModelError(null);
@@ -855,7 +951,11 @@ function SubagentForm({
     [model, modelSelectionView],
   );
   const persistedModel = toPersistedModel(model);
-  const modelAvailable = isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading);
+  const modelAvailable = isSubagentModelAvailable(
+    modelSelectGroups,
+    model,
+    modelSelectionLoading,
+  );
   // 候选已明确失效时仍展示原型号会误导用户；只改触发器文案，不清空草稿或补回候选。
   // 非 ready 阶段由可用性函数保留原意图，不能把读取失败当成模型被删除。
   const modelTriggerLabel = modelAvailable
@@ -885,19 +985,19 @@ function SubagentForm({
   });
   const thoughtLevelInvalid = Boolean(
     persistedModel &&
-    thoughtLevel &&
-    modelAvailable &&
-    !isSubagentThoughtLevelAvailable(thoughtLevelState, thoughtLevel),
+      thoughtLevel &&
+      modelAvailable &&
+      !isSubagentThoughtLevelAvailable(thoughtLevelState, thoughtLevel),
   );
   const trimmedName = name.trim();
   const canSave = Boolean(
     trimmedName.length >= 3 &&
-    trimmedName.length <= 50 &&
-    /^[a-zA-Z0-9-]+$/u.test(trimmedName) &&
-    description.trim() &&
-    systemPrompt.trim() &&
-    modelAvailable &&
-    !thoughtLevelInvalid,
+      trimmedName.length <= 50 &&
+      /^[a-zA-Z0-9-]+$/u.test(trimmedName) &&
+      description.trim() &&
+      systemPrompt.trim() &&
+      modelAvailable &&
+      !thoughtLevelInvalid,
   );
   const selectedColorIndex = Math.max(0, AGENT_COLORS.indexOf(color));
 
@@ -967,7 +1067,9 @@ function SubagentForm({
       setPromptError(null);
     }
     // 不可用模型会展示为“选择模型”，保存时也必须阻止历史值被静默写回。
-    if (!isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading)) {
+    if (
+      !isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading)
+    ) {
       setModelError(
         intl.formatMessage({
           id: "settings.subagents.form.validation.modelUnavailable",
@@ -986,7 +1088,9 @@ function SubagentForm({
   const toggleTool = (tool: string) => {
     setInheritAllTools(false);
     setSelectedTools((current) =>
-      current.includes(tool) ? current.filter((item) => item !== tool) : [...current, tool],
+      current.includes(tool)
+        ? current.filter((item) => item !== tool)
+        : [...current, tool],
     );
   };
 
@@ -1023,13 +1127,18 @@ function SubagentForm({
       skills: initial?.skills,
       permissionMode: initial?.permissionMode,
       ...(initial?.maxTurns ? { maxTurns: initial.maxTurns } : {}),
-      ...(initial?.background !== undefined ? { background: initial.background } : {}),
+      ...(initial?.background !== undefined
+        ? { background: initial.background }
+        : {}),
       mcpServers: initial?.mcpServers,
     });
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border border-border p-4">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-3 rounded-xl border border-border bg-card p-4"
+    >
       <div className="flex justify-end">
         <label className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           <span className="shrink-0 text-ui-base text-foreground-subtle">
@@ -1058,7 +1167,9 @@ function SubagentForm({
               id: "settings.subagents.form.name.placeholder",
             })}
           />
-          {nameError ? <p className="text-ui-base text-destructive">{nameError}</p> : null}
+          {nameError ? (
+            <p className="text-ui-base text-destructive">{nameError}</p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <FormFieldLabel>
@@ -1087,7 +1198,12 @@ function SubagentForm({
                 className="relative z-10 flex size-6 items-center justify-center rounded-full outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => setColor(option)}
               >
-                <span className={cn("size-3.5 rounded-full", COLOR_DOT_CLASS[option])} />
+                <span
+                  className={cn(
+                    "size-3.5 rounded-full",
+                    COLOR_DOT_CLASS[option],
+                  )}
+                />
               </button>
             ))}
           </div>
@@ -1126,7 +1242,9 @@ function SubagentForm({
               onValueCommit={setThoughtLevel}
             />
           </div>
-          {modelError ? <p className="text-ui-base text-destructive">{modelError}</p> : null}
+          {modelError ? (
+            <p className="text-ui-base text-destructive">{modelError}</p>
+          ) : null}
           {thoughtLevelInvalid ? (
             <p className="text-ui-base text-destructive">
               {intl.formatMessage({
@@ -1162,7 +1280,10 @@ function SubagentForm({
           {intl.formatMessage({ id: "settings.subagents.form.tools.label" })}
         </FormFieldLabel>
         <div className="flex min-w-0 items-center gap-2">
-          <Select value={inheritAllTools ? "all" : "custom"} onValueChange={handleToolsModeChange}>
+          <Select
+            value={inheritAllTools ? "all" : "custom"}
+            onValueChange={handleToolsModeChange}
+          >
             <SelectTrigger size="lg" className="w-fit justify-between">
               <SelectValue />
             </SelectTrigger>
@@ -1217,7 +1338,9 @@ function SubagentForm({
             id: "settings.subagents.form.systemPrompt.placeholder",
           })}
         />
-        {promptError ? <p className="text-ui-base text-destructive">{promptError}</p> : null}
+        {promptError ? (
+          <p className="text-ui-base text-destructive">{promptError}</p>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-3 py-2.5">
@@ -1252,12 +1375,23 @@ function SubagentForm({
           ) : undefined
         }
       >
-        <Button type="submit" variant="default" size="lg" disabled={!canSave || saving}>
+        <Button
+          type="submit"
+          variant="default"
+          size="lg"
+          disabled={!canSave || saving}
+        >
           {saving
             ? intl.formatMessage({ id: "common.saving" })
             : intl.formatMessage({ id: "common.save" })}
         </Button>
-        <Button type="button" variant="ghost" size="lg" onClick={onCancel} disabled={saving}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          onClick={onCancel}
+          disabled={saving}
+        >
           {intl.formatMessage({ id: "common.cancel" })}
         </Button>
       </SettingsFormActions>
@@ -1272,12 +1406,20 @@ export function SubagentsSection({
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const plugins = usePluginManagementStore((state) => state.plugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
+  const availablePlugins = usePluginManagementStore(
+    (state) => state.availablePlugins,
+  );
+  const initializePlugins = usePluginManagementStore(
+    (state) => state.initialize,
+  );
   const localHostServices = useBaseWorkspaceServices();
-  const modelSelectionRead = useModelSelectionServiceView(localHostServices.modelSelectionService);
+  const modelSelectionRead = useModelSelectionServiceView(
+    localHostServices.modelSelectionService,
+  );
   const modelSelectionView =
-    modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
+    modelSelectionRead.state.status === "ready"
+      ? modelSelectionRead.state.view
+      : null;
   // 非 Ready 生命周期均保留表单中的模型意图；error/unavailable 不能被误判成模型已失效。
   const modelSelectionLoading = modelSelectionRead.state.status !== "ready";
   const tabs = useTabStore((state) => state.tabs);
@@ -1288,7 +1430,10 @@ export function SubagentsSection({
         .filter(isWorkspaceTab)
         .filter(isPluginScopeWorkspaceConnected)
         // Subagent Settings 只管理 Local Environment；远程配置浏览/编辑是独立产品能力。
-        .filter((tab) => !tab.remoteTarget && !tab.remoteSessionId && !tab.workspaceIdentity)
+        .filter(
+          (tab) =>
+            !tab.remoteTarget && !tab.remoteSessionId && !tab.workspaceIdentity,
+        )
         .filter((tab) => {
           const key = getPluginWorkspaceKey(tab);
           if (seen.has(key)) return false;
@@ -1299,7 +1444,9 @@ export function SubagentsSection({
   }, [tabs]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [capability, setCapability] = useState<AgentsCapability | null>(null);
-  const [defaultInstructionsPath, setDefaultInstructionsPath] = useState<string | null>(null);
+  const [defaultInstructionsPath, setDefaultInstructionsPath] = useState<
+    string | null
+  >(null);
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1323,7 +1470,9 @@ export function SubagentsSection({
       return resolveAgentsInstructionPath(targetWorkspacePath);
     if (defaultInstructionsPath) return defaultInstructionsPath;
     const activeWorkspacePath = workspacePath ?? "";
-    return workspaceTabs.some((tab) => tab.workspacePath === activeWorkspacePath)
+    return workspaceTabs.some(
+      (tab) => tab.workspacePath === activeWorkspacePath,
+    )
       ? resolveAgentsInstructionPath(activeWorkspacePath)
       : "";
   }, [
@@ -1349,20 +1498,25 @@ export function SubagentsSection({
     Boolean(defaultInstructionsPath) &&
     agentsInstructionFilePath === defaultInstructionsPath;
   const latestRequestIdRef = useRef(0);
-  const pluginInventoryWorkspacePath = targetWorkspacePath || workspaceTabs[0]?.workspacePath;
+  const pluginInventoryWorkspacePath =
+    targetWorkspacePath || workspaceTabs[0]?.workspacePath;
   const chatModelSelectGroups = useMemo(() => {
     if (!modelSelectionView) return [];
-    return buildRegistryModelSelectGroups(ZCODE_AGENT_PROVIDER, modelSelectionView, {
-      startPlanBadgeLabel: intl.formatMessage({
-        id: "settings.modelProvider.connectionMode.startPlanBadge",
-      }),
-      apiKeyLabel: intl.formatMessage({
-        id: "settings.modelProvider.apiKey",
-      }),
-      codingPlanLabel: intl.formatMessage({
-        id: "settings.modelProvider.connectionMode.codingPlan",
-      }),
-    });
+    return buildRegistryModelSelectGroups(
+      ZCODE_AGENT_PROVIDER,
+      modelSelectionView,
+      {
+        startPlanBadgeLabel: intl.formatMessage({
+          id: "settings.modelProvider.connectionMode.startPlanBadge",
+        }),
+        apiKeyLabel: intl.formatMessage({
+          id: "settings.modelProvider.apiKey",
+        }),
+        codingPlanLabel: intl.formatMessage({
+          id: "settings.modelProvider.connectionMode.codingPlan",
+        }),
+      },
+    );
   }, [intl, modelSelectionView]);
   const subagentModelSelectGroups = chatModelSelectGroups;
   const loadAgents = useCallback(
@@ -1376,7 +1530,8 @@ export function SubagentsSection({
           workspacePath: targetWorkspacePath ?? "",
           workspaceIdentity: targetWorkspaceIdentity,
           provider: ZCODE_AGENT_PROVIDER,
-          mode: activeScope === "user" ? "settingsUserOnly" : "allRuntimeScopes",
+          mode:
+            activeScope === "user" ? "settingsUserOnly" : "allRuntimeScopes",
         });
         if (requestId !== latestRequestIdRef.current) {
           return;
@@ -1393,10 +1548,17 @@ export function SubagentsSection({
         }
         setLoading(false);
         setRefreshing(false);
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setError(
+          loadError instanceof Error ? loadError.message : String(loadError),
+        );
       }
     },
-    [subagentsService, activeScope, targetWorkspaceIdentity, targetWorkspacePath],
+    [
+      subagentsService,
+      activeScope,
+      targetWorkspaceIdentity,
+      targetWorkspacePath,
+    ],
   );
 
   useEffect(() => {
@@ -1419,7 +1581,10 @@ export function SubagentsSection({
         if (active) await loadAgents(false);
       } catch (initializationError) {
         if (active)
-          logger.warn("[subagents] 插件资源初始化失败，保留当前列表", initializationError);
+          logger.warn(
+            "[subagents] 插件资源初始化失败，保留当前列表",
+            initializationError,
+          );
       }
     })();
     return () => {
@@ -1457,7 +1622,8 @@ export function SubagentsSection({
             oldFilePath: editingAgent.path,
             provider: ZCODE_AGENT_PROVIDER,
             scope: editingAgent.scope === "workspace" ? "workspace" : "user",
-            workspacePath: editingAgent.projectPath ?? targetWorkspacePath ?? undefined,
+            workspacePath:
+              editingAgent.projectPath ?? targetWorkspacePath ?? undefined,
             workspaceIdentity: targetWorkspaceIdentity,
           });
         } else {
@@ -1473,7 +1639,9 @@ export function SubagentsSection({
         setEditingAgent(null);
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (saveError) {
-        toast(saveError instanceof Error ? saveError.message : String(saveError));
+        toast(
+          saveError instanceof Error ? saveError.message : String(saveError),
+        );
       } finally {
         setSaving(false);
       }
@@ -1515,7 +1683,11 @@ export function SubagentsSection({
         setShowForm(false);
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (deleteError) {
-        toast(deleteError instanceof Error ? deleteError.message : String(deleteError));
+        toast(
+          deleteError instanceof Error
+            ? deleteError.message
+            : String(deleteError),
+        );
       } finally {
         setOperatingAgentId(null);
       }
@@ -1536,7 +1708,11 @@ export function SubagentsSection({
         });
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (toggleError) {
-        toast(toggleError instanceof Error ? toggleError.message : String(toggleError));
+        toast(
+          toggleError instanceof Error
+            ? toggleError.message
+            : String(toggleError),
+        );
       } finally {
         setOperatingAgentId(null);
       }
@@ -1545,22 +1721,38 @@ export function SubagentsSection({
   );
 
   const handleModelOverrideChange = useCallback(
-    async (agent: AgentSummary, config: { model?: string; thoughtLevel?: string }) => {
+    async (
+      agent: AgentSummary,
+      config: { model?: string; thoughtLevel?: string },
+    ) => {
       const agentName = getBuiltInSubagentName(agent);
       if (!agentName && agent.source !== "plugin") {
         return;
       }
       setOperatingAgentId(agent.id);
       try {
-        const modelSelection = toSubagentModelSelection(config.model, config.thoughtLevel);
+        const modelSelection = toSubagentModelSelection(
+          config.model,
+          config.thoughtLevel,
+        );
         if (agentName) {
-          await subagentsService.setBuiltInModelOverride({ agentName, modelSelection });
+          await subagentsService.setBuiltInModelOverride({
+            agentName,
+            modelSelection,
+          });
         } else {
           // 稳定 ID 不含插件版本；升级换目录后继续读取同一份用户 Selection 覆盖。
-          await subagentsService.setPluginAgentModelOverride({ agentId: agent.id, modelSelection });
+          await subagentsService.setPluginAgentModelOverride({
+            agentId: agent.id,
+            modelSelection,
+          });
         }
       } catch (changeError) {
-        toast(changeError instanceof Error ? changeError.message : String(changeError));
+        toast(
+          changeError instanceof Error
+            ? changeError.message
+            : String(changeError),
+        );
         setOperatingAgentId(null);
         throw changeError;
       }
@@ -1568,7 +1760,11 @@ export function SubagentsSection({
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (refreshError) {
         // 持久化成功即为提交点；后续投影刷新失败只能提示，不能让控件回滚磁盘状态。
-        toast(refreshError instanceof Error ? refreshError.message : String(refreshError));
+        toast(
+          refreshError instanceof Error
+            ? refreshError.message
+            : String(refreshError),
+        );
       } finally {
         setOperatingAgentId(null);
       }
@@ -1609,7 +1805,11 @@ export function SubagentsSection({
         if (agent.scope === "workspace") return false;
       } else {
         if (isBuiltInAgent(agent) || agent.scope !== "workspace") return false;
-        if (agent.source === "plugin" && agent.projectPath !== targetWorkspacePath) return false;
+        if (
+          agent.source === "plugin" &&
+          agent.projectPath !== targetWorkspacePath
+        )
+          return false;
         if (
           agent.source !== "plugin" &&
           agent.projectPath &&
@@ -1638,13 +1838,17 @@ export function SubagentsSection({
     });
   }, [activeScope, agents, query, targetWorkspacePath]);
 
-  const groupedAgents = useMemo(() => groupAgentsByScope(filteredAgents), [filteredAgents]);
+  const groupedAgents = useMemo(
+    () => groupAgentsByScope(filteredAgents),
+    [filteredAgents],
+  );
   const pluginGroups = useMemo(
     () => groupPluginAgentsById(groupedAgents.plugin),
     [groupedAgents.plugin],
   );
   const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
+    () =>
+      new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
     [availablePlugins],
   );
   const pluginIconItemById = useMemo(
@@ -1658,14 +1862,17 @@ export function SubagentsSection({
     [pluginListingById, plugins],
   );
   const filteredAgentCount =
-    groupedAgents.user.length + groupedAgents.plugin.length + groupedAgents.builtIn.length;
+    groupedAgents.user.length +
+    groupedAgents.plugin.length +
+    groupedAgents.builtIn.length;
   const currentEditingAgent = useMemo(() => {
     if (!editingAgent) {
       return null;
     }
     return agents.find((agent) => agent.id === editingAgent.id) ?? editingAgent;
   }, [agents, editingAgent]);
-  const isFormView = canManageUserAgents && (showForm || currentEditingAgent !== null);
+  const isFormView =
+    canManageUserAgents && (showForm || currentEditingAgent !== null);
 
   if (isFormView) {
     return (
@@ -1721,7 +1928,9 @@ export function SubagentsSection({
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       {items.map((agent, index) => (
         <div key={agent.id}>
-          {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
+          {index > 0 ? (
+            <div className="h-px bg-border/50" aria-hidden="true" />
+          ) : null}
           <AgentListRow
             agent={agent}
             pluginIconItem={
@@ -1730,7 +1939,10 @@ export function SubagentsSection({
                 : agent.pluginName
                   ? {
                       name: agent.pluginName,
-                      listing: resolveUniquePluginListingByName(availablePlugins, agent.pluginName),
+                      listing: resolveUniquePluginListingByName(
+                        availablePlugins,
+                        agent.pluginName,
+                      ),
                     }
                   : undefined
             }
@@ -1749,9 +1961,11 @@ export function SubagentsSection({
     </div>
   );
 
-  const hasSearchResultEmpty = Boolean(query.trim()) && filteredAgentCount === 0;
+  const hasSearchResultEmpty =
+    Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
+      {/* 页头一行：作用域 · 数量 · 搜索。 */}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1760,10 +1974,17 @@ export function SubagentsSection({
             workspaceTabs={workspaceTabs}
             onScopeKeyChange={setSelectedScopeKey}
           />
-          <div className="hidden h-4 w-px bg-border sm:block" aria-hidden="true" />
+          <div
+            className="hidden h-4 w-px bg-border sm:block"
+            aria-hidden="true"
+          />
           <div className="flex h-7 items-center gap-1 px-3 text-ui-base font-medium text-foreground">
-            <span>{intl.formatMessage({ id: "settings.subagents.title" })}</span>
-            <span className="text-ui-sm text-foreground-subtle">{filteredAgentCount}</span>
+            <span>
+              {intl.formatMessage({ id: "settings.subagents.title" })}
+            </span>
+            <span className="text-ui-sm text-foreground-subtle">
+              {filteredAgentCount}
+            </span>
           </div>
         </div>
         <SettingsSearchInput
@@ -1777,8 +1998,10 @@ export function SubagentsSection({
           })}
         />
       </div>
+
+      {/* AGENTS.md 卡片在「已安装」之上独立一行（用户口径 2026-11-22：样式不变、不缩进页头）。 */}
       {agentsInstructionFilePath ? (
-        <AgentsInstructionRow
+        <AgentsInstructionInline
           filePath={agentsInstructionFilePath}
           {...(canEditDefaultInstructions
             ? { onEdit: () => setEditingInstructions(true) }
@@ -1794,8 +2017,15 @@ export function SubagentsSection({
 
       {modelSelectionRead.state.status === "error" ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
-          <span>{intl.formatMessage({ id: "settings.subagents.modelLoadFailed" })}</span>
-          <Button type="button" variant="ghost" size="sm" onClick={modelSelectionRead.reload}>
+          <span>
+            {intl.formatMessage({ id: "settings.subagents.modelLoadFailed" })}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={modelSelectionRead.reload}
+          >
             {intl.formatMessage({ id: "common.retry" })}
           </Button>
         </div>
@@ -1810,13 +2040,21 @@ export function SubagentsSection({
       ) : null}
 
       {loading ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
+        <PluginLoadingState
+          label={intl.formatMessage({ id: "common.loading" })}
+        />
       ) : hasSearchResultEmpty ? (
-        <PluginSearchEmptyState label={intl.formatMessage({ id: "settings.subagents.empty" })} />
+        <PluginSearchEmptyState
+          label={intl.formatMessage({ id: "settings.subagents.empty" })}
+        />
       ) : (
         <div className="space-y-6">
           <section
-            className={query.trim() && groupedAgents.user.length === 0 ? "hidden" : "space-y-4"}
+            className={
+              query.trim() && groupedAgents.user.length === 0
+                ? "hidden"
+                : "space-y-4"
+            }
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <SettingsResourceGroupHeader
@@ -1826,7 +2064,9 @@ export function SubagentsSection({
                 })}
               />
               <SettingsResourceHeaderActions
-                onRefresh={() => void Promise.all([refresh(), refreshMentionStore()])}
+                onRefresh={() =>
+                  void Promise.all([refresh(), refreshMentionStore()])
+                }
                 onNew={canManageUserAgents ? handleAddNew : undefined}
                 refreshing={refreshing}
               />
@@ -1841,7 +2081,12 @@ export function SubagentsSection({
                 })}
                 actions={
                   canManageUserAgents ? (
-                    <Button type="button" variant="default" size="lg" onClick={handleAddNew}>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="lg"
+                      onClick={handleAddNew}
+                    >
                       <Plus data-icon="inline-start" aria-hidden="true" />
                       {intl.formatMessage({ id: "settings.create.action" })}
                     </Button>
@@ -1858,7 +2103,9 @@ export function SubagentsSection({
                   {
                     name: items[0]?.pluginName ?? pluginId,
                     listing:
-                      (items[0]?.pluginId ? pluginListingById.get(items[0].pluginId) : undefined) ??
+                      (items[0]?.pluginId
+                        ? pluginListingById.get(items[0].pluginId)
+                        : undefined) ??
                       resolveUniquePluginListingByName(
                         availablePlugins,
                         items[0]?.pluginName ?? pluginId,

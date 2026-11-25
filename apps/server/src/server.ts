@@ -171,7 +171,11 @@ async function main() {
       port: env.port,
     });
 
-    console.log(`@kenfutwork/server listening on http://${host}:${env.port}`);
+    // 日志如实反映实际协议：开了 TLS 就是 https/wss，不能还写 http。
+    const scheme = env.tlsCertificatePath ? "https" : "http";
+    console.log(
+      `@kenfutwork/server listening on ${scheme}://${host}:${env.port}`,
+    );
 
     /**
      * 孤儿 run 对账：**绑上端口之后**才做（见 reconcile.ts 的说明——抢不到端口的

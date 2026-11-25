@@ -29,6 +29,7 @@ for (const scenario of [
   "prompt-label",
   "preview-url",
   "file-url",
+  "plugin-token",
 ]) {
   test(`聊天链接 ${scenario} 在恶意长文本中正常结束并保留展示结果`, async () => {
     const execution = execFileAsync(

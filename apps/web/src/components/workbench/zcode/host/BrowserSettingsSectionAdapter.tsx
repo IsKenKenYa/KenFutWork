@@ -1,4 +1,3 @@
-import type { BrowserOpenTarget } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Select,
@@ -8,18 +7,15 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { Switch } from "@zui/components/ui/switch.js";
+import { toast } from "@zui/components/ui/toast.js";
 import {
   SettingsGroupCard,
   SettingsRow,
 } from "@zui/settings/SettingsPageParts.js";
 // biome-ignore lint/style/useImportType: 保留 value 导入以便 typeof 对齐原组件 props 签名（漂移即编译错）
 import { BrowserSettingsSection as OriginalBrowserSettingsSection } from "@zui-original/settings/BrowserSettingsSection.js";
-import { type ComponentProps, useId } from "react";
-import { useBrowserOpenTarget } from "./useBrowserOpenTarget.js";
-import {
-  type BrowserPermissionView,
-  useBrowserSettingsState,
-} from "./useBrowserSettingsState.js";
+import { type ComponentProps, useEffect, useState } from "react";
+import { surfaceJson } from "./surfaceApi.js";
 
 /**
  * 浏览器设置分区的宿主适配（T6）。
@@ -30,14 +26,22 @@ import {
  * - 服务端开关：GET/PUT `/api/permissions/tier`（browserControlEnabled 等，cookie 会话）；
  * - CDP 外部浏览器：`/api/browser/cdp/*`（status/connect/disconnect）；
  * - 「AI 任务默认浏览器」：localStorage `workbench:browser-open-target`
- *   （同源 iframe 共享）。
+ *   （与 web 端 markdown-renderer 读的同一份偏好，同源 iframe 共享）。
  * 旧页里「默认搜索引擎」「面板历史导入/清除」的读取方已随旧画布工作台退役，无消费方即不摆开关。
  */
+
+interface PermissionTierView {
+  browserControlEnabled: boolean;
+  browserAutoScreenshot: boolean;
+  browserHeadless: boolean;
+  browserDevtoolsReadEnabled: boolean;
+  browserEvalEnabled: boolean;
+}
 
 /** 开关行定义：key 即 PUT patch 字段，label 即行标签（一行一配置项）。 */
 const SERVER_FLAGS: ReadonlyArray<{
   key: keyof Pick<
-    BrowserPermissionView,
+    PermissionTierView,
     | "browserControlEnabled"
     | "browserAutoScreenshot"
     | "browserHeadless"
@@ -53,29 +57,163 @@ const SERVER_FLAGS: ReadonlyArray<{
   { key: "browserEvalEnabled", label: "允许 AI 在页面执行脚本" },
 ];
 
+type CdpStatus =
+  | { status: "disconnected" }
+  | { status: "connecting" }
+  | {
+      status: "connected";
+      browser: string;
+      tabs: number;
+      currentUrl: string;
+      headless: boolean;
+    }
+  | { status: "error"; message: string };
+
+type BrowserOpenTarget = "panel" | "system";
+
+const OPEN_TARGET_KEY = "workbench:browser-open-target";
 const OPEN_TARGETS: ReadonlyArray<{ value: BrowserOpenTarget; label: string }> =
   [
     { value: "panel", label: "内置浏览器" },
     { value: "system", label: "外部浏览器" },
   ];
 
+/** 可被受控启动的品牌在界面上的名字（与服务端探测的品牌一一对应）。 */
+const BROWSER_BRAND_LABELS: Record<"chrome" | "edge" | "chromium", string> = {
+  chrome: "Chrome",
+  edge: "Edge",
+  chromium: "Chromium",
+};
+
+function readOpenTarget(): BrowserOpenTarget {
+  try {
+    return window.localStorage.getItem(OPEN_TARGET_KEY) === "system"
+      ? "system"
+      : "panel";
+  } catch {
+    return "panel";
+  }
+}
+
+function readableError(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "保存失败";
+}
+
 /** 原组件 props 只为签名对齐（分区挂载点传参不变），宿主行不消费。 */
 export function BrowserSettingsSection(
   _props: ComponentProps<typeof OriginalBrowserSettingsSection>,
 ) {
-  const state = useBrowserSettingsState();
-  const { flags, cdp, toggleFlag, connectCdp, disconnectCdp } = state;
-  const cdpBusy = state.saving === "cdp";
-  const permissionsErrorId = useId();
-  const cdpErrorId = useId();
-  const openTarget = useBrowserOpenTarget();
-  const openTargetErrorId = useId();
+  const [flags, setFlags] = useState<PermissionTierView | null>(null);
+  const [cdp, setCdp] = useState<CdpStatus | null>(null);
+  const [cdpBusy, setCdpBusy] = useState(false);
+  const [openTarget, setOpenTarget] = useState<BrowserOpenTarget>("panel");
+  /**
+   * 外部浏览器品牌（用户口径 2026-11-23：要能选 Edge / Chrome）。
+   *
+   * 只列出服务端**确实探测到**的品牌——没装的给个选项等于摆假开关。
+   * 默认取第一个可用（服务端顺序是 Chrome → Edge → Chromium）。
+   */
+  const [browsers, setBrowsers] = useState<
+    Array<{ brand: "chrome" | "edge" | "chromium"; executable: string }>
+  >([]);
+  const [browserBrand, setBrowserBrand] = useState<
+    "chrome" | "edge" | "chromium"
+  >("chrome");
+
+  useEffect(() => {
+    setOpenTarget(readOpenTarget());
+    let cancelled = false;
+    // 读不到就保持关闭（宁严勿松），与旧设置页同一口径
+    surfaceJson<PermissionTierView>("/api/permissions/tier")
+      .then((view) => {
+        if (!cancelled) setFlags(view);
+      })
+      .catch(() => {});
+    surfaceJson<{ cdp: CdpStatus }>("/api/browser/cdp/status")
+      .then((payload) => {
+        if (!cancelled) setCdp(payload.cdp);
+      })
+      .catch(() => {});
+    surfaceJson<{
+      browsers: Array<{
+        brand: "chrome" | "edge" | "chromium";
+        executable: string;
+      }>;
+    }>("/api/browser/cdp/browsers")
+      .then((payload) => {
+        if (cancelled) return;
+        setBrowsers(payload.browsers);
+        const first = payload.browsers[0];
+        if (first) setBrowserBrand(first.brand);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** 服务端开关：先写库再改界面，失败回滚。 */
+  const toggleFlag = async (
+    key: (typeof SERVER_FLAGS)[number]["key"],
+    next: boolean,
+  ) => {
+    if (!flags) return;
+    setFlags({ ...flags, [key]: next });
+    try {
+      setFlags(
+        await surfaceJson<PermissionTierView>("/api/permissions/tier", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ [key]: next }),
+        }),
+      );
+    } catch (error) {
+      setFlags((current) => (current ? { ...current, [key]: !next } : current));
+      toast(readableError(error));
+    }
+  };
+
+  const connectCdp = async () => {
+    setCdpBusy(true);
+    try {
+      const payload = await surfaceJson<{ cdp: CdpStatus }>(
+        "/api/browser/cdp/connect",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brand: browserBrand }),
+        },
+      );
+      setCdp(payload.cdp);
+    } catch (error) {
+      toast(readableError(error));
+    } finally {
+      setCdpBusy(false);
+    }
+  };
+
+  const disconnectCdp = async () => {
+    setCdpBusy(true);
+    try {
+      const payload = await surfaceJson<{ cdp: CdpStatus }>(
+        "/api/browser/cdp/disconnect",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      setCdp(payload.cdp);
+    } catch (error) {
+      toast(readableError(error));
+    } finally {
+      setCdpBusy(false);
+    }
+  };
 
   const cdpDetail =
     cdp === null
-      ? state.reading
-        ? "读取中…"
-        : null
+      ? "读取中…"
       : cdp.status === "connected"
         ? `${cdp.browser} · ${cdp.tabs} 个标签`
         : cdp.status === "error"
@@ -84,67 +222,67 @@ export function BrowserSettingsSection(
 
   return (
     <div className="space-y-5">
-      {state.errors.permissions || state.errors.cdp ? (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={state.busy}
-          onClick={state.reload}
-        >
-          重新读取浏览器设置
-        </Button>
-      ) : null}
-      <section
-        className="space-y-3"
-        aria-busy={state.reading || state.saving === "permissions"}
-      >
+      <section className="space-y-3">
         <div className="text-ui-base font-medium text-foreground-subtle">
           浏览器工具
         </div>
-        {state.errors.permissions ? (
-          <p
-            id={permissionsErrorId}
-            role="alert"
-            className="text-ui-base text-destructive"
-          >
-            {state.errors.permissions}
-          </p>
-        ) : null}
-        {flags ? (
-          <SettingsGroupCard>
-            {SERVER_FLAGS.map(({ key, label }) => (
-              <SettingsRow
-                key={key}
-                label={label}
-                control={
-                  <Switch
-                    aria-label={label}
-                    aria-describedby={
-                      state.errors.permissions ? permissionsErrorId : undefined
-                    }
-                    checked={flags[key]}
-                    disabled={state.busy}
-                    onCheckedChange={(checked) => void toggleFlag(key, checked)}
-                  />
-                }
-              />
-            ))}
-          </SettingsGroupCard>
-        ) : state.reading ? (
-          <p className="text-ui-base text-foreground-subtle">读取浏览器设置…</p>
-        ) : null}
-        {state.saving === "permissions" ? (
-          <p role="status" className="text-ui-base text-foreground-subtle">
-            保存浏览器设置…
-          </p>
-        ) : null}
+        <SettingsGroupCard>
+          {SERVER_FLAGS.map(({ key, label }) => (
+            <SettingsRow
+              key={key}
+              label={label}
+              control={
+                <Switch
+                  aria-label={label}
+                  checked={flags?.[key] ?? false}
+                  disabled={flags === null}
+                  onCheckedChange={(checked) => void toggleFlag(key, checked)}
+                />
+              }
+            />
+          ))}
+        </SettingsGroupCard>
       </section>
 
-      <section className="space-y-3" aria-busy={state.reading || cdpBusy}>
+      <section className="space-y-3">
         <div className="text-ui-base font-medium text-foreground-subtle">
           外部浏览器
         </div>
         <SettingsGroupCard>
+          {/* 浏览器选择（用户口径 2026-11-23：外部浏览器只是「连接到 Chrome」，
+              要能选 Edge / Chrome 等）。只列服务端探测到的品牌，没装就不出现。 */}
+          <SettingsRow
+            label="外部浏览器"
+            control={
+              <Select
+                value={browserBrand}
+                onValueChange={(next) => {
+                  if (
+                    next === "chrome" ||
+                    next === "edge" ||
+                    next === "chromium"
+                  )
+                    setBrowserBrand(next);
+                }}
+                disabled={cdpBusy || cdp?.status === "connected"}
+              >
+                <SelectTrigger
+                  size="lg"
+                  aria-label="外部浏览器"
+                  className="w-full min-w-0 justify-between"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {browsers.map((entry) => (
+                    <SelectItem key={entry.brand} value={entry.brand}>
+                      {BROWSER_BRAND_LABELS[entry.brand]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          />
           <SettingsRow
             label="连接状态"
             control={
@@ -153,9 +291,9 @@ export function BrowserSettingsSection(
                   type="button"
                   size="lg"
                   variant="outline"
-                  disabled={state.busy}
-                  aria-describedby={state.errors.cdp ? cdpErrorId : undefined}
+                  disabled={cdpBusy}
                   onClick={() => void disconnectCdp()}
+                  className="w-24 shrink-0 bg-input"
                 >
                   断开
                 </Button>
@@ -163,11 +301,12 @@ export function BrowserSettingsSection(
                 <Button
                   type="button"
                   size="lg"
-                  disabled={state.busy || cdp === null}
-                  aria-describedby={state.errors.cdp ? cdpErrorId : undefined}
+                  variant="outline"
+                  disabled={cdpBusy || cdp === null}
                   onClick={() => void connectCdp()}
+                  className="w-24 shrink-0 bg-input"
                 >
-                  {cdpBusy ? "连接中…" : "连接到 Chrome"}
+                  {cdpBusy ? "连接中…" : "连接"}
                 </Button>
               )
             }
@@ -180,15 +319,6 @@ export function BrowserSettingsSection(
             }
           />
         </SettingsGroupCard>
-        {state.errors.cdp ? (
-          <p
-            id={cdpErrorId}
-            role="alert"
-            className="text-ui-base text-destructive"
-          >
-            {state.errors.cdp}
-          </p>
-        ) : null}
       </section>
 
       <section className="space-y-3">
@@ -200,25 +330,23 @@ export function BrowserSettingsSection(
             label="AI 任务默认浏览器"
             control={
               <Select
-                value={openTarget.value ?? ""}
-                disabled={openTarget.value === null}
+                value={openTarget}
                 onValueChange={(next) => {
                   if (next !== "panel" && next !== "system") return;
-                  openTarget.save(next);
+                  setOpenTarget(next);
+                  try {
+                    window.localStorage.setItem(OPEN_TARGET_KEY, next);
+                  } catch {
+                    // 存储失败不阻塞设置
+                  }
                 }}
               >
                 <SelectTrigger
                   size="lg"
                   aria-label="AI 任务默认浏览器"
-                  aria-describedby={
-                    openTarget.error ? openTargetErrorId : undefined
-                  }
-                  aria-invalid={Boolean(openTarget.error)}
                   className="w-full min-w-0 justify-between"
                 >
-                  <SelectValue
-                    placeholder={openTarget.error ? "未读取" : "读取中…"}
-                  />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {OPEN_TARGETS.map((target) => (
@@ -231,26 +359,6 @@ export function BrowserSettingsSection(
             }
           />
         </SettingsGroupCard>
-        {openTarget.error ? (
-          <div className="space-y-2">
-            <p
-              id={openTargetErrorId}
-              role="alert"
-              className="text-ui-base text-destructive"
-            >
-              {openTarget.error}
-            </p>
-            {openTarget.value === null ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={openTarget.reload}
-              >
-                重新读取默认浏览器
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
       </section>
     </div>
   );

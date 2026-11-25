@@ -195,6 +195,27 @@
       "status": "active",
       "note": "CORS 允许来源"
     },
+    "KENFUTWORK_TLS_CERT_PATH": {
+      "surface": "server",
+      "readers": ["apps/server/src/config/env.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "自托管/局域网部署的 TLS 证书路径；与 KENFUTWORK_TLS_KEY_PATH 成对配置才启用 HTTPS（含 wss），只配一项启动期报错。桌面与本机回环形态不需要"
+    },
+    "KENFUTWORK_TLS_KEY_PATH": {
+      "surface": "server",
+      "readers": ["apps/server/src/config/env.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "自托管/局域网部署的 TLS 私钥路径；必须与 KENFUTWORK_TLS_CERT_PATH 成对配置，含密钥语义不进 .env.example 的示例值"
+    },
+    "KENFUTWORK_TLS_DISABLED": {
+      "surface": "server",
+      "readers": ["apps/server/src/config/env.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "显式声明 TLS 由外层反向代理终结，允许自托管/云端形态以明文启动（默认要求配置证书）"
+    },
     "NEXT_PUBLIC_SERVER_BASE_URL": {
       "surface": "web",
       "readers": [

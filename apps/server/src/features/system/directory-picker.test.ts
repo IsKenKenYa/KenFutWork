@@ -33,6 +33,40 @@ describe("原生目录对话框命令", () => {
     // 回归锁：WinForms 的旧版「浏览文件夹」树形框不得回来（5.1 下 AutoUpgrade
     // 实测不升级到现代对话框，用户要的是资源管理器那种）
     expect(script).not.toContain("FolderBrowserDialog");
+    /**
+     * 回归锁（用户口径 2026-11-23「打开文件夹一直不能用，不弹原生对话框」）：
+     *
+     * 1) 两个 COM 接口必须是 `public`。`FolderDialog.Pick` 是 public 且以它们为
+     *    参数/局部类型，`internal` 会触发 C# 的「一致性可访问性」编译错误
+     *    （PowerShell 把它显示成误导性的「名称 FileSystemPath 不存在」），
+     *    编译失败后 Pick 抛 TypeNotFound，前端就一直等一个不出现的对话框。
+     * 2) 必须 `-ErrorAction Stop`：旧版 Add-Type 编译失败不抛异常，脚本会继续
+     *    往下跑到 Pick；没有这一句，编译回归会再次表现为「点了没反应」。
+     */
+    expect(script).not.toContain("internal interface");
+    expect(script).toContain("public interface IFileDialogVtable");
+    expect(script).toContain("public interface IShellItem");
+    expect(script).toContain("$ErrorActionPreference = 'Stop'");
+    expect(script).toContain("Add-Type -TypeDefinition $cs -ErrorAction Stop");
+    /**
+     * 回归锁（用户口径 2026-11-23「没有显示到顶层 / UI 老旧」）：
+     *
+     * 1) `EnableVisualStyles()` 必须调用——PowerShell 5.1 宿主默认没有
+     *    Common-Controls v6 激活上下文，IFileDialog 会退回 Vista 时代的经典灰框。
+     * 2) owner 窗体必须**可见**且置顶：早先用 `Opacity = 0` 的隐形窗体当 owner，
+     *    对话框被挂到不可见窗口上，拿不到前台焦点也不会被提升到顶层。
+     */
+    expect(script).toContain("EnableVisualStyles()");
+    expect(script).toContain("FormBorderStyle = 'None'");
+    expect(script).toContain("$owner.Activate()");
+    expect(script).not.toContain("$owner.Opacity = 0");
+    /**
+     * owner 必须**移出屏幕**：它是 1×1 的可见窗体（可见才能让对话框拿到前台焦点
+     * 与置顶），但停在屏幕内会在左上角露出一个小方块（用户反馈
+     * 「为什么有一个莫名其妙的方块」）。-32000 是 Windows 约定的屏幕外坐标。
+     */
+    expect(script).toContain("Point(-32000, -32000)");
+    expect(script).not.toContain("StartPosition = 'CenterScreen'");
   });
 
   it("macOS 用 osascript 的 choose folder", () => {

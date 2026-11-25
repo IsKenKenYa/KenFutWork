@@ -1,5 +1,5 @@
 import type { AppUsageRange } from "@zcode/shared";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { formatCompactTokenNumber } from "@zui/lib/tokenNumberFormat.js";
 
 export const RANGE_OPTIONS: AppUsageRange[] = ["7d", "30d"];
@@ -22,11 +22,16 @@ export function formatCompactTokenUsage(locale: string, value: number): string {
   return formatCompactTokenNumber(locale, value);
 }
 
-export function formatSummaryCompactTokenUsage(locale: string, value: number): string {
+export function formatSummaryCompactTokenUsage(
+  locale: string,
+  value: number,
+): string {
   const formatted = formatCompactTokenUsage(locale, value);
 
   // 通用紧凑格式会把中文单位直接贴在数字后；摘要卡片与相邻的时长、天数指标统一保留单位间距。
-  return locale.startsWith("zh") ? formatted.replace(/(?<=\d)(?=[万亿])/u, " ") : formatted;
+  return locale.startsWith("zh")
+    ? formatted.replace(/(?<=\d)(?=[万亿])/u, " ")
+    : formatted;
 }
 
 export function formatPercent(locale: string, value: number): string {
@@ -84,14 +89,29 @@ export function resolveModelLabel(
   intl: ReturnType<typeof useZCodeIntl>["intl"],
   modelId: string | null,
 ): string {
-  return modelId?.trim() || intl.formatMessage({ id: "settings.usage.unknownModel" });
+  return (
+    modelId?.trim() || intl.formatMessage({ id: "settings.usage.unknownModel" })
+  );
 }
 
-export function UsageEmptyState({ title, description }: { title: string; description: string }) {
+/**
+ * 空态卡：与设置页其它卡片同一张白卡（用户口径 2026-11-22）。
+ *
+ * 虚线边框保留——它表达「这里还没有数据」，底色与实心卡片一致。
+ */
+export function UsageEmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
+    <div className="rounded-xl border border-dashed border-border bg-card px-4 py-10 text-center">
       <div className="text-ui-base font-medium text-foreground">{title}</div>
-      <div className="mt-2 text-ui-base text-foreground-subtle">{description}</div>
+      <div className="mt-2 text-ui-base text-foreground-subtle">
+        {description}
+      </div>
     </div>
   );
 }

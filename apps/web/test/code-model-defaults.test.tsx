@@ -160,11 +160,51 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
   ).toContain("网关2");
 });
 
-it("权限设置展示新会话默认档，不提供独立审批模型下拉框", async () => {
+it("权限页只保留基础配置与规则与放行两组，必备项都在", async () => {
   openDefaults(false, true);
-  expect(await screen.findByText("新会话默认档")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "默认档" })).toBeTruthy();
-  expect(screen.queryByRole("combobox", { name: "帮我批准模型" })).toBeNull();
+  // 用户口径（2026-11-22）：权限页只保留这两个小标题，其余分组全部移除。
+  const headings = (await screen.findAllByRole("heading", { level: 3 })).map(
+    (node) => node.textContent?.trim(),
+  );
+  expect(headings).toEqual(["基础配置", "规则与放行"]);
+
+  // 基础配置必备项，以及它们各自的控件。
+  expect(screen.getByRole("combobox", { name: "常规任务档位" })).toBeTruthy();
+  // 布尔项改用开关（与浏览器控制页同一个 Switch）。
+  expect(screen.getByRole("switch", { name: "沙箱隔离" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "自动备份" })).toBeTruthy();
+  expect(screen.getByLabelText("删除模式")).toBeTruthy();
+  expect(screen.getByLabelText("命令执行前审查")).toBeTruthy();
+  expect(screen.getByLabelText("备份保留上限")).toBeTruthy();
+
+  // 规则与放行：放行策略 + 四组规则「编辑」入口。
+  expect(screen.getByLabelText("放行策略")).toBeTruthy();
+  for (const label of [
+    "编辑工具规则",
+    "编辑文件路径规则",
+    "编辑命令规则",
+    "编辑网络规则",
+  ]) {
+    expect(screen.getByRole("button", { name: label })).toBeTruthy();
+  }
+  // 网络组里的两个协议开关在「编辑网络规则」弹窗内，主页面只有入口。
+  await userEvent.click(screen.getByRole("button", { name: "编辑网络规则" }));
+  expect(await screen.findByRole("switch", { name: "HTTP 放行" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "SSL 证书校验" })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+  // 不再有「保存规则」按钮：各控件改完即提交。
+  expect(screen.queryByRole("button", { name: "保存规则" })).toBeNull();
+  expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+
+  // 被移除的分组不再出现。
+  for (const removed of [
+    "自动化任务档位",
+    "帮我批准模型",
+    "敏感保护",
+    "审计中心",
+  ]) {
+    expect(screen.queryByLabelText(removed)).toBeNull();
+  }
 });
 
 it("帮我批准独立选择启用对话模型，切回人工审批仍保留对话选择", async () => {

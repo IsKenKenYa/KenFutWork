@@ -111,8 +111,12 @@ describe("夜间模式视觉", () => {
     expect(tsx).toContain('data-v4-draft-logo="outline"');
     expect(tsx).not.toContain('data-v4-draft-logo="dark"');
     expect(tsx).not.toContain("brightness-0 invert");
-    expect(tsx).toContain("feMorphology");
-    expect(tsx).toContain('floodColor="currentColor"');
+    // 2026-11-24 起改用整条轮廓提取的矢量路径 + 常量描边：有 strokeWidth 与 path，
+    // 注释里保留「为什么弃用 feMorphology」的历史说明。
+    expect(tsx).toContain("strokeWidth");
+    expect(tsx).toContain("<path");
+    expect(tsx).toContain('stroke="currentColor"');
+    expect(tsx).not.toContain("<filter");
 
     const css = source("components/workbench/zcode/styles.css");
     expect(css).toContain('[data-v4-draft-logo="outline"]');

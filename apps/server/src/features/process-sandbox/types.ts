@@ -249,6 +249,16 @@ export interface ProcessSandboxOptions {
    * PATH 决定「找得到」，readRoots 决定「跑得起来」——只给后者时 `python` 按名字找不到。
    */
   runtimePathAdditions?: readonly string[];
+  /**
+   * 运行期过滤随包运行时（设置 → 权限 → 内置运行时）。
+   *
+   * 返回 `allowed: false` 时，这次 Task 的沙箱**不前置随包运行的 bin 目录、也不授权它们的读根**，
+   * 命令只能用宿主自带的运行时（或都没有）。缺省视为允许，与改造前一致。
+   * 每次建立 Task 连接时调用一次：设置是运行期可改的，新命令要按新设置走。
+   */
+  resolveBundledRuntimes?: (
+    scope: CodeExecutionScope,
+  ) => Promise<{ allowed: boolean }>;
   onSnapshot?: (snapshot: ManagedProcessSnapshot) => void;
 }
 

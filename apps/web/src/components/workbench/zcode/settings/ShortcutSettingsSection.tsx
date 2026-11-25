@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
 import {
-  SHORTCUT_COMMANDS,
   getDefaultShortcutBindings,
+  SHORTCUT_COMMANDS,
   type ShortcutCommandId,
 } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { toast } from "@zui/components/ui/toast.js";
-import { useConfirmDialogStore } from "@zui/store/confirmDialogStore.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
+import {
+  resolveEffectiveShortcutBindings,
+  setShortcutRecordingActive,
+} from "@zui/shortcuts/bindings.js";
 import {
   buildShortcutOverridesAfterAppend,
   buildShortcutOverridesAfterSteal,
@@ -20,11 +21,13 @@ import {
   isSamePhysicalBinding,
 } from "@zui/shortcuts/conflicts.js";
 import { formatShortcutBindingLabel } from "@zui/shortcuts/label.js";
+import { useConfirmDialogStore } from "@zui/store/confirmDialogStore.js";
+import { RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  resolveEffectiveShortcutBindings,
-  setShortcutRecordingActive,
-} from "@zui/shortcuts/bindings.js";
-import { ShortcutBindingRow, type RecordingState } from "./ShortcutBindingRow.js";
+  type RecordingState,
+  ShortcutBindingRow,
+} from "./ShortcutBindingRow.js";
 import { ShortcutSearchBar } from "./ShortcutSearchBar.js";
 import { useShortcutKeySearch } from "./useShortcutKeySearch.js";
 import { useShortcutRecording } from "./useShortcutRecording.js";
@@ -36,7 +39,11 @@ import { useShortcutRecording } from "./useShortcutRecording.js";
  * 单行多绑定：一个命令一行，多组键帽在键位列纵向排列；每条可替换/删除，
  * 命令级「+」追加；同命令物理等价重复在录制入口拒绝。
  */
-export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boolean }) {
+export function ShortcutSettingsSection({
+  isDesktop = false,
+}: {
+  isDesktop?: boolean;
+}) {
   const { intl } = useZCodeIntl();
   const { settings, update } = useSettings();
   const platform = usePlatform();
@@ -46,7 +53,10 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   const savingRef = useRef(false);
 
   const overrides = settings?.shortcutBindings;
-  const effective = useMemo(() => resolveEffectiveShortcutBindings(overrides), [overrides]);
+  const effective = useMemo(
+    () => resolveEffectiveShortcutBindings(overrides),
+    [overrides],
+  );
   const commandLabel = useCallback(
     (commandId: ShortcutCommandId) =>
       intl.formatMessage({ id: `settings.shortcuts.command.${commandId}` }),
@@ -59,7 +69,8 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     const keyBinding = keySearch.binding;
     return SHORTCUT_COMMANDS.filter((entry) => {
       // 这些快捷键保留注册和冲突检测，但不在用户可见列表中展示。
-      if (entry.id === "openOnboarding" || entry.id === "toggleInterfaceMode") return false;
+      if (entry.id === "openOnboarding" || entry.id === "toggleInterfaceMode")
+        return false;
       const matchesText =
         !keyword ||
         entry.id.toLowerCase().includes(keyword) ||
@@ -68,32 +79,52 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       // 与「这组键占了谁」的冲突提示看到的是同一张表。
       const matchesKey =
         keyBinding === null ||
-        (effective[entry.id] ?? []).some((binding) => isSamePhysicalBinding(binding, keyBinding));
+        (effective[entry.id] ?? []).some((binding) =>
+          isSamePhysicalBinding(binding, keyBinding),
+        );
       return matchesText && matchesKey;
     });
   }, [commandLabel, effective, keySearch.binding, query]);
 
+  /**
+   * 落盘快捷键覆盖。
+   *
+   * 串行化而不是「忙着就丢弃」：上一次保存还没回来时用户又按了删除/改键，
+   * 直接 return 会把这次修改静默丢掉——界面看着没反应（实测「删了不从列表消失、
+   * 编辑不生效」就是这个原因）。这里把最新一次意图记下来，当前保存结束后立刻重放。
+   */
+  const pendingBindingsRef = useRef<Record<string, string[]> | null>(null);
   const persistBindings = useCallback(
     async (next: Record<string, string[]>) => {
       if (savingRef.current) {
+        pendingBindingsRef.current = next;
         return;
       }
       savingRef.current = true;
       try {
         await update({ shortcutBindings: next });
       } catch (error) {
-        logger.error("[shortcuts] 保存快捷键绑定失败", { error: String(error) });
+        logger.error("[shortcuts] 保存快捷键绑定失败", {
+          error: String(error),
+        });
       } finally {
         savingRef.current = false;
       }
+      const queued = pendingBindingsRef.current;
+      pendingBindingsRef.current = null;
+      if (queued) await persistBindingsRef.current(queued);
     },
     [update],
   );
+  const persistBindingsRef = useRef(persistBindings);
+  persistBindingsRef.current = persistBindings;
 
   /** 追加一条（占位行录第一条也走这里：生效列表为空时等价于写入第一条）。 */
   const appendBinding = useCallback(
     (commandId: ShortcutCommandId, binding: string) => {
-      void persistBindings(buildShortcutOverridesAfterAppend(overrides, commandId, binding));
+      void persistBindings(
+        buildShortcutOverridesAfterAppend(overrides, commandId, binding),
+      );
     },
     [overrides, persistBindings],
   );
@@ -102,7 +133,12 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   const replaceBindingAt = useCallback(
     (commandId: ShortcutCommandId, bindingIndex: number, binding: string) => {
       void persistBindings(
-        buildShortcutOverridesWithBindingAt(overrides, commandId, bindingIndex, binding),
+        buildShortcutOverridesWithBindingAt(
+          overrides,
+          commandId,
+          bindingIndex,
+          binding,
+        ),
       );
     },
     [overrides, persistBindings],
@@ -115,10 +151,15 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
    */
   const stealBinding = useCallback(
     (commandId: ShortcutCommandId, binding: string) => {
-      const next = buildShortcutOverridesAfterSteal(overrides, commandId, binding, {
-        mode: recording?.mode,
-        bindingIndex: recording?.bindingIndex,
-      });
+      const next = buildShortcutOverridesAfterSteal(
+        overrides,
+        commandId,
+        binding,
+        {
+          mode: recording?.mode,
+          bindingIndex: recording?.bindingIndex,
+        },
+      );
       void persistBindings(next);
     },
     [overrides, persistBindings, recording],
@@ -145,9 +186,14 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       }
       const defaultBinding = getDefaultShortcutBindings(commandId)[0];
       if (defaultBinding) {
-        const conflict = checkShortcutBindingConflict(commandId, defaultBinding, overrides, {
-          menuChannelReserved: !isDesktop,
-        });
+        const conflict = checkShortcutBindingConflict(
+          commandId,
+          defaultBinding,
+          overrides,
+          {
+            menuChannelReserved: !isDesktop,
+          },
+        );
         if (conflict?.kind === "occupied" && conflict.ownerCommandId) {
           toast(
             intl.formatMessage(
@@ -166,14 +212,20 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   );
 
   // 「全部恢复默认」是破坏性操作（清空全部自定义键位覆盖），复用全局确认弹窗（Promise 式）防一键误触
-  const requestConfirmation = useConfirmDialogStore((state) => state.requestConfirmation);
+  const requestConfirmation = useConfirmDialogStore(
+    (state) => state.requestConfirmation,
+  );
   const resetAll = useCallback(async () => {
     if (!overrides || Object.keys(overrides).length === 0) {
       return;
     }
     const confirmed = await requestConfirmation({
-      title: intl.formatMessage({ id: "settings.shortcuts.resetAllConfirmTitle" }),
-      description: intl.formatMessage({ id: "settings.shortcuts.resetAllConfirmDescription" }),
+      title: intl.formatMessage({
+        id: "settings.shortcuts.resetAllConfirmTitle",
+      }),
+      description: intl.formatMessage({
+        id: "settings.shortcuts.resetAllConfirmDescription",
+      }),
     });
     if (confirmed) {
       void persistBindings({});
@@ -220,11 +272,13 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
         // 与行内录制互斥：武装前取消进行中的录制，两套 window capture 监听不并存
         onArmKeySearch={() => setRecording(null)}
         actions={
+          // 白底描边按钮（用户口径：与设置页卡片同一套白底，不要透明底）。
           <Button
             variant="outline"
             onClick={resetAll}
             disabled={!overrides || Object.keys(overrides).length === 0}
             data-testid="settings-shortcut-reset-all"
+            className="border-border bg-card hover:bg-surface-hover"
           >
             <RotateCcw className="mr-2 size-4" />
             {intl.formatMessage({ id: "settings.shortcuts.resetAll" })}
@@ -232,12 +286,26 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
         }
       />
 
-      <div className="overflow-hidden rounded-xl border border-border">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] bg-card px-4 py-3 text-ui-sm text-foreground-subtle">
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderCommand" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderBinding" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderScope" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderActions" })}</span>
+          <span>
+            {intl.formatMessage({
+              id: "settings.shortcuts.columnHeaderCommand",
+            })}
+          </span>
+          <span>
+            {intl.formatMessage({
+              id: "settings.shortcuts.columnHeaderBinding",
+            })}
+          </span>
+          <span>
+            {intl.formatMessage({ id: "settings.shortcuts.columnHeaderScope" })}
+          </span>
+          <span>
+            {intl.formatMessage({
+              id: "settings.shortcuts.columnHeaderActions",
+            })}
+          </span>
         </div>
         {visibleCommands.map((entry) => (
           <ShortcutBindingRow

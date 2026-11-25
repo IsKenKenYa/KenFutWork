@@ -6,12 +6,9 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import type { LocalAccessVerifier } from "../local-access/types.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { listAvailableBrowsers } from "./cdp-client.js";
 import { createCdpBrowserSession } from "./cdp-session.js";
-import {
-  type BrowserService,
-  createBrowserService,
-  fetchPageSnapshot,
-} from "./fetch-page.js";
+import { type BrowserService, createBrowserService } from "./fetch-page.js";
 import {
   createViewTicketStore,
   MJPEG_CONTENT_TYPE,
@@ -46,7 +43,6 @@ export function createBrowserPlugin(): PluginDefinition {
           return ctx.tryGet("blob");
         },
       });
-      ctx.register("browser", () => createBrowserService(cdp));
       // 权限设置在调用时读（注册期可能还没装配 permissions；且开关是运行期可改的）
       const kernelCtx: PluginContext = ctx;
 
@@ -58,6 +54,39 @@ export function createBrowserPlugin(): PluginDefinition {
           );
         }
       };
+      /**
+       * 网络安全裁决器：读当前权限设置里的域名规则。
+       *
+       * 每次调用都重新取（设置是运行期可改的），未装配 permissions 时返回 undefined，
+       * 抓取按原行为继续。
+       */
+      const hostPolicyFor = () => {
+        const permissions = kernelCtx.tryGet("permissions");
+        if (!permissions) return undefined;
+        return (url: URL) => {
+          const decision = permissions.checkUrlPolicy(url.toString());
+          return decision?.decision === "allow"
+            ? ({ decision: "allow" } as const)
+            : decision
+              ? ({
+                  decision: "deny",
+                  reason:
+                    decision.reason ??
+                    `${url.hostname} 被网络安全规则拒绝，请到「设置 → 权限 → 网络安全」调整。`,
+                } as const)
+              : undefined;
+        };
+      };
+      ctx.register("browser", () =>
+        createBrowserService(
+          cdp,
+          (url) => hostPolicyFor()?.(url),
+          // 「SSL 证书校验」：关掉后抓取自签/内网站点不校验证书链。
+          () =>
+            kernelCtx.tryGet("permissions")?.getSettings().policy.networkPolicy
+              ?.tlsVerification !== false,
+        ),
+      );
       /**
        * 「允许 AI 读取开发者工具数据」门控（默认开，设置 → 浏览器）。
        * 关掉时工具**如实拒绝**并指路，不静默返回空结果——空结果会被模型当「页面没问题」。
@@ -133,7 +162,8 @@ export function createBrowserPlugin(): PluginDefinition {
           const url = String(args.url ?? "").trim();
           if (!url) throw new Error("browser_open 需要 url 参数");
           const mode = String(args.mode ?? "both");
-          const snapshot = await fetchPageSnapshot(url);
+          // 与 browser 服务同一出口：网络安全规则在那里统一裁决。
+          const snapshot = await kernelCtx.get("browser").snapshot(url);
           return {
             url: snapshot.url,
             title: snapshot.title,
@@ -508,6 +538,17 @@ export function registerBrowserRoutes(
     return reply.code(200).send({ cdp: { ...status, responsive } });
   });
 
+  /**
+   * 本机可用的外部浏览器（用户口径 2026-11-23：外部浏览器要能选 Edge / Chrome）。
+   *
+   * 只列出**确实安装**的品牌，前端据此决定哪些选项可选；一个都没有时前端如实说明。
+   */
+  app.get("/api/browser/cdp/browsers", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    return reply.code(200).send({ browsers: listAvailableBrowsers() });
+  });
+
   app.post("/api/browser/cdp/connect", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
@@ -515,12 +556,21 @@ export function registerBrowserRoutes(
      * 无头与否：默认读设置（「设置 → 浏览器 → 通用」）。右栏面板会显式传 `true`——
      * 面板里看的就是这个浏览器的画面，再弹一个窗口出来纯属多余（用户口径：「不要跳转外部」）。
      */
-    const body = (request.body ?? {}) as { headless?: unknown };
+    const body = (request.body ?? {}) as {
+      headless?: unknown;
+      brand?: unknown;
+    };
     const headless =
       typeof body.headless === "boolean"
         ? body.headless
         : (options.settingsForHeadless?.() ?? false);
-    const status = await options.browser.cdp.connect({ headless });
+    const brand =
+      body.brand === "chrome" ||
+      body.brand === "edge" ||
+      body.brand === "chromium"
+        ? body.brand
+        : undefined;
+    const status = await options.browser.cdp.connect({ headless, brand });
     return reply
       .code(status.status === "connected" ? 200 : 502)
       .send({ cdp: status });

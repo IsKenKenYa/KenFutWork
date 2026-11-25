@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import type { BlobStore } from "../blob/types.js";
 import {
   ackScreencastFrame,
+  type BrowserBrand,
   type CdpClient,
   CdpError,
   captureScreenshot,
@@ -155,6 +156,8 @@ export interface CdpBrowserSession {
     port?: number;
     profileDir?: string;
     executable?: string;
+    /** 按品牌启动（Edge / Chrome / Chromium）；省略则用找到的第一个。 */
+    brand?: BrowserBrand | undefined;
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
   /**
@@ -647,13 +650,22 @@ export function createCdpBrowserSession(deps: {
       state = { status: "connecting" };
       const headless = options.headless ?? false;
       try {
+        // 指定了品牌就按品牌找（用户选了 Edge 就不能悄悄起 Chrome）；
+        // 只给路径时优先用路径。都没有才退回「找到的第一个」。
         const executable =
           options.executable ??
-          (deps.findExecutable ?? findBrowserExecutable)(undefined);
+          (deps.findExecutable ?? findBrowserExecutable)(
+            undefined,
+            options.brand,
+          );
         if (!executable) {
           throw new CdpError(
             "chrome_not_found",
-            "没找到 Chrome / Edge / Chromium。请安装其一，或用 KENFUTWORK_CHROME_PATH 指定可执行文件路径。",
+            options.brand === "edge"
+              ? "没找到 Edge。请安装，或用 KENFUTWORK_CHROME_PATH 指定可执行文件路径。"
+              : options.brand === "chrome"
+                ? "没找到 Chrome。请安装，或用 KENFUTWORK_CHROME_PATH 指定可执行文件路径。"
+                : "没找到 Chrome / Edge / Chromium。请安装其一，或用 KENFUTWORK_CHROME_PATH 指定可执行文件路径。",
           );
         }
         const port = options.port ?? CDP_DEFAULT_PORT;

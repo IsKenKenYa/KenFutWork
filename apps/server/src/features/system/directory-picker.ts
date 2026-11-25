@@ -64,8 +64,14 @@ namespace KenFutWork {
   // 跳飞（实测漏 4 个槽时 SetTitle 落到 GetCurrentSelection 上返回 E_FAIL，
   // SetClientGuid 落到 AddPlace 上直接 0xC0000005）。
   // 用不到的槽按指针/整数的等价签名占位，只为把方法表撑对。
+  //
+  // 接口必须是 public：FolderDialog.Pick 是 public 且以这些接口为参数与局部类型，
+  // internal 会触发 C# 的「一致性可访问性」错误。而 PowerShell 的 CodeDom 编译器
+  // 把这个错误显示成误导性的「当前上下文中不存在名称 FileSystemPath」，
+  // 加上旧版 Add-Type 不抛异常，脚本继续往下跑、Pick 永远 TypeNotFound，
+  // 前端就一直等一个永远不会出现的对话框——这就是「打开文件夹一直不能用」的真因。
   [ComImport, Guid("d57c7288-d4ad-4768-be02-9d969532d960"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  internal interface IFileDialogVtable {
+  public interface IFileDialogVtable {
     [PreserveSig] int Show(IntPtr hwndOwner);
     [PreserveSig] int SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
     [PreserveSig] int SetFileTypeIndex(uint iFileType);
@@ -93,7 +99,7 @@ namespace KenFutWork {
   }
 
   [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  internal interface IShellItem {
+  public interface IShellItem {
     [PreserveSig] int BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
     [PreserveSig] int GetParent(out IShellItem parent);
     [PreserveSig] int GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
@@ -129,12 +135,29 @@ namespace KenFutWork {
   }
 }
 '@
-Add-Type -TypeDefinition $cs
+# 编译失败必须当场退出：旧版 Add-Type 只把错误写进错误流、脚本继续往下跑，
+# 于是 Pick 抛 TypeNotFound，前端等一个永远不出现的对话框（这一条就是 bug 本体）。
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition $cs -ErrorAction Stop
+# 现代视觉样式（用户反馈「UI 老旧」）：
+# PowerShell 5.1 宿主默认没有 Common-Controls v6 的激活上下文，IFileDialog 会渲染成
+# Vista 时代的经典灰框（无现代圆角/浅色标题栏）。显式启用视觉样式后，
+# 对话框与资源管理器一致（返回 ClientAndNonClientAreasEnabled）。
+[System.Windows.Forms.Application]::EnableVisualStyles()
+# owner 必须是**可见**窗体：Opacity=0 的隐形窗体做 owner 时，对话框会被挂到不可见
+# 窗口上，既拿不到前台焦点、也不会被提升到顶层（用户反馈「没有显示到顶层」）。
+# 但 1×1 的可见窗体在屏幕左上角会露出一个小方块（用户反馈「有个莫名其妙的方块」），
+# 所以把它放到所有屏幕之外：仍然可见（满足 owner 条件），但一个像素都不落在桌面里。
 $owner = New-Object System.Windows.Forms.Form
-$owner.TopMost = $true
+$owner.FormBorderStyle = 'None'
 $owner.ShowInTaskbar = $false
-$owner.Opacity = 0
+$owner.TopMost = $true
+$owner.StartPosition = 'Manual'
+$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
+$owner.Size = New-Object System.Drawing.Size(1, 1)
 $owner.Show()
+$owner.Activate()
+[System.Windows.Forms.Application]::DoEvents()
 $picked = [KenFutWork.FolderDialog]::Pick($owner.Handle, '选择文件夹')
 $owner.Close()
 if ($picked) { [Console]::Out.Write($picked) }`;

@@ -63,6 +63,18 @@ export interface CheckpointRepository {
     taskId: string,
     createdAt: string,
   ): Promise<CheckpointRow | null>;
+  /**
+   * 保留上限裁剪：只留最近 `keep` 行，返回被删掉的行。
+   *
+   * 与 `listByTask` 同一排序（createdAt 升序）；删的是**最旧**的那些。
+   * 影子仓库里的提交不在这里删——那是只读历史，删记录不会让文件「找不回」，
+   * 但会让时间线不再列出它们，这正是「保留上限」要表达的意思。
+   */
+  prune(
+    instanceId: string,
+    taskId: string,
+    keep: number,
+  ): Promise<CheckpointRow[]>;
 }
 
 const CHECKPOINT_COLUMNS =
@@ -207,6 +219,31 @@ export function createCheckpointRepository(
         );
       return row ? toDomain(row) : null;
     },
+
+    async prune(instanceId, taskId, keep) {
+      // 先读要删的行（调用方要把它们如实回报），再按同一排序删除。
+      // 单条语句完成「保留最近 keep 行」：按 created_at 降序跳过前 keep 行。
+      const removed = await persistence
+        .forInstance(instanceId)
+        .query<CheckpointDbRow>(
+          `select ${CHECKPOINT_COLUMNS}
+             from public.project_checkpoints
+            where task_id = $1
+              and instance_id = :instance
+            order by created_at desc
+            offset $2`,
+          [taskId, Math.max(0, keep)],
+        );
+      if (removed.length === 0) return [];
+      await persistence.forInstance(instanceId).execute(
+        `delete from public.project_checkpoints
+            where task_id = $1
+              and instance_id = :instance
+              and id in (${removed.map((_, index) => `$${index + 2}`).join(", ")})`,
+        [taskId, ...removed.map((row) => row.id)],
+      );
+      return removed.map(toDomain);
+    },
   };
 }
 
@@ -268,6 +305,18 @@ export function createInMemoryCheckpointRepository(): CheckpointRepository {
         .sort(byTime)
         .at(-1);
       return previous ? structuredClone(previous) : null;
+    },
+    async prune(instanceId, taskId, keep) {
+      const matching = rows
+        .filter((r) => r.instanceId === instanceId && r.taskId === taskId)
+        .sort(byTime);
+      const doomed = matching.slice(0, Math.max(0, matching.length - keep));
+      if (doomed.length === 0) return [];
+      const ids = new Set(doomed.map((row) => row.id));
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (ids.has(rows[index]!.id)) rows.splice(index, 1);
+      }
+      return doomed.map((row) => structuredClone(row));
     },
   };
 }

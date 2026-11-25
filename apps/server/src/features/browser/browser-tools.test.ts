@@ -43,6 +43,10 @@ function buildPluginTools(options: {
     requestBody?: string;
     responseBody?: string;
   }>;
+  /** 网络安全域名规则的裁决替身（未提供即规则未命中）。 */
+  urlPolicy?: (
+    url: string,
+  ) => { decision: "allow" } | { decision: "deny"; reason: string } | undefined;
 }) {
   const tools = new Map<string, ToolDefinition>();
   const cdp = {
@@ -90,7 +94,11 @@ function buildPluginTools(options: {
       return value;
     },
     tryGet(key: string) {
-      if (key === "permissions") return { getSettings: () => settings };
+      if (key === "permissions")
+        return {
+          getSettings: () => settings,
+          checkUrlPolicy: (url: string) => options.urlPolicy?.(url),
+        };
       return services.get(key);
     },
     effect: () => undefined,

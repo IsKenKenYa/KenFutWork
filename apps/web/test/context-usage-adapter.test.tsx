@@ -60,3 +60,21 @@ test("无数据渲染空环（不画假弧），非法 taskUsage 判不可渲染
     size: 100,
   });
 });
+
+test("有占用时圆环弧与进度条都用蓝色（sky-500），空环只画轨道", () => {
+  // 空数据：只有轨道，不画蓝弧。
+  const empty = render(<ChatContextUsage taskUsage={null} />);
+  const emptyCircles = empty.container.querySelectorAll("circle");
+  expect(emptyCircles).toHaveLength(1);
+  expect(emptyCircles[0]?.getAttribute("class")).toContain("stroke-border");
+  empty.unmount();
+
+  // 有占用：弧用 sky-500，并带圆端帽。
+  const filled = render(
+    <ChatContextUsage taskUsage={{ used: 45_000, size: 1_000_000 }} />,
+  );
+  const circles = Array.from(filled.container.querySelectorAll("circle"));
+  expect(circles).toHaveLength(2);
+  expect(circles[1]?.getAttribute("class")).toContain("stroke-sky-500");
+  expect(circles[1]?.getAttribute("stroke-linecap")).toBe("round");
+});

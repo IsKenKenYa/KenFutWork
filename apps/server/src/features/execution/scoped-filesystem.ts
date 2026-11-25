@@ -67,6 +67,11 @@ export interface ScopedBackend extends BackendProtocolV2 {
   writeFile(input: WriteFileInput): Promise<FileCommit>;
   editFile(input: EditFileInput): Promise<EditCommit>;
   applyPatch(input: PatchInput): Promise<PatchResult>;
+  /** 删除保护的「先移到回收站」：把文件移到 Task 授权根下的 `.kenfutwork-trash/<时间戳>/`。 */
+  moveToTrash(input: {
+    path: string;
+    signal?: AbortSignal;
+  }): Promise<{ trashedPath: string }>;
   globPage(input: GlobPageInput): Promise<GlobPage>;
   grepPage(input: GrepPageInput): Promise<GrepPage>;
   readMedia(input: MediaReadInput): Promise<MediaFile>;
@@ -126,6 +131,15 @@ class ScopedBackendAdapter implements ScopedBackend {
       this.scope,
       input.signal,
       (signal) => this.mutations.applyPatch({ ...input, signal }),
+      "write",
+    );
+  }
+  /** 删除保护的「先移到回收站」：移到 Task 授权根下的 `.kenfutwork-trash/<时间戳>/`。 */
+  moveToTrash(input: { path: string; signal?: AbortSignal }) {
+    return runFileOperation(
+      this.scope,
+      input.signal,
+      (signal) => this.mutations.moveToTrash({ ...input, signal }),
       "write",
     );
   }

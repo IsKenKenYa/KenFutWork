@@ -83,6 +83,8 @@ export const editSchema = z.object({
   expected_version: z.string().optional(),
 });
 export const patchSchema = z.object({ patch_text: z.string().min(1) }).strict();
+/** 删除一个文件；是否先移到回收站由删除保护策略决定，模型不能选。 */
+export const deleteSchema = z.object({ file_path: z.string().min(1) }).strict();
 export const previewSchema = z.object({
   path: z.string().min(1),
   continuation: cursor.optional(),

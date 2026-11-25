@@ -65,7 +65,6 @@ export function ProjectCreateDialog({
             <label htmlFor="kenfutwork-project-name">名称</label>
             <input
               id="kenfutwork-project-name"
-              // biome-ignore lint/a11y/noAutofocus: 弹窗唯一输入项，打开即待输入。
               autoFocus
               className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
               value={name}

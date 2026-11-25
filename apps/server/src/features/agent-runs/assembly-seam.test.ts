@@ -10,7 +10,7 @@ import {
   createKernelEvents,
   ToolDeniedError,
 } from "../../kernel/context.js";
-import { createAgentModesPlugin } from "../agent-modes/plugin.js";
+import { createExecutionModeService } from "../agent-modes/execution-mode-service.js";
 import { createPluginInventoryFixture } from "../code-ui/plugins.test-fixture.js";
 import { createContextHistoryPlugin } from "../context-history/plugin.js";
 import { archiveTaskFixture } from "../context-history/test-fixture.js";
@@ -67,7 +67,6 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
     makeEnv(),
     [
       createContextHistoryPlugin(),
-      createAgentModesPlugin(),
       createAgentRunsPlugin({
         connectionManager: {
           pushToCanvas: () => {},
@@ -83,6 +82,7 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
       events: bus,
       overrides: {
         permissions,
+        agentModes: createExecutionModeService(),
         plugins: inventory.registry,
         taskWork: createMemoryTaskWorkManager(),
         processSandbox: {} as never,

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
@@ -25,12 +26,42 @@ export type AppOptions = {
   dump?: boolean;
 };
 
+/**
+ * 读 TLS 证书与私钥（自托管 / 局域网部署的传输加密）。
+ *
+ * 启动期同步读一次：文件不存在、不可读、权限不足都直接抛错——用户配了 TLS
+ * 路径却跑起明文服务，比启动失败危险得多。路径合法性由 `loadServerEnv` 校验
+ * （必须成对配置）。
+ */
+function readTlsCredentials(certificatePath: string, keyPath: string) {
+  try {
+    return {
+      cert: readFileSync(certificatePath),
+      key: readFileSync(keyPath),
+    };
+  } catch (error) {
+    throw new Error(
+      `TLS 证书读取失败（cert=${certificatePath} key=${keyPath}）：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 export function buildApp(
   options: AppOptions = {},
 ): FastifyInstance & { kernel: KernelHandle } {
   const env = loadServerEnv(options.env);
 
-  const app = Fastify({ logger: { level: "info" } });
+  const app = Fastify({
+    logger: { level: "info" },
+    // 传输加密（自托管 / 局域网部署）：配了证书与私钥就整站 HTTPS。
+    // WS 升级请求走同一个监听端口，所以 `wss://` 一并生效。
+    // 证书在启动期读一次；读不到直接抛错，不静默退回明文。
+    ...(env.tlsCertificatePath && env.tlsKeyPath
+      ? { https: readTlsCredentials(env.tlsCertificatePath, env.tlsKeyPath) }
+      : {}),
+  });
   void app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   registerCorsHook(app, env.webOrigin);
 

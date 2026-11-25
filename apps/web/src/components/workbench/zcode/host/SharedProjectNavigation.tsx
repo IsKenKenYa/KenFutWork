@@ -49,6 +49,13 @@ const pendingAdmissions = new Set<{
   preset: Preset;
   resolve: (allowed: boolean) => void;
 }>();
+/**
+ * 请求模式准入。Provider 尚未接管时先排进队列，由它挂载后统一回执。
+ *
+ * 队列不会无限挂起：`SharedProjectNavigationProvider` 的 `useProjectModeAdmission`
+ * 只在 `tabs` 就绪后注册，而 tabs 由侧栏的 `useSharedProjectTabs` 提供——
+ * 这保证了 Provider 与它需要的上下文总是同时出现。
+ */
 export function admitProjectMode(preset: Preset): Promise<boolean> {
   if (modeAdmission) return modeAdmission(preset);
   return new Promise((resolve) => pendingAdmissions.add({ preset, resolve }));
@@ -102,6 +109,7 @@ function useProjectModeAdmission(
       return !project || askShare(project, preset);
     };
     modeAdmission = admit;
+    // Provider 接管前排队等着的请求在这里统一回执（此前会一直挂着）。
     for (const pending of pendingAdmissions) {
       pendingAdmissions.delete(pending);
       void admit(pending.preset).then(pending.resolve, () =>
@@ -319,9 +327,11 @@ export function SharedProjectNavigationProvider({
     askShare,
     projectTransition,
   );
+  // Provider 卸载后没有接管者了：排队的请求按「放行」收尾，
+  // 否则它们会永久 pending（调用方表现为「点了没反应」）。
   useEffect(
     () => () => {
-      for (const pending of pendingAdmissions) pending.resolve(false);
+      for (const pending of pendingAdmissions) pending.resolve(true);
       pendingAdmissions.clear();
     },
     [],

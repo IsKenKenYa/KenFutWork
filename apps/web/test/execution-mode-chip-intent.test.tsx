@@ -15,6 +15,35 @@ const { ComposerModeMenu, readyComposerModeTrigger } = await import(
   "./setup/execution-mode-chip.js"
 );
 
+/**
+ * 合并后的菜单在同一面板里既有权限档也有执行方式，读不到 `/api/permissions/tier`
+ * 时整个触发器不渲染。用例只关心执行方式端点，这里补默认 tier。
+ */
+function withPermissionTier(
+  inner: (path: string, init?: RequestInit) => unknown | Promise<unknown>,
+) {
+  return async (path: string, init?: RequestInit): Promise<unknown> => {
+    if (path === "/api/permissions/tier") {
+      if (init?.method === "PUT")
+        return { tier: JSON.parse(String(init.body)).tier };
+      return { tier: "default", automationTier: "default" };
+    }
+    return inner(path, init);
+  };
+}
+
+/** 当前执行方式：合并后不再有独立 chip，读同一触发器上的锚点。 */
+function currentExecutionMode(): string | null {
+  return screen
+    .getByTestId("chat-mode-select-trigger")
+    .getAttribute("data-execution-mode");
+}
+
+/** 菜单里执行方式那组选项的当前值 → 断言时用 id，不用中文标签。 */
+function expectExecutionMode(mode: string) {
+  expect(currentExecutionMode()).toBe(mode);
+}
+
 function deferred() {
   let resolve!: (value: unknown) => void;
   let reject!: (error: Error) => void;
@@ -94,18 +123,20 @@ function ComposerProbe({
 
 function pendingModeChange(initialMode: ExecutionMode = "agent") {
   const pending = deferred();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes")
-      return {
-        modes: [
-          { id: "agent", label: "自主" },
-          { id: "goal", label: "目标" },
-          { id: "plan", label: "计划" },
-        ],
-      };
-    if (init?.method === "PUT") return pending.promise;
-    return { mode: initialMode };
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes")
+        return {
+          modes: [
+            { id: "agent", label: "自主" },
+            { id: "goal", label: "目标" },
+            { id: "plan", label: "计划" },
+          ],
+        };
+      if (init?.method === "PUT") return pending.promise;
+      return { mode: initialMode };
+    }),
+  );
   return pending;
 }
 
@@ -126,17 +157,11 @@ test("目标已显示时发送即捕获目标，偏好写入失败只回滚后�
   render(<ComposerProbe sessionId="a" sent={sent} onSwitchMode={vi.fn()} />);
   await user.click(await readyComposerModeTrigger());
   await user.click(await screen.findByRole("menuitemradio", { name: "目标" }));
-  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
-    "目标",
-  );
+  expectExecutionMode("goal");
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect(sent).toEqual(["goal"]);
   await act(async () => pending.reject(new Error("preference write failed")));
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("自主"),
-  );
+  await waitFor(() => expectExecutionMode("agent"));
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect(sent).toEqual(["goal", "agent"]);
 });
@@ -154,11 +179,7 @@ test("Task切换后忽略旧Task迟到PUT，不改新Task策略或规划草稿",
   rerender(
     <ComposerProbe sessionId="b" sent={sent} onSwitchMode={onSwitchMode} />,
   );
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("自主"),
-  );
+  await waitFor(() => expectExecutionMode("agent"));
   onSwitchMode.mockClear();
   await act(async () => pending.resolve({ mode: "plan" }));
   expect(onSwitchMode).not.toHaveBeenCalled();
@@ -193,11 +214,7 @@ test("离开计划立即发送关闭规划，偏好失败回滚只影响后续�
     .toEqual([{ executionMode: "agent", planEnabled: false }]);
 
   await act(async () => pending.reject(new Error("preference write failed")));
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("计划"),
-  );
+  await waitFor(() => expectExecutionMode("plan"));
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect.soft(onSwitchMode.mock.calls).toEqual([["plan-off"], ["plan"]]);
   expect(sentSubmissions).toEqual([
@@ -226,12 +243,14 @@ test("切换Task后旧计划PUT失败不回滚新Task的规划草稿", async () 
   );
   await user.click(await readyComposerModeTrigger());
   await user.click(await screen.findByRole("menuitemradio", { name: "自主" }));
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes")
-      return { modes: [{ id: "agent", label: "自主" }] };
-    if (init?.method === "PUT") throw new Error("新Task不应写偏好");
-    return { mode: "agent" };
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes")
+        return { modes: [{ id: "agent", label: "自主" }] };
+      if (init?.method === "PUT") throw new Error("新Task不应写偏好");
+      return { mode: "agent" };
+    }),
+  );
   rerender(
     <ComposerProbe
       sessionId="b"
@@ -240,11 +259,7 @@ test("切换Task后旧计划PUT失败不回滚新Task的规划草稿", async () 
       onSwitchMode={onSwitchMode}
     />,
   );
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("自主"),
-  );
+  await waitFor(() => expectExecutionMode("agent"));
   onSwitchMode.mockClear();
   await act(async () => pending.reject(new Error("旧Task偏好写入失败")));
   expect(onSwitchMode).not.toHaveBeenCalled();
@@ -277,11 +292,16 @@ test("独立规划已开启时协作开关关闭规划，保留自主策略与�
   expect(sentSubmissions).toEqual([
     { executionMode: "agent", planEnabled: false },
   ]);
+  // 基础权限保持终端里读到的档位（默认档 = 变更前确认），不被规划开关改写。
+  expectExecutionMode("agent");
   expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
-    "完全访问",
+    "变更前确认",
   );
   expect(
-    surfaceJson.mock.calls.some(([, init]) => init?.method === "PUT"),
+    surfaceJson.mock.calls.some(
+      ([path, init]) =>
+        path === "/api/permissions/tier" && init?.method === "PUT",
+    ),
   ).toBe(false);
 });
 
@@ -296,19 +316,21 @@ test.each(["success", "failure"] as const)(
       planEnabled: boolean;
     }> = [];
     const writes: string[] = [];
-    surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-      if (path === "/api/execution-modes")
-        return {
-          modes: [
-            { id: "agent", label: "自主" },
-            { id: "plan", label: "计划" },
-          ],
-        };
-      if (init?.method !== "PUT") return { mode: "agent" };
-      const mode = JSON.parse(String(init.body)).mode;
-      writes.push(mode);
-      return mode === "plan" ? pending.promise : { mode };
-    });
+    surfaceJson.mockImplementation(
+      withPermissionTier(async (path: string, init?: RequestInit) => {
+        if (path === "/api/execution-modes")
+          return {
+            modes: [
+              { id: "agent", label: "自主" },
+              { id: "plan", label: "计划" },
+            ],
+          };
+        if (init?.method !== "PUT") return { mode: "agent" };
+        const mode = JSON.parse(String(init.body)).mode;
+        writes.push(mode);
+        return mode === "plan" ? pending.promise : { mode };
+      }),
+    );
     render(
       <ComposerProbe
         sessionId="a"
@@ -340,26 +362,26 @@ test.each(["success", "failure"] as const)(
       { executionMode: "agent", planEnabled: false },
       { executionMode: "agent", planEnabled: false },
     ]);
-    expect(
-      screen.getByTestId("chat-mode-select-trigger").textContent,
-    ).toContain("自主");
+    expectExecutionMode("agent");
   },
 );
 
 test("策略未加载时明确关闭规划，迟到plan读取不重开且本次发送携带自主", async () => {
   const user = userEvent.setup();
   const loading = deferred();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/execution-modes")
-      return {
-        modes: [
-          { id: "agent", label: "自主" },
-          { id: "plan", label: "计划" },
-        ],
-      };
-    if (init?.method === "PUT") return { mode: "agent" };
-    return loading.promise;
-  });
+  surfaceJson.mockImplementation(
+    withPermissionTier(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes")
+        return {
+          modes: [
+            { id: "agent", label: "自主" },
+            { id: "plan", label: "计划" },
+          ],
+        };
+      if (init?.method === "PUT") return { mode: "agent" };
+      return loading.promise;
+    }),
+  );
   const sent: ExecutionMode[] = [];
   const sentSubmissions: Array<{
     executionMode: ExecutionMode;
@@ -374,17 +396,19 @@ test("策略未加载时明确关闭规划，迟到plan读取不重开且本次�
       onSwitchMode={vi.fn()}
     />,
   );
-  expect(screen.queryByTestId("execution-mode-label")).toBeNull();
-  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
-    "完全访问",
-  );
+  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
+  // 执行方式策略还没回来时不渲染触发器（不摆一个点了没反应的按钮）；
+  // 规划的本地意图仍可关闭并用于发送。
+  expect(screen.queryByTestId("chat-mode-select-trigger")).toBeNull();
   await user.click(screen.getByRole("button", { name: "关闭规划" }));
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect(sentSubmissions).toEqual([
     { executionMode: "agent", planEnabled: false },
   ]);
   await act(async () => loading.resolve({ mode: "plan" }));
-  expect((await readyComposerModeTrigger()).textContent).toContain("自主");
+  // 迟到的 plan 读取不重开规划：执行方式锚点仍是最初的本地意图。
+  await readyComposerModeTrigger();
+  await waitFor(() => expectExecutionMode("agent"));
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect(sentSubmissions).toEqual([
     { executionMode: "agent", planEnabled: false },

@@ -52,20 +52,37 @@ export interface PageSnapshot {
  * `browser_open` 工具直接用 `fetchPageSnapshot`；面板数据面走 `cdp` 会话。
  */
 export interface BrowserService {
-  /** 静态快照（无需浏览器）：抓 HTML 提元素。 */
-  snapshot(
-    url: string,
-    options?: { elementLimit?: number },
-  ): Promise<PageSnapshot>;
+  /**
+   * 静态快照（无需浏览器）：抓 HTML 提元素。
+   *
+   * 选项与 `fetchPageSnapshot` 同一形状。`hostPolicy` 由服务构造方注入，
+   * 调用方不需要也不应该自己传。
+   */
+  snapshot(url: string, options?: FetchPageOptions): Promise<PageSnapshot>;
   /** CDP 会话（「连接到 Chrome」/「自动截图」/ 元素选择器的执行面；未连接时各方法抛可读错误）。 */
   cdp: import("./cdp-session.js").CdpBrowserSession;
 }
 
+/**
+ * 浏览器服务：`snapshot` 是服务端替用户访问任意地址的唯一出口，
+ * 因此网络安全规则（`hostPolicy`）由构造方注入，所有消费方（`browser_open`、
+ * `web_search` 网页通道）自动同一条裁决，不需要各自接一遍。
+ */
 export function createBrowserService(
   cdp: import("./cdp-session.js").CdpBrowserSession,
+  hostPolicy?: FetchPageOptions["hostPolicy"],
+  /** 「SSL 证书校验」开关（设置 → 权限 → 网络安全）；缺省校验。 */
+  tlsVerification?: () => boolean,
 ): BrowserService {
   return {
-    snapshot: (url, options) => fetchPageSnapshot(url, options ?? {}),
+    snapshot: (url, options) => {
+      const verify = tlsVerification?.();
+      return fetchPageSnapshot(url, {
+        ...(options ?? {}),
+        ...(hostPolicy ? { hostPolicy } : {}),
+        ...(verify === false ? { tlsVerification: false } : {}),
+      });
+    },
     cdp,
   };
 }
@@ -243,8 +260,48 @@ export interface FetchPageOptions {
    * （2026-09-20 实测：`web_search` 网页通道恒返回 0 条）。搜索通道因此要显式调大。
    */
   elementLimit?: number;
+  /**
+   * 域名规则裁决（网络安全，参考 WorkBuddy 安全中心）。
+   *
+   * 这里是服务端替用户访问任意地址的**唯一出口**（`browser_open` 与 `web_search`
+   * 的网页通道都走它），所以网络访问规则必须在抓取之前判。裁决由 permissions 插件
+   * 提供（`checkUrlPolicy`），返回 `undefined` 表示规则未命中、按原行为放行。
+   */
+  hostPolicy?: (
+    url: URL,
+  ) => { decision: "allow" } | { decision: "deny"; reason: string } | undefined;
+  /**
+   * 是否校验目标站点的证书链（网络安全里的「SSL 证书校验」）。
+   *
+   * 缺省 `true`。关闭后允许抓取自签 / 内网证书站点——做法是给这个请求单独挂一个
+   * 不校验证书的 undici dispatcher，不动进程级 TLS 设置（那会波及模型请求）。
+   */
+  tlsVerification?: boolean;
   /** 测试注入。 */
   fetchImpl?: typeof fetch;
+}
+
+/** 网络规则拒绝时抛的错误码（与 URL 本身的非法/被拦区分开）。 */
+export class BrowserPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowserPolicyError";
+  }
+}
+
+/**
+ * 不校验证书的 dispatcher（「SSL 证书校验」关闭时用）。
+ *
+ * 只作用于本模块的抓取请求：`fetch(url, { dispatcher })` 的 per-request 覆盖，
+ * 不动全局 `NODE_TLS_REJECT_UNAUTHORIZED` —— 那会让进程里所有请求（含模型 API）
+ * 一起失去证书校验。懒加载并在成功后缓存复用。
+ */
+let insecureDispatcher: unknown | null = null;
+async function insecureTlsDispatcher(): Promise<unknown> {
+  if (insecureDispatcher) return insecureDispatcher;
+  const { Agent } = await import("undici");
+  insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  return insecureDispatcher;
 }
 
 /**
@@ -270,6 +327,11 @@ export async function fetchPageSnapshot(
       "这是云元数据地址（169.254.169.254 一类），不抓取。",
     );
   }
+  // 网络访问规则（设置 → 权限 → 网络安全）：用户配的域名三态规则先于抓取。
+  const policy = options.hostPolicy?.(url);
+  if (policy?.decision === "deny") {
+    throw new BrowserPolicyError(policy.reason);
+  }
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -282,12 +344,15 @@ export async function fetchPageSnapshot(
     response = await fetchImpl(url.toString(), {
       redirect: "follow",
       signal: controller.signal,
+      ...(options.tlsVerification === false && !options.fetchImpl
+        ? { dispatcher: await insecureTlsDispatcher() }
+        : {}),
       headers: {
         // 明确的 UA：不少站点对无 UA 的请求直接回兜底页
         "user-agent": BROWSER_FETCH_USER_AGENT,
         accept: "text/html,application/xhtml+xml",
       },
-    });
+    } as RequestInit);
   } catch (error) {
     clearTimeout(timer);
     const reason =

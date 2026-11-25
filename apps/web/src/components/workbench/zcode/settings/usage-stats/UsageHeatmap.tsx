@@ -1,8 +1,8 @@
 /* oxlint-disable max-lines -- 热力图在同一文件内维护每日、每周、累计三种展示计算，拆分会割裂共享列模型。 */
-import { useState } from "react";
+
 import type { AppUsageHeatmapCell, AppUsageHeatmapWeek } from "@zcode/shared";
 import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import {
   HeatmapColumn,
@@ -10,13 +10,14 @@ import {
   type TokenActivityMode,
 } from "@zui/settings/usage-stats/UsageHeatmapCells.js";
 import {
-  USAGE_STATS_TABS_LIST_CLASS,
-  USAGE_STATS_TABS_TRIGGER_CLASS,
   formatCompactNumber,
   formatCompactTokenUsage,
   formatFullDay,
   formatMonth,
+  USAGE_STATS_TABS_LIST_CLASS,
+  USAGE_STATS_TABS_TRIGGER_CLASS,
 } from "@zui/settings/usage-stats/usageStatsUiParts.js";
+import { useState } from "react";
 
 const HEATMAP_DISPLAY_WEEK_COUNT = 52;
 const HEATMAP_DAYS_PER_WEEK = 7;
@@ -45,7 +46,10 @@ function renderHeatmapTooltipTitle(
 ): string {
   return intl.formatMessage(
     {
-      id: countMetric === "tools" ? "settings.usage.heatmapToolCell" : "settings.usage.heatmapCell",
+      id:
+        countMetric === "tools"
+          ? "settings.usage.heatmapToolCell"
+          : "settings.usage.heatmapCell",
     },
     {
       date: formatFullDay(locale, cell.date),
@@ -130,43 +134,56 @@ function createEmptyHeatmapCell(date: string): AppUsageHeatmapCell {
   };
 }
 
-function buildDisplayHeatmapWeeks(weeks: AppUsageHeatmapWeek[]): AppUsageHeatmapWeek[] {
+function buildDisplayHeatmapWeeks(
+  weeks: AppUsageHeatmapWeek[],
+): AppUsageHeatmapWeek[] {
   const cells = weeks
     .flatMap((week) => week.days)
     .filter((cell): cell is AppUsageHeatmapCell => cell !== null);
   const datedCells = cells
     .map((cell) => ({ cell, dayIndex: dateKeyToUtcDayIndex(cell.date) }))
     .filter(
-      (entry): entry is { cell: AppUsageHeatmapCell; dayIndex: number } => entry.dayIndex !== null,
+      (entry): entry is { cell: AppUsageHeatmapCell; dayIndex: number } =>
+        entry.dayIndex !== null,
     );
 
   if (datedCells.length === 0) {
     return weeks;
   }
 
-  const cellsByDate = new Map(datedCells.map(({ cell }) => [cell.date, cell] as const));
+  const cellsByDate = new Map(
+    datedCells.map(({ cell }) => [cell.date, cell] as const),
+  );
   const endDayIndex = Math.max(...datedCells.map(({ dayIndex }) => dayIndex));
   const endWeekStartDayIndex = endDayIndex - getUtcWeekday(endDayIndex);
   const startDayIndex =
-    endWeekStartDayIndex - (HEATMAP_DISPLAY_WEEK_COUNT - 1) * HEATMAP_DAYS_PER_WEEK;
+    endWeekStartDayIndex -
+    (HEATMAP_DISPLAY_WEEK_COUNT - 1) * HEATMAP_DAYS_PER_WEEK;
 
   // agent 只返回近 30 天真实数据会让热力图缩水；这里补齐展示用 0 格，
   // 同时按自然周对齐，保证所有范围的第一行都是周日。
   return Array.from({ length: HEATMAP_DISPLAY_WEEK_COUNT }, (_, weekIndex) => ({
     weekIndex,
     days: Array.from({ length: HEATMAP_DAYS_PER_WEEK }, (_, dayOffset) => {
-      const dayIndex = startDayIndex + weekIndex * HEATMAP_DAYS_PER_WEEK + dayOffset;
+      const dayIndex =
+        startDayIndex + weekIndex * HEATMAP_DAYS_PER_WEEK + dayOffset;
       const date = utcDayIndexToDateKey(dayIndex);
       return cellsByDate.get(date) ?? createEmptyHeatmapCell(date);
     }),
   }));
 }
 
-function levelForValue(value: number, max: number): AppUsageHeatmapCell["level"] {
+function levelForValue(
+  value: number,
+  max: number,
+): AppUsageHeatmapCell["level"] {
   if (value <= 0 || max <= 0) {
     return 0;
   }
-  return Math.min(4, Math.max(1, Math.ceil((value / max) * 4))) as AppUsageHeatmapCell["level"];
+  return Math.min(
+    4,
+    Math.max(1, Math.ceil((value / max) * 4)),
+  ) as AppUsageHeatmapCell["level"];
 }
 
 function filledRowsForValue(value: number, max: number): number {
@@ -183,7 +200,12 @@ function resolveHeatmapColumnMonthDate(week: AppUsageHeatmapWeek): string {
   // 用周日判断月份会把非周日的每月 1 日推迟到下一周，月份文案最多错开一列。
   // 周列包含 1 日时优先归入新月份，让文案锚定到 1 日所在列；其余列沿用周日起始月份。
   const firstDayOfMonth = week.days.find((cell) => cell?.date.endsWith("-01"));
-  return firstDayOfMonth?.date ?? week.days[0]?.date ?? week.days.find(Boolean)?.date ?? "";
+  return (
+    firstDayOfMonth?.date ??
+    week.days[0]?.date ??
+    week.days.find(Boolean)?.date ??
+    ""
+  );
 }
 
 function buildDailyHeatmapColumns(
@@ -197,14 +219,20 @@ function buildDailyHeatmapColumns(
     monthDate: resolveHeatmapColumnMonthDate(week),
     tooltipTitle: null,
     cells: week.days.map((cell, dayOffset) => {
-      const fallbackDate = week.days[0]?.date ?? `empty-${week.weekIndex}-${dayOffset}`;
+      const fallbackDate =
+        week.days[0]?.date ?? `empty-${week.weekIndex}-${dayOffset}`;
       const displayCell = cell ?? createEmptyHeatmapCell(fallbackDate);
       return {
         key: `daily-${displayCell.date}`,
         level: displayCell.level,
         hasUsage: displayCell.totalTokens > 0,
         columnHover: false,
-        tooltipTitle: renderHeatmapTooltipTitle(locale, intl, displayCell, countMetric),
+        tooltipTitle: renderHeatmapTooltipTitle(
+          locale,
+          intl,
+          displayCell,
+          countMetric,
+        ),
       };
     }),
   }));
@@ -223,7 +251,10 @@ function buildWeeklyLikeHeatmapColumns(
   const weeklyCounts = weeks.map((week) =>
     week.days.reduce(
       (sum, cell) =>
-        sum + (countMetric === "tools" ? (cell?.toolCallCount ?? 0) : (cell?.turnCount ?? 0)),
+        sum +
+        (countMetric === "tools"
+          ? (cell?.toolCallCount ?? 0)
+          : (cell?.turnCount ?? 0)),
       0,
     ),
   );
@@ -254,8 +285,22 @@ function buildWeeklyLikeHeatmapColumns(
       "";
     const tooltipTitle =
       mode === "weekly"
-        ? renderWeeklyHeatmapTooltipTitle(locale, intl, weekEndDate, value, count, countMetric)
-        : renderCumulativeHeatmapTooltipTitle(locale, intl, weekEndDate, value, count, countMetric);
+        ? renderWeeklyHeatmapTooltipTitle(
+            locale,
+            intl,
+            weekEndDate,
+            value,
+            count,
+            countMetric,
+          )
+        : renderCumulativeHeatmapTooltipTitle(
+            locale,
+            intl,
+            weekEndDate,
+            value,
+            count,
+            countMetric,
+          );
 
     return {
       key: `${mode}-${week.weekIndex}`,
@@ -309,7 +354,10 @@ function buildHeatmapMonthLabels(
 
   // 52 个自然周可能横跨 13 个月，直接渲染会在底部同时出现去年和今年的同月文案。
   // 保留多余起始月份的 span 以维持月份与周列对齐，只隐藏其文字，底部始终最多显示最近 12 个月。
-  const hiddenLabelCount = Math.max(0, labels.length - HEATMAP_VISIBLE_MONTH_LABEL_COUNT);
+  const hiddenLabelCount = Math.max(
+    0,
+    labels.length - HEATMAP_VISIBLE_MONTH_LABEL_COUNT,
+  );
   for (let index = 0; index < hiddenLabelCount; index += 1) {
     const label = labels[index];
     if (label) {
@@ -334,7 +382,13 @@ export function UsageHeatmap({
 }) {
   const [mode, setMode] = useState<TokenActivityMode>("daily");
   const displayWeeks = buildDisplayHeatmapWeeks(weeks);
-  const displayColumns = buildHeatmapDisplayColumns(locale, intl, displayWeeks, mode, countMetric);
+  const displayColumns = buildHeatmapDisplayColumns(
+    locale,
+    intl,
+    displayWeeks,
+    mode,
+    countMetric,
+  );
   const monthLabels = buildHeatmapMonthLabels(locale, displayColumns);
 
   return (
@@ -366,13 +420,16 @@ export function UsageHeatmap({
           </Tabs>
         </div>
 
-        <div>
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="grid w-full gap-x-0.5" style={HEATMAP_GRID_STYLE}>
             {displayColumns.map((column) => (
               <HeatmapColumn key={column.key} column={column} mode={mode} />
             ))}
           </div>
-          <div className="mt-3 grid w-full gap-x-0.5" style={HEATMAP_GRID_STYLE}>
+          <div
+            className="mt-3 grid w-full gap-x-0.5"
+            style={HEATMAP_GRID_STYLE}
+          >
             {monthLabels.map((label) => (
               <div
                 key={label.key}

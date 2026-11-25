@@ -157,7 +157,7 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
         (data as { type?: string }).type !== "kenfutwork:code-navigate",
     ),
   ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "连接使用" }));
+  fireEvent.click(screen.getByRole("button", { name: "本地用户" }));
   expect(screen.queryByText("界面模式")).toBeNull();
   await waitFor(() => expect(theme).toHaveBeenCalled());
   await act(async () => {

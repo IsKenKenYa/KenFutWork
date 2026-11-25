@@ -30,6 +30,10 @@ export function createCheckpointsPlugin(): PluginDefinition {
             rootDirectory === scope.describe().rootDirectory
               ? createProjectLayoutFiles(ctx.get("persistence"))(scope, actor)
               : [],
+          // 保留上限读自权限策略（设置 → 权限 → 自动备份）：运行期可改。
+          maxSnapshots: () =>
+            ctx.tryGet("permissions")?.getSettings().policy.autoBackup
+              .maxSnapshots,
           repository: createCheckpointRepository(ctx.get("persistence")),
           gitSource: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
           checkpointRoot: resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),

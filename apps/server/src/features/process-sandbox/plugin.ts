@@ -28,6 +28,27 @@ export async function resolveCheckpointWriteRoots(
   return roots;
 }
 
+/**
+ * 权限策略里的域名规则 → 沙箱网络名单（设置 → 权限 → 网络安全）。
+ *
+ * 沙箱默认 `strictAllowlist: true`：白名单为空即**全部出站被拦**。
+ * 因此这里只把 `allow` 规则放进白名单；`deny` 规则同时进黑名单（即便也被写进白名单）。
+ * 抽成纯函数便于单测：错位的映射会让「我允许了却连不上 / 我拒绝了却连得上」这类问题
+ * 只能靠真实命令复现。
+ */
+export function sandboxNetworkFor(
+  domainRules: ReadonlyArray<{ domain: string; action: string }>,
+): { allowedDomains: string[]; deniedDomains: string[] } {
+  return {
+    allowedDomains: domainRules
+      .filter((rule) => rule.action === "allow")
+      .map((rule) => rule.domain),
+    deniedDomains: domainRules
+      .filter((rule) => rule.action === "deny")
+      .map((rule) => rule.domain),
+  };
+}
+
 /** Profile 自带执行能力；模型参数不能签发内部 checkpoint 目录授权。 */
 export function createProcessSandboxPlugin(): PluginDefinition {
   return {
@@ -51,6 +72,32 @@ export function createProcessSandboxPlugin(): PluginDefinition {
           }),
           captureRoot: join(dirname(dataRoot), "execution-output"),
           network: { allowedDomains: [], deniedDomains: [] },
+          /**
+           * 沙箱网络策略（设置 → 权限 → 网络安全）。
+           *
+           * 沙箱默认 `strictAllowlist: true`，域名单为空即**全部出站被拦**。
+           * 权限策略里的域名规则因此是这张名单的唯一来源：
+           * - `allow` 规则进白名单（沙箱放行这些域名）；
+           * - `deny` 规则进黑名单（即便在白名单里也拦）。
+           *
+           * 每次启动命令都重新读（设置是运行期可改的）；未装配 permissions 时
+           * 维持空名单（全部拦下），与改造前一致。
+           */
+          resolveNetwork: async () => {
+            const permissions = ctx.tryGet("permissions");
+            const domainRules =
+              permissions?.getSettings().policy.domainRules ?? [];
+            return sandboxNetworkFor(domainRules);
+          },
+          /** 内置运行时开关（设置 → 权限 → 内置运行时）；未装配 permissions 时视为允许。 */
+          resolveBundledRuntimes: async () => {
+            const permissions = ctx.tryGet("permissions");
+            return {
+              allowed:
+                permissions?.getSettings().policy.bundledRuntimes.enabled ??
+                true,
+            };
+          },
           onSnapshot: (snapshot) => {
             for (const registration of ctx
               .get("capabilities")

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -10,7 +11,7 @@ import {
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -204,11 +205,20 @@ test("真实命令的输出可继续读取，停止确认退出后不再接受 s
     additionalDirectories: [],
     sandboxMode: "read-only",
   };
-  const command = `${JSON.stringify(process.execPath)} -e 'process.stdout.write("proof\\n");setInterval(()=>{},1000)'`;
+  // 这条用例证的是「输出可继续读取 + 停止后不再接受 stdin」，与默认外壳落哪个方言无关；
+  // 载荷按 cmd 的引号形态书写（外层双引号 + 内部 \" 转义），这里显式钉住 cmd
+  // （与 readonly-proof 用例同一口径），避免跟着 `resolveWindowsShell()` 漂移。
+  // `String.fromCharCode(10)` 让两种外壳都不必处理 `\n` 的转义层数。
+  const proofScript =
+    'process.stdout.write(\\"proof\\"+String.fromCharCode(10));setInterval(()=>{},1000)';
+  const command = `${JSON.stringify(process.execPath)} -e ${process.platform === "win32" ? `"${proofScript}"` : `'process.stdout.write("proof\\n");setInterval(()=>{},1000)'`}`;
   const child = await sandbox.spawn({
     scope,
     agentId: "main",
     invocationId: "proof-call",
+    ...(process.platform === "win32"
+      ? { shell: "C:\\Windows\\System32\\cmd.exe" }
+      : {}),
     command,
     background: true,
     timeoutMs: null,
@@ -415,38 +425,45 @@ test("同一调用并发及响应丢失后的重放只执行一次，参数冲�
   ).rejects.toMatchObject({ code: "invalid_process_request" });
 });
 
-test.each([1, 2, 3, 4, 5])(
-  "交叠授权变更保持撤销屏障，真实范围退出后回绕 %i",
-  async (iteration) => {
-    const { root, sandbox, scope, request } = await processFixture(
-      `barrier-task-${iteration}`,
-    );
-    const release = join(root, "release.txt");
-    const input = request(
-      `const fs=require("node:fs");process.on("SIGTERM",()=>{process.stdout.write("terminating\\n");setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)}))process.exit(0)},10)});setInterval(()=>{},1000);process.stdin.resume();process.stdout.write("ready\\n")`,
-    );
-    const child = await sandbox.spawn(input);
-    await expect
-      .poll(
-        async () =>
-          (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
-      )
-      .toContain("ready");
-    const first = sandbox.revokeTask(scope.taskId, 2, "first_revoke");
-    void first.catch(() => {});
-    await expect
-      .poll(
-        async () =>
-          (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
-      )
-      .toContain("terminating");
-    const second = sandbox.applyScopeChange(
-      { ...scope, generation: 2 },
-      { ...scope, generation: 3 },
-      "second_change",
-    );
-    void second.catch(() => {});
-    try {
+/**
+ * 撤销屏障用例依赖「进程收到 SIGTERM 后自己输出 terminating 再退出」。
+ *
+ * Windows 没有 POSIX 信号：Node 无法把 SIGTERM 投递给另一进程，被撤销的进程会被
+ * job object 直接结束，永远不会打印 terminating。这条用例证的是 barrier 与
+ * SIGTERM 的配合，只能在 POSIX 上验证。
+ */
+test.skipIf(process.platform === "win32")(
+  "交叠授权变更保持撤销屏障，真实范围退出后回绕",
+  async () => {
+    for (const iteration of [1, 2, 3, 4, 5]) {
+      const { root, sandbox, scope, request } = await processFixture(
+        `barrier-task-${iteration}`,
+      );
+      const release = join(root, "release.txt");
+      const input = request(
+        `const fs=require("node:fs");process.on("SIGTERM",()=>{process.stdout.write("terminating\\n");setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)}))process.exit(0)},10)});setInterval(()=>{},1000);process.stdin.resume();process.stdout.write("ready\\n")`,
+      );
+      const child = await sandbox.spawn(input);
+      await expect
+        .poll(
+          async () =>
+            (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
+        )
+        .toContain("ready");
+      const first = sandbox.revokeTask(scope.taskId, 2, "first_revoke");
+      void first.catch(() => {});
+      await expect
+        .poll(
+          async () =>
+            (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
+        )
+        .toContain("terminating");
+      const second = sandbox.applyScopeChange(
+        { ...scope, generation: 2 },
+        { ...scope, generation: 3 },
+        "second_change",
+      );
+      void second.catch(() => {});
       await Promise.race([second, delay(50)]);
       await expect(
         sandbox.spawn({
@@ -458,14 +475,15 @@ test.each([1, 2, 3, 4, 5])(
       await expect(child.writeStdin("late")).rejects.toMatchObject({
         code: "scope_revoked",
       });
-    } finally {
+      // 解除 barrier：让真实进程收到 SIGTERM 后自行退出
       await writeFile(release, "exit");
       await Promise.all([first, second]);
+      expect(await child.waitForExit()).toMatchObject({
+        stopped: true,
+        rangeEmpty: true,
+      });
+      await rm(root, { recursive: true, force: true });
     }
-    expect(await child.waitForExit()).toMatchObject({
-      stopped: true,
-      rangeEmpty: true,
-    });
   },
 );
 
@@ -578,9 +596,25 @@ test("CJS 发布宿主不解析源码 URL，发布 helper 带固定依赖真实�
   const resourceRoot = join(fixture, "published");
   const helperPath = join(resourceRoot, "process-helper", "task-helper.mjs");
   const moduleDirectory = fileURLToPath(new URL(".", import.meta.url));
+  // 发布态 helper 与 broker 同目录（`runtime-paths` 的 packaged 分支只认这条路径）。
+  // broker 是 Rust 构建产物：本机没编译过就跳过（不去伪造一个可执行文件）。
+  const broker = join(
+    moduleDirectory,
+    "native",
+    "target",
+    "release",
+    "kenfutwork-process-broker.exe",
+  );
+  if (!existsSync(broker)) {
+    console.warn(
+      `[process-sandbox] 跳过发布态用例：本机未构建 ${basename(broker)}（先 cargo build --release）`,
+    );
+    return;
+  }
   await promisify(execFile)(process.execPath, [
     join(moduleDirectory, "build-helper.mjs"),
     join(resourceRoot, "process-helper"),
+    broker,
   ]);
   const { build } = await import("esbuild");
   const resolverPath = join(fixture, "runtime-paths.cjs");
@@ -664,10 +698,13 @@ test("provider只读执行保证来自固定无网profile，已有RW helper不�
     invocationId: "readonly-after-rw",
     timeoutMs: 2000,
   });
+  // `stopped` 语义：POSIX 上自然退出是 stopped=false（没被人为停止）；
+  // Windows 的 job object 在进程退出时统一标记 range 收尾，broker 报 stopped=true。
+  // 这条用例证的是「只读拒绝写与网络」，平台差异不进入断言。
   expect(await second.waitForExit()).toMatchObject({
     exitCode: 0,
     rangeEmpty: true,
-    stopped: false,
+    ...(process.platform === "win32" ? {} : { stopped: false }),
   });
   const output = await second.readOutput({ offset: 0, maxBytes: 4096 });
   expect(output.data).toContain("write-denied");

@@ -9,7 +9,8 @@ import { createConsumerLocalAccessService } from "../local-access/test-consumer-
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { loadCompatPlugin } from "../plugins/compat-context.js";
-import { createPermissionsPlugin } from "./plugin.js";
+import { approvalReviewEnabled, createPermissionsPlugin } from "./plugin.js";
+import { DEFAULT_PERMISSION_SETTINGS } from "./tier-store.js";
 
 /**
  * 权限闸门的**整链**回归：compat bundle 声明 `access` → 内核 `tool-pre-execute` 事件带
@@ -35,13 +36,16 @@ const fakeUser: LocalActor = {
 };
 
 /** 真实内核与权限策略；外部边界不启用模型审查。 */
-function assembly() {
+function assembly(options: { onReview?: () => void } = {}) {
   const app = Fastify({ logger: false });
   const kernel = composePlugins(testEnv, [createPermissionsPlugin({})], {
     app,
     overrides: {
       approvalReview: {
-        review: async () => "manual",
+        review: async () => {
+          options.onReview?.();
+          return "manual";
+        },
         invalidate() {},
         close() {},
       },
@@ -185,5 +189,107 @@ describe("permissions 插件：插件工具 access 判据的整链", () => {
 
     await app.close();
     await kernel.dispose();
+  });
+
+  it("策略「拦截」硬拦、「每次询问」交给人审、「放行」越过档位", async () => {
+    const { app, kernel, tools } = assembly();
+    const loaded = await registerBundleTools(tools);
+    const permissions = kernel.get("permissions");
+    tools.register({
+      name: "strategy_allowed",
+      description: "策略显式放行的工具",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async () => "allowed",
+    });
+    permissions.applySettings({
+      ...permissions.getSettings(),
+      tier: "default",
+      policy: {
+        ...permissions.getSettings().policy,
+        rules: [
+          { pattern: "device_read", action: "deny" },
+          { pattern: "device_write", action: "ask" },
+          { pattern: "strategy_allowed", action: "allow" },
+        ],
+      },
+    });
+
+    try {
+      // 「拦截」= 硬拦：理由是策略命中，不是「危险操作需审批」。
+      await expect(tools.execute("device_read", {})).rejects.toThrow(/拦截/);
+      // 「每次询问」不能被当成硬拦：理由要让人去确认，而不是说工具已被禁用。
+      await expect(tools.execute("device_write", {})).rejects.toThrow(
+        /每次询问/,
+      );
+      // 「允许」在默认档下也放行（策略先于档位）。
+      await expect(tools.execute("strategy_allowed", {})).resolves.toBe(
+        "allowed",
+      );
+      // 未命中策略的工具照旧按档位判。
+      await expect(tools.execute("device_undeclared", {})).rejects.toThrow(
+        /危险操作/,
+      );
+    } finally {
+      loaded.dispose();
+      await app.close();
+      await kernel.dispose();
+    }
+  });
+
+  it("策略路径规则按这次调用的实参判定（前缀命中即拦）", async () => {
+    const { app, kernel, tools } = assembly();
+    const permissions = kernel.get("permissions");
+    tools.register({
+      name: "file_writer",
+      description: "写文件",
+      scope: "shared",
+      parameters: { type: "object", properties: {} },
+      execute: async (args: Record<string, unknown>) =>
+        `wrote ${args.file_path}`,
+    });
+    permissions.applySettings({
+      ...permissions.getSettings(),
+      tier: "full-access",
+      policy: {
+        ...permissions.getSettings().policy,
+        pathRules: [{ path: "/protected", operation: "write", action: "deny" }],
+      },
+    });
+
+    try {
+      await expect(
+        tools.execute("file_writer", { file_path: "/protected/secret.txt" }),
+      ).rejects.toThrow(/拦截/);
+      await expect(
+        tools.execute("file_writer", { file_path: "/open/readme.txt" }),
+      ).resolves.toBe("wrote /open/readme.txt");
+    } finally {
+      await app.close();
+      await kernel.dispose();
+    }
+  });
+
+  it("AI 安全防护：审批模型审查默认关闭，显式打开才生效", () => {
+    // 与 WorkBuddy 同口径：整组默认关闭
+    expect(approvalReviewEnabled(DEFAULT_PERMISSION_SETTINGS)).toBe(false);
+    expect(
+      approvalReviewEnabled({
+        ...DEFAULT_PERMISSION_SETTINGS,
+        policy: {
+          ...DEFAULT_PERMISSION_SETTINGS.policy,
+          aiSafety: { injectionGuard: false, approvalReview: true },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      approvalReviewEnabled({
+        ...DEFAULT_PERMISSION_SETTINGS,
+        policy: {
+          ...DEFAULT_PERMISSION_SETTINGS.policy,
+          aiSafety: { injectionGuard: false, approvalReview: false },
+        },
+      }),
+    ).toBe(false);
   });
 });

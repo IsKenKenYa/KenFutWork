@@ -74,7 +74,10 @@ function getSidebarProfileBadge(
     return getSidebarProfileName(user);
   }
 
-  return formatMessage({ id: "sidebar.profile.notLoggedIn" });
+  // 免账户形态（DEC-20）：没有云端用户不代表「未连接」。
+  // 本机实例的主人就是当前用户，显示「连接使用」会被读成需要登录。
+  formatMessage({ id: "sidebar.profile.notLoggedIn" });
+  return "本地用户";
 }
 
 function getAvatarFallbackText(user: UserInfo | null | undefined): string {

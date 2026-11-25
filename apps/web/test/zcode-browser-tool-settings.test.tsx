@@ -67,6 +67,12 @@ function stubApi({
         return json(tierView);
       }
       if (path === "/api/browser/cdp/status") return json({ cdp });
+      if (path === "/api/browser/cdp/browsers")
+        return json({
+          browsers: [
+            { brand: "chrome", executable: "/Applications/Chrome.app" },
+          ],
+        });
       if (path === "/api/browser/cdp/connect") {
         return json({
           cdp: {
@@ -206,17 +212,16 @@ describe("浏览器分区（宿主适配）：外部浏览器（CDP）", () => {
     );
   });
 
-  it("未连接时给「连接到 Chrome」，成功后状态行更新", async () => {
+  it("未连接时给「连接」，成功后状态行更新", async () => {
     const calls = stubApi();
     const user = renderSection();
 
-    await user.click(
-      await screen.findByRole("button", { name: "连接到 Chrome" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "连接" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         path: "/api/browser/cdp/connect",
         method: "POST",
+        body: { brand: "chrome" },
       }),
     );
     expect(await screen.findByRole("button", { name: "断开" })).toBeVisible();

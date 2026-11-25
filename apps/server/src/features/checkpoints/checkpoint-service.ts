@@ -178,6 +178,13 @@ export function createCheckpointService(options: {
     actor: LocalActor,
     rootDirectory: string,
   ) => Promise<readonly string[]>;
+  /**
+   * 保留上限（设置 → 权限 → 自动备份）：每次新建轮次快照后只留最近这么多行。
+   *
+   * 返回 `undefined` 或 `0` 表示不设上限。按需读取（设置是运行期可改的），
+   * 不在构造时缓存。
+   */
+  maxSnapshots?: () => number | undefined;
   files: CheckpointFileTransactions;
   acquireRestoreBarrier: (
     scope: ExecutionScopeHandle,
@@ -774,14 +781,30 @@ export function createCheckpointService(options: {
     },
     captureTurnBoundary: (input) =>
       checked(input, () =>
-        exclusive(input.scope, async () => ({
-          ...(await captureSnapshot(
-            input,
-            "turn",
-            input.phase === "pre" ? "轮次开始快照" : "轮次结束快照",
-          )),
-          phase: input.phase,
-        })),
+        exclusive(input.scope, async () => {
+          const captured = {
+            ...(await captureSnapshot(
+              input,
+              "turn",
+              input.phase === "pre" ? "轮次开始快照" : "轮次结束快照",
+            )),
+            phase: input.phase,
+          };
+          // 保留上限（设置 → 权限 → 自动备份）：只留最近 N 行，超出按时间删最旧。
+          // 只在真的新建了快照时裁一次，避免每次边界都扫全表。
+          if (captured.created) {
+            const keep = options.maxSnapshots?.();
+            if (keep !== undefined && keep > 0) {
+              const identity = input.scope.describe();
+              await options.repository.prune(
+                identity.instanceId,
+                identity.taskId,
+                keep,
+              );
+            }
+          }
+          return captured;
+        }),
       ),
     beforeTurn: (input) =>
       checked(input, () =>

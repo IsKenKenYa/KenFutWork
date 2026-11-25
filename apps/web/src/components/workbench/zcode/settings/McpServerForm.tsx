@@ -234,7 +234,7 @@ export function McpServerForm({
   );
 
   return (
-    <div className="space-y-4 rounded-xl border border-border p-4">
+    <div className="space-y-4 rounded-xl border border-border bg-card p-4">
       {editorMode === "json" ? (
         <div className="space-y-3">
           <div className="flex justify-end">{scopeSelect}</div>

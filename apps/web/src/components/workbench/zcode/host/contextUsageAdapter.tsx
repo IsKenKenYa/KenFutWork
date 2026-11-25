@@ -25,7 +25,6 @@ interface AdapterTaskUsage {
   cache?: (Record<string, unknown> & { hitRate?: number | null }) | undefined;
   breakdown?: ReadonlyArray<{ source: string; chars: number }> | undefined;
 }
-
 /** token 数的中文习惯缩写（61.4万 / 100万）。 */
 function formatTokens(value: number): string {
   if (!Number.isFinite(value) || value < 0) return "0";
@@ -43,7 +42,6 @@ interface UsageView {
   fineLine: string | null;
   line: string | null;
   cacheHitLabel: string | null;
-  cacheHitPercent: number | null;
 }
 
 /** R4-1 口径的内联版：窗口未知不编分母；命中率 = run 累计命中 ÷ run 累计输入。 */
@@ -62,7 +60,6 @@ function usageView(
       fineLine: null,
       line: null,
       cacheHitLabel: null,
-      cacheHitPercent: null,
     };
   }
   const rawPercent = window === null ? null : (used / window) * 100;
@@ -96,7 +93,6 @@ function usageView(
         : `${formatTokens(used)}/${formatTokens(window)}（${percent ?? 0}%）`,
     cacheHitLabel:
       hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
-    cacheHitPercent: hitRate === null ? null : Math.min(100, hitRate),
   };
 }
 
@@ -134,8 +130,6 @@ export function ChatContextUsage({
   onSendCompressionCommand?: (command: string) => void;
   compressionDisabled?: boolean;
 }) {
-  const openInspection = useOpenContextInspection();
-  const [previewOpen, setPreviewOpen] = useState(false);
   const cache = taskUsage?.cache as
     | {
         cacheReadTokens?: number;
@@ -146,6 +140,10 @@ export function ChatContextUsage({
   // size=0 = 服务端没解析到窗口（快照 schema 要求 number）：只给绝对量，不编分母。
   const window = taskUsage && taskUsage.size > 0 ? taskUsage.size : null;
   const view = usageView(taskUsage?.used ?? 0, window, cache);
+  const breakdown = taskUsage?.breakdown ?? [];
+  const openInspection = useOpenContextInspection();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const canInspect = Boolean(sessionId && openInspection);
 
   return (
     <HoverCard
@@ -157,12 +155,13 @@ export function ChatContextUsage({
       <HoverCardTrigger asChild>
         <button
           type="button"
-          aria-label={sessionId && openInspection ? "上下文分析" : "上下文容量"}
+          aria-label={canInspect ? "上下文分析" : "上下文容量"}
           title={view.fineLine ?? view.line ?? "上下文容量"}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-hover focus-visible:outline-2! focus-visible:outline-offset-2 focus-visible:outline-primary!"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover"
           data-testid="context-usage-ring"
           onClick={() => {
             if (!sessionId || !openInspection) return;
+            // 分析窗口接管后悬停卡必须让位，否则它会盖在对话框上面。
             setPreviewOpen(false);
             openInspection(sessionId);
           }}
@@ -170,42 +169,87 @@ export function ChatContextUsage({
           <ContextRing percent={view.percent} />
         </button>
       </HoverCardTrigger>
+      {/* 旧版面板形态（用户点名要的那一版）：浅色卡片、蓝色进度条、来源明细。
+          不传 `border`：HoverCardContent 自身已有 ring-1 描边，再叠一层 border 就是
+          用户看到的「大黑边」双描边。宽度按内容，不再压成固定 72。 */}
       <HoverCardContent
         side="top"
         align="start"
         sideOffset={8}
-        // 关闭时立即释放 Radix 的 Escape 监听，避免消费分析窗口的首次 Escape。
-        className="w-72 rounded-xl border border-border bg-popover p-3 text-xs text-popover-foreground shadow-md data-closed:animate-none"
+        className="w-80 rounded-2xl bg-popover px-4 py-3.5 text-ui-base shadow-lg"
       >
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-medium">上下文容量</span>
-          <span className="tabular-nums">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-ui-base font-medium text-foreground">
+            上下文容量
+          </span>
+          <span className="text-ui-sm tabular-nums text-foreground-subtle">
             {view.fineLine ?? view.line ?? "本轮暂无用量"}
           </span>
         </div>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-hover">
+        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-hover">
           <div
-            className="h-full rounded-l-full bg-foreground/70"
+            className="h-full rounded-full bg-sky-500"
             style={{ width: `${view.percent ?? 0}%` }}
           />
         </div>
-        <div className="mt-3 border-t pt-2">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">平均缓存命中率</span>
-            <span className="tabular-nums">
+        {breakdown.length > 0 ? (
+          <ul className="mt-3 space-y-1.5">
+            {breakdown.map((item) => (
+              <li
+                key={item.source}
+                className="flex items-center justify-between gap-3 text-ui-sm"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="size-2 shrink-0 rounded-full bg-sky-500" />
+                  <span className="truncate text-foreground">
+                    {BREAKDOWN_LABELS[item.source] ?? item.source}
+                  </span>
+                </span>
+                <span className="shrink-0 tabular-nums text-foreground">
+                  {breakdownPercent(item, breakdown)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-3 border-t border-border pt-2.5">
+          <div className="flex items-center justify-between gap-3 text-ui-sm">
+            <span className="text-foreground-subtle">平均缓存命中率</span>
+            <span className="tabular-nums text-foreground">
               {view.cacheHitLabel ?? "模型未提供"}
             </span>
-          </div>
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-hover">
-            <div
-              className="h-full rounded-full bg-foreground/70"
-              style={{ width: `${view.cacheHitPercent ?? 0}%` }}
-            />
           </div>
         </div>
       </HoverCardContent>
     </HoverCard>
   );
+}
+
+/** 上下文来源 → 界面标签（与服务端 `contextWindow.breakdown[].source` 一一对应）。 */
+const BREAKDOWN_LABELS: Record<string, string> = {
+  messages: "消息",
+  system_prompt: "系统提示词",
+  meta_user_context: "其他",
+  skills: "技能",
+  tool_prompt: "工具提示",
+  system_tool_schemas: "系统工具",
+  mcp_tool_schemas: "MCP 工具",
+};
+
+/**
+ * 单个来源占本轮全部上下文的百分比。
+ *
+ * 分母用**各来源之和**而不是窗口大小：明细要回答「这一轮里谁占得多」，
+ * 用窗口做分母时小来源永远显示 0.0%，看不出差别。
+ */
+function breakdownPercent(
+  item: { chars: number; source: string },
+  all: ReadonlyArray<{ chars: number; source: string }>,
+): string {
+  const total = all.reduce((sum, entry) => sum + Math.max(0, entry.chars), 0);
+  if (!Number.isFinite(total) || total <= 0) return "0.0%";
+  const share = (Math.max(0, item.chars) / total) * 100;
+  return `${share.toFixed(1)}%`;
 }
 
 /** 16px 细环：弧长 = 已用百分比（无数据只画空轨道，不编弧）。 */
@@ -239,8 +283,9 @@ function ContextRing({ percent }: { percent: number | null }) {
           r={radius}
           fill="none"
           strokeWidth={stroke}
+          strokeLinecap="round"
           strokeDasharray={`${circumference * usedRatio} ${circumference}`}
-          className="stroke-muted-foreground"
+          className="stroke-sky-500"
         />
       ) : null}
     </svg>

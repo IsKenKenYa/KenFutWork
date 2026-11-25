@@ -451,8 +451,10 @@ function candidateMeta(candidate: VoiceModelCandidate): string {
  * 每段的速度读数：实测优先，未实测才回退到候选的预估标注；
  * 在线端点没有统一读数，未实测就说「未实测」。
  *
- * 历史报告里「听」段带过「比实时快 X 倍 首载 Ys」、「说」段带过「· 比实时快 X 倍」；
- * 这里按结构化字段重算/去掉旧倍速后缀，避免刷新后仍显示已废弃文案。
+ * 「听」段与「想」段统一报「首字」——用户读的是「说完到出字要等多久」，同一个词才可比。
+ * 取值：稳态取「实时率 × 音频时长」（整段返回的耗时，就是这一次的等待），
+ * 没有稳态样本时取首次调用耗时（含模型载入，正是第一次说话实际等的时间）。
+ * 「说」段只保留首包耗时；倍速是实时率换算，界面上不出现。
  */
 function segmentMetric(
   report: VoiceDiagnoseReport | null,
@@ -464,6 +466,11 @@ function segmentMetric(
   // 曾经统一写成「未实测」，把可修的缺失伪装成「还没测」，用户点多少次重新检测都没用。
   if (result.state !== "measured") return result.summary;
   if (segment === "listen") {
+    const rtf = result.listen?.rtfMedian;
+    const clipSeconds = result.listen?.lastClipSeconds;
+    if (rtf !== undefined && clipSeconds !== undefined) {
+      return `首字 ${(rtf * clipSeconds).toFixed(1)}s`;
+    }
     const load = result.listen?.modelLoadMs;
     return load === undefined ? "已实测" : `首字 ${(load / 1000).toFixed(1)}s`;
   }

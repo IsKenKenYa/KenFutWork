@@ -14,7 +14,7 @@ import type {
 import type { ModelConnectivityResult } from "@zcode/shared";
 import type { ProviderApiType } from "@zcode/provider";
 import { type ProviderInstanceResponse, type ProviderInstanceModel, type ProviderProtocol } from "@kenfutwork/shared";
-import { MODEL_KIND_LABELS, modelKind, type ModelKind } from "@zui/host/ModelSettingsSummary.js";
+import { MODEL_GROUPS, modelGroup, type ModelGroup } from "@zui/host/ModelSettingsSummary.js";
 import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
 import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
 import {
@@ -394,10 +394,11 @@ export function ProviderModelsSection({
   nativeProvider?: ProviderInstanceResponse | undefined;
 }) {
   const { intl } = useZCodeIntl();
-  const [kind, setKind] = useState<ModelKind | "all">("all");
+  // 两个大类（用户口径）：文字模型 / 图片视频模型。「全部」仍保留，方便跨类排序。
+  const [kind, setKind] = useState<ModelGroup | "all">("all");
   const [query, setQuery] = useState("");
   const visibleModels = models.filter(model =>
-    (kind === "all" || modelKind(model) === kind) &&
+    (kind === "all" || modelGroup(model) === kind) &&
     `${model.modelId} ${model.native?.name ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
   const { providerSettingsService } = useServices();
@@ -434,7 +435,14 @@ export function ProviderModelsSection({
   const { draft: addDraft } = editor;
 
   const openAddDialog = useCallback(() => {
-    changeNativeDraft({ id: "", name: "", capability: kind === "all" ? defaultCapability : kind });
+    // 页签是两大类，新建对话框吃的是具体能力值：文字页签 → chat，
+    // 图片视频页签 → 沿用该供应商的默认生成能力。
+    changeNativeDraft({
+      id: "",
+      name: "",
+      capability:
+        kind === "all" || kind === "text" ? defaultCapability : "image",
+    });
     addRevisionRef.current = providerRevision;
     editor.reset(createEmptyModel());
     setAddDraftErrorField(null);
@@ -505,12 +513,12 @@ export function ProviderModelsSection({
 
   return (
     <div>
-      <Tabs className="max-w-full overflow-x-auto" value={kind} onValueChange={(value) => { setKind(value as ModelKind | "all"); setQuery(""); }}>
+      <Tabs className="max-w-full overflow-x-auto" value={kind} onValueChange={(value) => { setKind(value as ModelGroup | "all"); setQuery(""); }}>
         <TabsList variant="line" className="mb-4">
           <TabsTrigger value="all">全部 {models.length}</TabsTrigger>
-          {(Object.keys(MODEL_KIND_LABELS) as ModelKind[]).map(value => {
-            const count = models.filter(model => modelKind(model) === value).length;
-            return count > 0 ? <TabsTrigger key={value} value={value}>{MODEL_KIND_LABELS[value]} {count}</TabsTrigger> : null;
+          {(Object.keys(MODEL_GROUPS) as ModelGroup[]).map(value => {
+            const count = models.filter(model => modelGroup(model) === value).length;
+            return count > 0 ? <TabsTrigger key={value} value={value}>{MODEL_GROUPS[value].label} {count}</TabsTrigger> : null;
           })}
         </TabsList>
       </Tabs>

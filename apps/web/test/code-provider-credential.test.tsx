@@ -610,10 +610,13 @@ it("同一供应商按用途筛选和搜索模型，清空搜索恢复当前用�
     ],
   });
   try {
-    await userEvent.click(await screen.findByRole("tab", { name: "图片 1" }));
+    // 用途页签按两组归并（用户口径 2026-11-22：文字模型 / 图片视频模型）。
+    await userEvent.click(
+      await screen.findByRole("tab", { name: "图片视频模型 2" }),
+    );
     expect(screen.getByText("image-native")).toBeTruthy();
     expect(screen.queryByText("chat-native")).toBeNull();
-    expect(screen.queryByText("video-native")).toBeNull();
+    expect(screen.getByText("video-native")).toBeTruthy();
     await userEvent.type(
       screen.getByRole("textbox", { name: "搜索模型" }),
       "not-found",
