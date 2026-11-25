@@ -78,6 +78,18 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 义务履行 | 本仓不随产物分发上游二进制：优先复用用户本机已装的 `sag`；未来按需下载时在下载器内保留版本与校验和，并在本表更新分发说明 |
 | 说明 | 语义检索依赖上游 Jev 服务（TypeSafe，商业服务）；凭据由用户自持（BYOK），不得把本仓凭据写回上游配置以外的位置 |
 
+### A8. 插件市场图标（simple-icons CC0-1.0 + lucide-static ISC）
+
+「游戏与 3D」六个插件在 `plugins/<id>/assets/icon.svg` 的图标，来源分两类：
+
+| 项 | 内容 |
+| --- | --- |
+| 品牌标志（4 个） | Blender、Godot、Unity、Unreal Engine 取 [simple-icons](https://github.com/simple-icons/simple-icons) 16.38.1 的 `blender` / `godotengine` / `unity` / `unrealengine` 条目，许可 **CC0-1.0**（公有领域奉献，无署名义务；本表仍登记以示来源）。落点 `plugins/blender|godot|unity|unreal-engine/assets/icon.svg` |
+| 通用图形（2 个） | `plugins/tripo-3d/assets/icon.svg` 取 [lucide-static](https://github.com/lucide-icons/lucide) 0.469.0 的 `shapes`；`plugins/hyper3d-rodin/assets/icon.svg` 按同版本的 `boxes` 重绘为三块组合（原图 16px 下线过密）。许可 **ISC**，与 A5 同一上游项目 |
+| 修改说明 | 四枚品牌标志去掉 `<svg>` 外层多余属性、补 `fill="currentColor"` 以便随主题反白（宿主 `PluginIcon` 对含 `currentColor` 的 SVG 走 mask 通道）；两枚通用图形把笔画宽度统一为 1.6 并改用 `currentColor`。图形轮廓未改动品牌标志 |
+| **商标声明** | Blender 是 Blender Foundation 的商标；Godot 是 Godot Foundation 的商标；Unity 是 Unity Technologies 的商标；Unreal Engine 是 Epic Games 的商标。此处仅用于**标识对应的第三方软件**（指示性使用，与 EULA §6.1 同一口径），不表示上述公司对本项目的赞助、认可或关联；CC0-1.0 不授予商标权。Tripo 3D 与 Hyper3D Rodin 无官方标志收录，故用通用图形，不涉及商标 |
+| 商业版可用性 | CC0-1.0 与 ISC 均允许商用与再分发；仅需遵守上表的商标声明口径 |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。

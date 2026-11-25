@@ -1,25 +1,11 @@
 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hyper3D Rodin">
-  <g stroke-linecap="round" stroke-linejoin="round">
-  <!-- 自绘：模型方块 + 生成星芒（由文字/图片生成 3D 模型），与同族图标同口径。
-       星芒是四角十字加两点，不用五角星：16px 下五角星会糊成一个点。 -->
-  <path
-    d="M3.6 9.6 11 5.6l7.4 4v5.6L11 19.2l-7.4-4z"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-  />
-  <path
-    d="M3.6 9.6 11 13.6l7.4-4M11 13.6v5.6"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-  />
-  <path
-    d="M18.8 4.2v4M16.8 6.2h4"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.4"
-    stroke-linecap="round"
-  />
+  <!-- 图形取自 Lucide 的 boxes（ISC，lucide-static 0.469.0）：
+       三个立方体组合，对应「把生成的模型拆分为独立部件」。
+       原图在 16px 下线条过密，这里只保留外轮廓与三条分割棱，笔画 1.6 与同族一致。 -->
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.2 16.4 5.7v5l-4.4 2.5-4.4-2.5v-5z" />
+    <path d="M7.6 12.6 12 15.1v5.7l-4.4-2.5-4-2.3v-5l4 1.6z" />
+    <path d="M16.4 12.6 20.4 14.6v5l-4 2.3L12 20.8v-5.7z" />
+    <path d="M7.6 12.6 12 15.1l4.4-2.5M12 15.1v5.7" />
   </g>
 </svg>
