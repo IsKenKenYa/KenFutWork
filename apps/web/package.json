@@ -63,6 +63,7 @@
   },
   "devDependencies": {
     "@kenfutwork/config": "workspace:*",
+    "@kenfutwork/context-insights-ui": "workspace:*",
     "@kenfutwork/ui": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
