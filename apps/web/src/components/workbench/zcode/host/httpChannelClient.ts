@@ -82,7 +82,8 @@ function notificationReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
-class CodeHostHttpError extends Error {
+/** 宿主 HTTP 请求失败；`status` 是宿主回的状态码（宿主能力据此区分「已存在」与其它失败）。 */
+export class CodeHostHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
@@ -28,6 +29,15 @@ import {
   rootProjectId,
   rootWorkspace,
 } from "./setup/code-root-host-http";
+
+type CodePlatform = ReturnType<typeof createCodePlatform>;
+
+/** 宿主没接通技能市场的形态：在真实宿主能力的基础上只摘掉这一项。 */
+function omitSkillMarketplace(platform: CodePlatform): CodePlatform {
+  return Object.fromEntries(
+    Object.entries(platform).filter(([key]) => key !== "skillMarketplace"),
+  ) as CodePlatform;
+}
 
 let client: CodeHttpChannelClient | undefined;
 let release: (() => void) | undefined;
@@ -53,6 +63,17 @@ async function openSkillsPage(
     pluginSkill?: boolean;
     /** 插件技能所属的插件在市场目录里带有图标。 */
     pluginIcon?: boolean;
+    /** 技能记录带市场包名：表示它是此前从技能市场添加的。 */
+    recordPackageName?: string;
+    /** 宿主没有接通技能市场。 */
+    withoutMarketplace?: boolean;
+    /** 技能市场接口的应答；传入对象可在用例中途修改，用来测重试。 */
+    marketplace?: {
+      search?: "ok" | "fail";
+      install?: "ok" | "duplicate" | "fail";
+      /** 市场里的技能总数，超过一页时出现「加载更多」。 */
+      total?: number;
+    };
     onCreateTask?: (request?: unknown) => void;
   } = {},
 ) {
@@ -79,7 +100,12 @@ async function openSkillsPage(
     enabled: true,
     resourceRef: "kenfutwork-skill:51000000-0000-4000-8000-000000000001",
     body: "# 技能正文\n\n- Unicode😀\n",
-    metadata: { slug: "native-skill" },
+    metadata: {
+      slug: "native-skill",
+      ...(scenario.recordPackageName
+        ? { packageName: scenario.recordPackageName }
+        : {}),
+    },
   };
   if (scenario.pluginSkill)
     Object.assign(record, {
@@ -93,6 +119,63 @@ async function openSkillsPage(
     });
   vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
     if (url.endsWith("/api/plugins")) return Response.json({ plugins: [] });
+    const marketplace = scenario.marketplace ?? {};
+    if (url.includes("/api/skills/marketplace/search")) {
+      const params = new URL(url, "https://host.example").searchParams;
+      const page = Number(params.get("page"));
+      const limit = Number(params.get("limit"));
+      calls.push({
+        service: "skill-marketplace",
+        method: "search",
+        args: [{ q: params.get("q"), page, limit }],
+      });
+      if (marketplace.search === "fail")
+        return Response.json(
+          { error: { code: "marketplace_search_failed", message: "搜索失败" } },
+          { status: 502 },
+        );
+      const total = marketplace.total ?? 2;
+      const start = (page - 1) * limit;
+      const skills = Array.from(
+        { length: Math.max(0, Math.min(limit, total - start)) },
+        (_, index) => {
+          const ordinal = start + index + 1;
+          return {
+            packageName: `skill-${ordinal}`,
+            name: `skill-${ordinal}`,
+            description: `第 ${ordinal} 个技能`,
+            author: "tester",
+            version: "1.0.0",
+            downloads: 10,
+            keywords: [],
+          };
+        },
+      );
+      return Response.json({ skills, total });
+    }
+    if (url.endsWith("/api/skills/marketplace/install")) {
+      const body = JSON.parse(String(options?.body));
+      calls.push({ service: "skill-marketplace", method: "install", args: [body] });
+      if (marketplace.install === "fail")
+        return Response.json(
+          { error: { code: "marketplace_install_failed", message: "下载失败" } },
+          { status: 502 },
+        );
+      if (marketplace.install === "duplicate")
+        return Response.json(
+          {
+            error: {
+              code: "marketplace_install_failed",
+              message: "This skill is already installed.",
+            },
+          },
+          { status: 409 },
+        );
+      return Response.json(
+        { skill: { id: "new-skill", slug: body.packageName, name: body.packageName } },
+        { status: 201 },
+      );
+    }
     if (url.endsWith("/rpc")) {
       const call = JSON.parse(String(options?.body));
       if (scenario.pluginSkill && call.service === "plugin-management") {
@@ -192,7 +275,13 @@ async function openSkillsPage(
   const host = client;
   const page = (workspacePath?: string) => (
     <ServiceProvider services={host.services}>
-      <PlatformProvider platform={createCodePlatform(host)}>
+      <PlatformProvider
+        platform={
+          scenario.withoutMarketplace
+            ? omitSkillMarketplace(createCodePlatform(host))
+            : createCodePlatform(host)
+        }
+      >
         <ZCodeIntlProvider initialLocale="zh-CN">
           <TabStoreProvider>
             <TooltipProvider>
@@ -289,24 +378,240 @@ it("技能图标统一：个人技能与插件技能用同一个图标", async (
   expectUnifiedSkillIcon(await screen.findByRole("button", { name: /native-skill/ }));
 });
 
-it("设置页新建技能入口以创造模式创建新任务", async () => {
+type Call = { service: string; method: string; args: unknown[] };
+const marketplaceCalls = (calls: Call[]) =>
+  calls.filter((call) => call.service === "skill-marketplace");
+const skillListCalls = (calls: Call[]) =>
+  calls.filter((call) => call.service === "skills" && call.method === "list");
+
+/** 打开技能页的「添加」下拉，返回菜单。 */
+async function openAddMenu() {
+  const trigger = await screen.findByRole("button", { name: "添加" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
+  return screen.findByRole("menu");
+}
+
+const menuItemNames = (menu: HTMLElement) =>
+  within(menu)
+    .getAllByRole("menuitem")
+    .map((item) => item.textContent?.trim());
+
+/** 打开技能页并从「添加」菜单进入技能市场，返回市场对话框。 */
+async function openMarketplace(
+  scenario: Parameters<typeof openSkillsPage>[0] = {},
+) {
+  const opened = await openSkillsPage(scenario);
+  await openAddMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "从市场添加" }));
+  const dialog = await screen.findByRole("dialog");
+  return { ...opened, dialog };
+}
+
+it("「添加」下拉依次是导入、从市场添加、使用 agent 创建", async () => {
+  await openSkillsPage();
+  expect(menuItemNames(await openAddMenu())).toEqual([
+    "导入",
+    "从市场添加",
+    "使用 agent 创建",
+  ]);
+});
+
+it("「使用 agent 创建」以创造模式创建新任务", async () => {
   const onCreateTask = vi.fn();
   await openSkillsPage({ onCreateTask });
-  const button = await waitFor(() => {
-    const el = document.querySelector<HTMLButtonElement>(
-      '[data-settings-create-action="settings.skills.create.open"]',
-    );
-    expect(el).not.toBeNull();
-    expect(el?.disabled).toBe(false);
-    return el as HTMLButtonElement;
-  });
-  fireEvent.click(button);
+  await openAddMenu();
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "使用 agent 创建" }),
+  );
   expect(onCreateTask).toHaveBeenCalledWith(
     expect.objectContaining({
       initialPrompt: "创建一个技能：\n",
       executionMode: "creative",
     }),
   );
+});
+
+it("宿主未接通技能市场时，下拉里不出现「从市场添加」", async () => {
+  await openSkillsPage({ withoutMarketplace: true });
+  expect(menuItemNames(await openAddMenu())).toEqual([
+    "导入",
+    "使用 agent 创建",
+  ]);
+});
+
+it("「导入」打开导入对话框", async () => {
+  await openSkillsPage();
+  await openAddMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "导入" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByText("导入外部 Agent 技能"),
+  ).toBeTruthy();
+});
+
+it("「从市场添加」打开技能市场：打开即浏览第一页", async () => {
+  const { calls, dialog } = await openMarketplace();
+  const items = await within(dialog).findAllByTestId(
+    "skill-marketplace-item",
+  );
+  expect(items).toHaveLength(2);
+  expect(items[0]?.textContent).toContain("skill-1");
+  expect(items[0]?.textContent).toContain("第 1 个技能");
+  expect(marketplaceCalls(calls)).toEqual([
+    {
+      service: "skill-marketplace",
+      method: "search",
+      args: [{ q: "", page: 1, limit: 20 }],
+    },
+  ]);
+});
+
+it("输入关键词后等输入停下再按关键词搜索", async () => {
+  const { calls, dialog } = await openMarketplace();
+  await within(dialog).findAllByTestId("skill-marketplace-item");
+  fireEvent.change(within(dialog).getByRole("searchbox"), {
+    target: { value: "wri" },
+  });
+  expect(marketplaceCalls(calls)).toHaveLength(1);
+  await waitFor(() =>
+    expect(marketplaceCalls(calls).at(-1)?.args[0]).toEqual({
+      q: "wri",
+      page: 1,
+      limit: 20,
+    }),
+  );
+});
+
+it("超过一页时出现「加载更多」，点击后取下一页接在后面", async () => {
+  const { calls, dialog } = await openMarketplace({
+    marketplace: { total: 25 },
+  });
+  await within(dialog).findAllByTestId("skill-marketplace-item");
+  fireEvent.click(
+    await within(dialog).findByRole("button", { name: "加载更多" }),
+  );
+  await waitFor(() =>
+    expect(
+      within(dialog).getAllByTestId("skill-marketplace-item"),
+    ).toHaveLength(25),
+  );
+  expect(marketplaceCalls(calls).map((call) => call.args[0])).toEqual([
+    { q: "", page: 1, limit: 20 },
+    { q: "", page: 2, limit: 20 },
+  ]);
+  expect(
+    within(dialog).queryByRole("button", { name: "加载更多" }),
+  ).toBeNull();
+});
+
+it("市场里点「添加」安装该技能并刷新技能列表，条目变成「已添加」", async () => {
+  const { calls, dialog } = await openMarketplace({
+    marketplace: { install: "ok" },
+  });
+  const [item] = await within(dialog).findAllByTestId(
+    "skill-marketplace-item",
+  );
+  if (!item) throw new Error("市场条目未渲染");
+  const listsBefore = skillListCalls(calls).length;
+  fireEvent.click(within(item).getByRole("button", { name: "添加" }));
+  await within(item).findByText("已添加");
+  expect(marketplaceCalls(calls)).toContainEqual({
+    service: "skill-marketplace",
+    method: "install",
+    args: [{ packageName: "skill-1" }],
+  });
+  await waitFor(() =>
+    expect(skillListCalls(calls).length).toBe(listsBefore + 1),
+  );
+  expect(within(item).queryByRole("button")).toBeNull();
+});
+
+it("此前从市场添加过的技能直接显示「已添加」", async () => {
+  const { dialog } = await openMarketplace({ recordPackageName: "skill-2" });
+  const [first, second] = await within(dialog).findAllByTestId(
+    "skill-marketplace-item",
+  );
+  expect(
+    within(first as HTMLElement).getByRole("button", { name: "添加" }),
+  ).toBeTruthy();
+  expect(
+    within(second as HTMLElement).getByText("已添加"),
+  ).toBeTruthy();
+  expect(within(second as HTMLElement).queryByRole("button")).toBeNull();
+});
+
+it("重复添加时条目也标成「已添加」，不显示失败", async () => {
+  const { dialog } = await openMarketplace({
+    marketplace: { install: "duplicate" },
+  });
+  const [item] = await within(dialog).findAllByTestId(
+    "skill-marketplace-item",
+  );
+  fireEvent.click(
+    within(item as HTMLElement).getByRole("button", { name: "添加" }),
+  );
+  await within(item as HTMLElement).findByText("已添加");
+  expect(
+    within(item as HTMLElement).queryByText("添加失败"),
+  ).toBeNull();
+});
+
+it("添加失败时条目显示「添加失败」并保留「添加」按钮", async () => {
+  const { dialog } = await openMarketplace({
+    marketplace: { install: "fail" },
+  });
+  const [item] = await within(dialog).findAllByTestId(
+    "skill-marketplace-item",
+  );
+  fireEvent.click(
+    within(item as HTMLElement).getByRole("button", { name: "添加" }),
+  );
+  await within(item as HTMLElement).findByText("添加失败");
+  expect(
+    within(item as HTMLElement).getByRole("button", { name: "添加" }),
+  ).toBeTruthy();
+});
+
+it("搜索失败时显示无法访问，点「重试」后重新取到结果", async () => {
+  const marketplace = { search: "fail" as "fail" | "ok" };
+  const { dialog } = await openMarketplace({ marketplace });
+  const retry = await within(dialog).findByRole("button", { name: "重试" });
+  expect(within(dialog).getByText("技能市场无法访问")).toBeTruthy();
+  marketplace.search = "ok";
+  fireEvent.click(retry);
+  expect(
+    await within(dialog).findAllByTestId("skill-marketplace-item"),
+  ).toHaveLength(2);
+});
+
+it("市场没有结果时显示「没有找到技能」", async () => {
+  const { dialog } = await openMarketplace({ marketplace: { total: 0 } });
+  await within(dialog).findByText("没有找到技能");
+});
+
+it("翻下一页失败时保留已有结果，点「重试」只补取失败的那一页", async () => {
+  const marketplace = { search: "ok" as "ok" | "fail", total: 25 };
+  const { calls, dialog } = await openMarketplace({ marketplace });
+  const more = await within(dialog).findByRole("button", { name: "加载更多" });
+  marketplace.search = "fail";
+  fireEvent.click(more);
+  const retry = await within(dialog).findByRole("button", { name: "重试" });
+  expect(
+    within(dialog).getAllByTestId("skill-marketplace-item"),
+  ).toHaveLength(20);
+  marketplace.search = "ok";
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(
+      within(dialog).getAllByTestId("skill-marketplace-item"),
+    ).toHaveLength(25),
+  );
+  expect(marketplaceCalls(calls).map((call) => call.args[0])).toEqual([
+    { q: "", page: 1, limit: 20 },
+    { q: "", page: 2, limit: 20 },
+    { q: "", page: 2, limit: 20 },
+  ]);
 });
 
 it("无Project原技能页显示真实本机包，启停写回相同安装记录", async () => {

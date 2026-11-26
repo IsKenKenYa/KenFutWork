@@ -544,6 +544,24 @@ export interface HostWorkbenchNavigation {
   setActiveMode(mode: HostWorkbenchMode): void;
 }
 
+/** 技能市场条目（宿主返回的只读摘要）。 */
+export interface HostSkillMarketplaceItem {
+  packageName: string;
+  name: string;
+  description: string;
+  author: string;
+  version: string;
+  keywords: readonly string[];
+  homepage?: string;
+  repository?: string;
+  license?: string;
+}
+
+export interface HostSkillMarketplaceSearchResult {
+  skills: readonly HostSkillMarketplaceItem[];
+  total: number;
+}
+
 export interface IPlatformService {
   /** 宿主模式导航；运行和原会话仍留在各自文档。 */
   workbenchNavigation?: HostWorkbenchNavigation;
@@ -560,6 +578,15 @@ export interface IPlatformService {
   supportsExternalAgentSettingsSync?: boolean;
   /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */
   skillsSettingsCapabilities?: { databaseRecords: boolean };
+  /**
+   * 宿主接通的技能市场；未声明的平台不出现市场入口。
+   * install 返回本次结果：`added` 是新装上，`alreadyInstalled` 是此前已装过同一个包；
+   * 其余失败以异常形式返回，异常的 message 可直接展示。
+   */
+  skillMarketplace?: {
+    search(input: { query: string; page: number; limit: number }): Promise<HostSkillMarketplaceSearchResult>;
+    install(input: { packageName: string }): Promise<{ status: "added" | "alreadyInstalled" }>;
+  };
   mcpSettingsCapabilities?: {
     databaseRecords: boolean;
     projectScope: boolean;

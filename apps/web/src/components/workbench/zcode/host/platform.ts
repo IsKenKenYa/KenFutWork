@@ -1,10 +1,12 @@
 import {
+  type MarketplaceSearchResponse,
   type ManagementTarget,
   type PluginMarketEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
 import type {
   ApplicationIconInfo,
+  HostSkillMarketplaceSearchResult,
   HostWorkbenchNavigation,
   IPlatformService,
 } from "@zcode/shared";
@@ -13,7 +15,7 @@ import {
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import { createMacDesktopChrome } from "./desktopChrome.js";
-import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { CodeHostHttpError, type CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
@@ -106,6 +108,47 @@ export function createCodePlatform(
       instanceScope: true,
     },
     skillsSettingsCapabilities: { databaseRecords: true },
+    // 技能市场：接本机服务的搜索与安装接口。只把界面用得到的字段交给上层，
+    // 接口里的 downloads 是用 npm 热度分数折算出来的，不是真实下载量，不外传。
+    skillMarketplace: {
+      search: async ({ query, page, limit }) => {
+        const result = await client.request<MarketplaceSearchResponse>(
+          `/api/skills/marketplace/search?${new URLSearchParams({
+            q: query,
+            page: String(page),
+            limit: String(limit),
+          })}`,
+        );
+        return {
+          total: result.total,
+          skills: result.skills.map(
+            ({ packageName, name, description, author, version, keywords, homepage, repository, license }) => ({
+              packageName,
+              name,
+              description,
+              author,
+              version,
+              keywords,
+              ...(homepage ? { homepage } : {}),
+              ...(repository ? { repository } : {}),
+              ...(license ? { license } : {}),
+            }),
+          ),
+        } satisfies HostSkillMarketplaceSearchResult;
+      },
+      install: async ({ packageName }) => {
+        try {
+          await client.request("/api/skills/marketplace/install", { packageName });
+        } catch (error) {
+          // 服务端对重复安装回 409：这是「此前已添加过」，界面据此标成已添加
+          if (error instanceof CodeHostHttpError && error.status === 409) {
+            return { status: "alreadyInstalled" as const };
+          }
+          throw error;
+        }
+        return { status: "added" as const };
+      },
+    },
     mcpSettingsCapabilities: {
       databaseRecords: true,
       projectScope: false,

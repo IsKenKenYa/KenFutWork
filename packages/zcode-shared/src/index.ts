@@ -212,6 +212,8 @@ export type {
   HostWorkbenchMode,
   HostWorkbenchNavigation,
   HostPluginSidebarEntry,
+  HostSkillMarketplaceItem,
+  HostSkillMarketplaceSearchResult,
   OpenInEditorRemoteTarget,
   OpenInEditorOptions,
   PostUpdateReleaseNotesPayload,

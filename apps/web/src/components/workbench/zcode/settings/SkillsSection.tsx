@@ -53,6 +53,8 @@ import {
   resolveUniquePluginListingByName,
 } from "@zui/settings/pluginStoreListing.js";
 import { groupSkillsByPlugin } from "@zui/settings/pluginManagedResourceGroups.js";
+import { SkillAddMenu } from "@zui/settings/SkillAddMenu.js";
+import { SkillMarketplaceDialog } from "@zui/settings/SkillMarketplaceDialog.js";
 import { SkillsImportDialog } from "@zui/settings/ExternalAgentImportDialog.js";
 import { formatRemoteSkillSyncTarget } from "@zui/settings/RemoteSkillSyncDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@zui/settings/RemoteSyncActions.js";
@@ -220,6 +222,18 @@ export function SkillsSection({
   const [diagnostics, setDiagnostics] = useState<SkillDiagnostic[]>([]);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [marketDialogOpen, setMarketDialogOpen] = useState(false);
+  // 技能市场由宿主提供；技能列表里带市场包名的，就是此前从市场添加过的
+  const skillMarketplace = platform.skillMarketplace;
+  const installedMarketPackages = useMemo(
+    () =>
+      new Set(
+        skills.flatMap((skill) =>
+          skill.metadata?.packageName ? [skill.metadata.packageName] : [],
+        ),
+      ),
+    [skills],
+  );
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const latestRequestIdRef = useRef(0);
   const activeSkillTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
@@ -357,6 +371,7 @@ export function SkillsSection({
       setLoading(false);
       setError(null);
       setImportDialogOpen(false);
+      setMarketDialogOpen(false);
       setRemoteSkillSyncOpen(false);
       return;
     }
@@ -376,6 +391,26 @@ export function SkillsSection({
       skillsService,
     });
   }, [activeWorkspaceIdentity, activeWorkspacePath, skillsService]);
+
+  /** 从市场添加技能之后：让延迟创建的会话拿到新技能，再刷新技能列表与共享技能库存。 */
+  const refreshAfterMarketplaceInstall = useCallback(async () => {
+    await invalidateDeferredDraftSessionForSkillChange({
+      zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-skill-marketplace",
+    });
+    await Promise.all([
+      refresh(),
+      refreshSharedSkillStoreForCurrentWorkspace(),
+    ]);
+  }, [
+    activeWorkspaceIdentity,
+    activeWorkspacePath,
+    refresh,
+    refreshSharedSkillStoreForCurrentWorkspace,
+    zcodeSessionService,
+  ]);
 
   useEffect(() => {
     if (!databaseRecords || !platform.pluginSidebar) return;
@@ -655,15 +690,20 @@ export function SkillsSection({
   );
 
   const skillHeaderActions = (
-    <SettingsResourceHeaderActions
-      onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
-      onImport={() => setImportDialogOpen(true)}
-      onNew={handleCreateSkill}
-      importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
-      newDisabled={scopeUnavailable || !onCreateTask}
-      importActionId="settings.skills.import.open"
-      newActionId="settings.skills.create.open"
-    />
+    <div className="flex flex-wrap items-center gap-2">
+      <SettingsResourceHeaderActions
+        onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
+      />
+      <SkillAddMenu
+        onImport={() => setImportDialogOpen(true)}
+        onAddMarketplace={
+          skillMarketplace ? () => setMarketDialogOpen(true) : undefined
+        }
+        onCreateWithAgent={handleCreateSkill}
+        importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
+        createDisabled={scopeUnavailable || !onCreateTask}
+      />
+    </div>
   );
   const remoteSyncAction = connectedRemoteSyncTarget ? (
     <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.remoteSync.open" })}>
@@ -981,6 +1021,15 @@ export function SkillsSection({
           await refresh();
         }}
       />
+      {skillMarketplace ? (
+        <SkillMarketplaceDialog
+          open={marketDialogOpen}
+          onOpenChange={setMarketDialogOpen}
+          marketplace={skillMarketplace}
+          installedPackageNames={installedMarketPackages}
+          onInstalled={() => void refreshAfterMarketplaceInstall()}
+        />
+      ) : null}
       <RemoteSyncDialogs
         canSyncSkills={Boolean(
           targetServiceResolution.rpcReady && connectedRemoteSyncTarget && activeWorkspacePath,
