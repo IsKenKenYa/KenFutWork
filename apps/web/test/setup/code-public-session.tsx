@@ -10,6 +10,7 @@ import { loadCodePublicHostProviders } from "./code-public-host-ui";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 
+/** 同项目下新建一个兄弟 Task：运行记录与检查点测试要验证「不串到别的 Task」。 */
 export async function createPublicSiblingTask(host: Host) {
   const result = await host.stream.rpc("sendConversationCommandV4", [
     {

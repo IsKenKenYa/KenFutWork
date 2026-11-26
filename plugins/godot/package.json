@@ -10,14 +10,17 @@
     "README_CN.md",
     "README.md",
     "commands",
-    "skills"
+    "skills",
+    "assets/icon.svg"
   ],
   "kenfutwork": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "title": "Godot",
-    "category": "游戏与 3D"
+    "category": "游戏与 3D",
+    "assets": true,
+    "icon": "assets/icon.svg"
   },
   "main": "index.js"
 }

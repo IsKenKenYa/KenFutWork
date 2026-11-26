@@ -23,20 +23,16 @@ function ResizablePanelGroup({
   className,
   layoutId,
   panelIds,
-  persistUserLayoutOnly,
   ...props
 }: Omit<GroupProps, "defaultLayout" | "onLayoutChange" | "onLayoutChanged"> & {
   /** 持久化 key，对应 useDefaultLayout 的 id */
   layoutId: string;
   /** 条件渲染面板时需要传当前可见面板的 id 列表 */
   panelIds?: string[];
-  /** 窄窗口或面板临时隐藏时仍保留用户最后一次调整的分栏。 */
-  persistUserLayoutOnly?: boolean;
 }) {
-  const { defaultLayout, onLayoutChange, onLayoutChanged } = useDefaultLayout({
+  const { defaultLayout, onLayoutChange } = useDefaultLayout({
     id: layoutId,
     panelIds,
-    onlySaveAfterUserInteractions: persistUserLayoutOnly,
   });
 
   return (
@@ -46,8 +42,7 @@ function ResizablePanelGroup({
       // onLayoutChanged 会在每次布局变化后立刻写 localStorage。
       // 窗口 resize 时 PanelGroup 会连续产生成百上千次 layout 更新，必须走库内置
       // debounce 的 onLayoutChange，避免同步持久化放大主线程压力。
-      onLayoutChange={persistUserLayoutOnly ? undefined : onLayoutChange}
-      onLayoutChanged={persistUserLayoutOnly ? onLayoutChanged : undefined}
+      onLayoutChange={onLayoutChange}
       {...props}
     />
   );

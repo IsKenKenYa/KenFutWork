@@ -32,12 +32,10 @@ interface ConversationQueuePanelProps {
   queue: QueueState;
   /** 删除队列项（deleteQueueItem command）。 */
   onDeleteItem?: (queueItemId: string) => void;
-  /** 被宿主冻结的消息进入本窗口输入框。 */
+  /** 撤回队列项到发起端 composer；权威删除成功后才恢复草稿。 */
   onEditItem?: (queueItemId: string) => Promise<void> | void;
-  /** 本窗口正在编辑的消息。 */
+  /** 正在等待 delete ACK / composer restore 的目标项；仅锁该 row。 */
   pendingEditQueueItemId?: string | null;
-  ownEditorId?: string;
-  onReleaseEdit?: (queueItemId: string, editorId: string) => void;
   /** 立即发送队列项（sendQueuedNow command，stop 当前 + 消费该项）。 */
   onSendNow?: (queueItemId: string) => void;
   /** 拖拽排序项（reorderQueueItem，移动到锚点前；null=队尾）。 */
@@ -119,8 +117,6 @@ interface QueueRowProps {
   onDeleteItem?: (queueItemId: string) => void;
   onEditItem?: (queueItemId: string) => Promise<void> | void;
   editPending: boolean;
-  ownEditorId?: string;
-  onReleaseEdit?: (queueItemId: string, editorId: string) => void;
   onSendNow?: (queueItemId: string) => void;
 }
 
@@ -133,12 +129,9 @@ const QueueRow = memo(function QueueRow({
   onEditItem,
   onSendNow,
   editPending,
-  ownEditorId,
-  onReleaseEdit,
 }: QueueRowProps) {
   const dispatchLocked = item.dispatch.state !== "queued";
-  const editLock = item.editLock;
-  const rowLocked = dispatchLocked || editPending || Boolean(editLock);
+  const rowLocked = dispatchLocked || editPending;
   const isCompact = item.kind === "compact";
   const {
     attributes,
@@ -213,17 +206,7 @@ const QueueRow = memo(function QueueRow({
       >
         <span className="truncate">{isCompact ? "/compact" : item.text}</span>
       </span>
-      {editLock || editPending ? (
-        <span className="shrink-0 text-ui-sm text-foreground-subtle">
-          {intl.formatMessage({ id: editPending ? "chat.queue.editing" : "chat.queue.editingElsewhere" })}
-        </span>
-      ) : null}
-      {editLock && editLock.editorId !== ownEditorId && onReleaseEdit ? (
-        <Button type="button" variant="ghost" size="sm" onClick={() => onReleaseEdit(item.queueItemId, editLock.editorId)}>
-          {intl.formatMessage({ id: "chat.queue.releaseEdit" })}
-        </Button>
-      ) : null}
-      {onSendNow && !editLock && !editPending ? (
+      {onSendNow ? (
         <Button
           type="button"
           variant="secondary"
@@ -249,7 +232,7 @@ const QueueRow = memo(function QueueRow({
           {intl.formatMessage({ id: isCompact ? "chat.queue.runNow" : "chat.queue.sendNow" })}
         </Button>
       ) : null}
-      {onEditItem && item.kind === "sendText" && !editLock && !editPending ? (
+      {onEditItem && !isCompact ? (
         <ControlHintTooltip title={intl.formatMessage({ id: "chat.queue.edit" })}>
           <Button
             type="button"
@@ -265,7 +248,7 @@ const QueueRow = memo(function QueueRow({
           </Button>
         </ControlHintTooltip>
       ) : null}
-      {onDeleteItem && !editLock && !editPending ? (
+      {onDeleteItem ? (
         <ControlHintTooltip title={intl.formatMessage({ id: "chat.queue.remove" })}>
           <Button
             type="button"
@@ -294,8 +277,6 @@ function ConversationQueuePanelImpl({
   onDeleteItem,
   onEditItem,
   pendingEditQueueItemId = null,
-  ownEditorId,
-  onReleaseEdit,
   onSendNow,
   onMoveItem,
   onResume,
@@ -399,8 +380,6 @@ function ConversationQueuePanelImpl({
                 onEditItem={onEditItem}
                 onSendNow={onSendNow}
                 editPending={pendingEditQueueItemId === item.queueItemId}
-                ownEditorId={ownEditorId}
-                onReleaseEdit={onReleaseEdit}
               />
             ))}
           </ul>

@@ -154,7 +154,7 @@ it("turns a plain-text 500 into a readable host error", async () => {
   );
   try {
     await expect(client.directoryRelinkSnapshot(randomUUID())).rejects.toThrow(
-      "本机服务未能完成请求，请检查工作台状态。",
+      "Code 宿主请求失败：500",
     );
   } finally {
     vi.unstubAllGlobals();

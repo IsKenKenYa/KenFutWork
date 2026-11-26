@@ -80,7 +80,7 @@ describe("useFlowHostEntry", () => {
     );
   });
 
-  it("插件已安装但适配层未配齐 → 隐藏入口并保留原因", async () => {
+  it("状态未配齐（settled）→ 入口仍出现，未就绪原因透出（用户口径：dify 没起也要有 Flow）", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {

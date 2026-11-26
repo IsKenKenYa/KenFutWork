@@ -40,12 +40,6 @@ interface V4DraftFile {
 
 const STORAGE_KEY_PREFIX = "zcode-v4-composer-drafts:v1:";
 export const V4_DRAFT_SCOPE_ROOT = "__draft__";
-const EDIT_SCOPE_PREFIX = "queue-edit:";
-const editDrafts = new Map<string, V4ComposerDraft>();
-
-export function queueComposerEditScope(editorId: string): string {
-  return `${EDIT_SCOPE_PREFIX}${editorId}`;
-}
 const warnedStorageKeys = new Set<string>();
 
 function warnStorageFailure(key: string, error: unknown) {
@@ -180,7 +174,6 @@ export function readV4ComposerDraft(
   workspaceIdentity: string | undefined,
   scopeId: string,
 ): V4ComposerDraft | null {
-  if (scopeId.startsWith(EDIT_SCOPE_PREFIX)) return editDrafts.get(scopeId) ?? null;
   const key = getV4ComposerDraftStorageKey(workspacePath, workspaceIdentity);
   const draft = readDraftFile(key).scopes[scopeId];
   if (!draft || typeof draft.text !== "string") {
@@ -195,10 +188,6 @@ export function persistV4ComposerDraft(
   scopeId: string,
   draft: Omit<V4ComposerDraft, "updatedAt">,
 ) {
-  if (scopeId.startsWith(EDIT_SCOPE_PREFIX)) {
-    editDrafts.set(scopeId, { ...draft, updatedAt: Date.now() });
-    return true;
-  }
   const key = getV4ComposerDraftStorageKey(workspacePath, workspaceIdentity);
   const file = readDraftFile(key);
   if (
@@ -222,10 +211,6 @@ export function clearV4ComposerDraft(
   workspaceIdentity: string | undefined,
   scopeId: string,
 ) {
-  if (scopeId.startsWith(EDIT_SCOPE_PREFIX)) {
-    editDrafts.delete(scopeId);
-    return true;
-  }
   const key = getV4ComposerDraftStorageKey(workspacePath, workspaceIdentity);
   const file = readDraftFile(key);
   if (!(scopeId in file.scopes)) {

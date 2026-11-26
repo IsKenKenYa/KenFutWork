@@ -184,7 +184,7 @@ test("权限与执行方式并在同一个菜单里，权限只用文字不带�
   // 两组并列在同一面板：都能找到，且各自只列自己那一项。
   const permissions = screen.getByRole("group", { name: "权限" });
   const executionModes = screen.getByRole("group", { name: "执行方式" });
-  // 权限项只写档位名（用户口径 2026-11-22：不写「人工或审批模型」这类说明）。
+  // 权限项只写档位名，不写「人工或审批模型」这类说明。
   for (const label of ["变更前确认", "自动编辑", "完全访问"]) {
     expect(
       permissions.contains(

@@ -15,22 +15,6 @@ import type { WindowControllerTaskListVersion } from "@zui/v4/windowControllerTa
 
 type GlobalTaskListItem = WindowHostControllerTaskListItem;
 
-type TaskListRead = {
-  items: GlobalTaskListItem[];
-  total: number;
-  hasMore: boolean;
-  loading: boolean;
-  error: { cause: unknown } | null;
-};
-
-const emptyRead: TaskListRead = {
-  items: [],
-  total: 0,
-  hasMore: false,
-  loading: false,
-  error: null,
-};
-const pendingRead: TaskListRead = { ...emptyRead, loading: true };
 const subscribeToNothing = () => () => {};
 const zeroRevision = () => 0;
 
@@ -118,74 +102,82 @@ export function useGlobalTaskList(params: {
         .sort(([left], [right]) => left.localeCompare(right)),
     ),
   );
+  const [items, setItems] = useState<GlobalTaskListItem[]>([]);
+  const itemsRef = useRef<GlobalTaskListItem[]>(items);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(workspaceScopes.length > 0);
   const requestSerialRef = useRef(0);
   const manualRefreshSerialRef = useRef(0);
 
-  const search = params.searchQuery.trim();
   const query = useMemo(
     () => ({
       kind: params.kind,
       workspaceScopes,
       sortBy: params.sortBy,
-      search: search || undefined,
+      search: params.searchQuery.trim() || undefined,
       limit: params.expanded ? undefined : params.collapsedLimit,
     }),
     [
       params.collapsedLimit,
       params.expanded,
       params.kind,
+      params.searchQuery,
       params.sortBy,
-      search,
       workspaceScopes,
     ],
   );
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
-  const readScope = useMemo(
-    () => ({ queryKey, controllerRegistry, workspaceSourceGenerationSignature }),
-    [queryKey, controllerRegistry, workspaceSourceGenerationSignature],
-  );
-  const [read, setRead] = useState<(TaskListRead & { scope: typeof readScope }) | null>(null);
-  const currentRead =
-    read?.scope === readScope ? read : workspaceScopes.length > 0 ? pendingRead : emptyRead;
 
   const load = useCallback(
     async (version: WindowControllerTaskListVersion) => {
       const requestSerial = ++requestSerialRef.current;
-      if (query.workspaceScopes.length === 0) return;
-      setRead((previous) => ({
-        ...(previous?.scope === readScope ? previous : emptyRead),
-        scope: readScope,
-        loading: true,
-        error: null,
-      }));
+      if (workspaceScopes.length === 0) {
+        setItems([]);
+        itemsRef.current = [];
+        setTotal(0);
+        setHasMore(false);
+        setLoading(false);
+        return;
+      }
+      if (!controllerRegistry) {
+        // 原子切换后 base attachment 必须提供 Controller；缺失代表 Host/Renderer 版本不一致。
+        logger.error("[useGlobalTaskList] window Host Controller channel unavailable");
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
-        if (!controllerRegistry) throw new Error("window Host Controller channel unavailable");
         const result = await controllerRegistry.list(queryKey, version, query);
-        if (requestSerialRef.current !== requestSerial) return;
-        const items = result.items.map((item) =>
-          item.activity ? attachTaskListRowActivity(item, item.activity) : item,
+        if (requestSerialRef.current !== requestSerial) {
+          return;
+        }
+        // Controller 的每个 activity 帧（运行中任务的 tool 调用等）都会让本 hook 重查，
+        // 而 attachTaskListRowActivity 与 tasks-index join 每次都产生全新对象。下游（grouped 视图）
+        // 只能按引用判等，于是整棵列表树换代重渲染并重测量虚拟器。这里与 sessions-index lane 同款
+        // 逐条引用稳定化：内容等价复用旧对象，整表等价复用旧数组。
+        const nextItems = stabilizeTaskListItems(
+          itemsRef.current,
+          result.items.map((item) =>
+            item.activity ? attachTaskListRowActivity(item, item.activity) : item,
+          ),
         );
-        // 同一查询中复用未变化的行，避免运行更新触发列表重新测量。
-        setRead((previous) => ({
-          scope: readScope,
-          items: stabilizeTaskListItems(previous?.scope === readScope ? previous.items : emptyRead.items, items),
-          total: result.total,
-          hasMore: result.hasMore,
-          loading: false,
-          error: null,
-        }));
-      } catch (cause) {
-        if (requestSerialRef.current !== requestSerial) return;
-        logger.error(`[useGlobalTaskList] Controller 加载 ${query.kind} 列表失败`, cause);
-        setRead((previous) => ({
-          ...(previous?.scope === readScope ? previous : emptyRead),
-          scope: readScope,
-          loading: false,
-          error: { cause },
-        }));
+        itemsRef.current = nextItems;
+        setItems(nextItems);
+        setTotal(result.total);
+        setHasMore(result.hasMore);
+      } catch (error) {
+        if (requestSerialRef.current === requestSerial) {
+          // Controller 查询失败时保留最后可信列表，避免单 source 异常清空其他 workspace。
+          logger.error(`[useGlobalTaskList] Controller 加载 ${params.kind} 列表失败`, error);
+        }
+      } finally {
+        if (requestSerialRef.current === requestSerial) {
+          setLoading(false);
+        }
       }
     },
-    [controllerRegistry, query, queryKey, readScope],
+    [controllerRegistry, params.kind, query, queryKey, workspaceScopes],
   );
 
   const refresh = useCallback(async () => {
@@ -207,17 +199,15 @@ export function useGlobalTaskList(params: {
       taskListVersionSignature,
       workspaceSourceGenerationSignature,
     });
-    return () => { requestSerialRef.current += 1; };
   }, [controllerRevision, load, taskListVersionSignature, workspaceSourceGenerationSignature]);
 
   const hasRemoteScope = params.workspaceTabs.some((tab) => Boolean(tab.workspaceIdentity));
   return {
-    items: currentRead.items,
-    total: currentRead.total,
-    hasMore: currentRead.hasMore,
-    loading: currentRead.loading,
-    error: currentRead.error,
-    syncingRemoteWorkspaces: currentRead.loading && hasRemoteScope,
+    items,
+    total,
+    hasMore,
+    loading,
+    syncingRemoteWorkspaces: loading && hasRemoteScope,
     refresh,
   };
 }

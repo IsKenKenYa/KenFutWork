@@ -40,36 +40,6 @@ function mergeRanges(ranges: TextMatchRange[]): TextMatchRange[] {
   return mergedRanges;
 }
 
-function toSourceRanges(
-  text: string,
-  normalizedLength: number,
-  matches: TextMatchRange[],
-): TextMatchRange[] {
-  const characters = new Intl.Segmenter().segment(text);
-  if (normalizedLength === text.length) {
-    // 匹配只有半个组合字符时，仍给整个字符加高亮。
-    return matches.map(({ start, end }) => {
-      const first = characters.containing(start)!;
-      const last = characters.containing(end - 1)!;
-      return { start: first.index, end: last.index + last.segment.length };
-    });
-  }
-
-  const positions: TextMatchRange[] = [];
-  // 例如 İ 在部分语言环境中会变成 i 和一个组合点。
-  for (const { segment, index } of characters) {
-    const source = { start: index, end: index + segment.length };
-    const length = segment.toLocaleLowerCase().length;
-    for (let offset = 0; offset < length; offset++) {
-      positions.push(source);
-    }
-  }
-  return matches.map(({ start, end }) => ({
-    start: positions[start]!.start,
-    end: positions[end - 1]!.end,
-  }));
-}
-
 function findTextMatchRanges(text: string, query: string): TextMatchRange[] {
   const parts = getQueryParts(query);
   if (parts.length === 0 || text.length === 0) {
@@ -95,12 +65,7 @@ function findTextMatchRanges(text: string, query: string): TextMatchRange[] {
     }
   }
 
-  if (ranges.length === 0) return ranges;
-  return mergeRanges(
-    /^[\x20-\x7e]*$/u.test(text)
-      ? ranges
-      : toSourceRanges(text, normalizedText.length, ranges),
-  );
+  return mergeRanges(ranges);
 }
 
 export function HighlightedMatchText({ text, query }: { text: string; query: string }) {

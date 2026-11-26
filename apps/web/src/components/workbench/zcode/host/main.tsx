@@ -2,6 +2,7 @@ import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { ComposerContextProvider } from "@zui/v4/composer/ComposerContext.js";
 import { CanvasDocumentView } from "./CanvasDocumentView.js";
+import { ContextInspectionProvider } from "./ContextInspectionProvider.js";
 import { ConversationWorkContextHeader } from "./ConversationWorkContextHeader.js";
 import { conversationWorkContext } from "./conversationWorkContext.js";
 import {
@@ -9,13 +10,8 @@ import {
   DocumentPaneRendererProvider,
 } from "./DocumentPane.js";
 import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
+import { createMcpAppRenderer } from "./mcpAppRenderer.js";
 import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
-import { pluginCardRenderer } from "./pluginCardRenderer.js";
-import {
-  getPluginCardsVersion,
-  loadPluginCards,
-  subscribePluginCards,
-} from "./pluginCards.js";
 import {
   admitProjectMode,
   SharedProjectNavigationProvider,
@@ -24,13 +20,11 @@ import {
 const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
   { resourceType: "canvas", component: CanvasDocumentView },
 ];
-const generatedToolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
 
 import {
   type CodeUiWorkspace,
   hostNewTaskRequestSchema,
   type InstanceContext,
-  pluginInventoryChangedSchema,
   type VoiceSettings,
 } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
@@ -52,12 +46,15 @@ import {
 } from "@zui/voice/binding.js";
 import { useMemo, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
-import { ContextInspectionProvider } from "./ContextInspectionProvider.js";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
   createMacDesktopChrome,
   installDesktopTitlebarDrag,
 } from "./desktopChrome.js";
+import {
+  createServerDirectoryPicker,
+  createTauriDirectoryPicker,
+} from "./directoryPicker.js";
 import { dispatchHostNewTask } from "./hostNewTask.js";
 import {
   type CodeHostConfig,
@@ -65,12 +62,11 @@ import {
 } from "./httpChannelClient.js";
 import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
-import { createMcpAppRenderer } from "./mcpAppRenderer.js";
 import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
 import { requestParentBootstrap } from "./parentBridge.js";
 
 import { createCodePlatform } from "./platform.js";
-import { StartupOverlayHandoff } from "./startupOverlay.js";
+import { dismissStartupOverlay } from "./startupOverlay.js";
 import { setSurfaceApiBase } from "./surfaceApi.js";
 import { TaskGroupPortProvider } from "./TaskGroupPort.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
@@ -95,12 +91,6 @@ const config: CodeHostConfig = {
 const client = new CodeHttpChannelClient(config);
 // 壳内嵌面（Design/Flow 主区视图）的服务端访问缝：与 client 同一 apiBase/cookie 口径。
 setSurfaceApiBase(config.apiBase);
-// 卡片声明在渲染前读一次：工具卡按工具名匹配声明，读不到就回退到既有工具卡。
-await loadPluginCards(client);
-// 插件启用或停用后重读声明；版本号变化让已渲染的工具卡重新选择渲染器，无需重开工作台。
-client.onPluginInventoryChanged(() => {
-  void loadPluginCards(client);
-});
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
@@ -130,7 +120,13 @@ const workbenchNavigation = bootstrap?.workbenchModes
           : admitProjectMode(mode),
     )
   : undefined;
+// 桌面壳优先用 Tauri 原生对话框；Web/自托管形态退到「与用户同机的服务端」
+// 弹系统文件夹对话框。两条都是原生选择器，不再默认打开一层层翻目录的自定义弹窗；
+// 只有服务端明确说 unavailable 时，openWorkspaceFolderEntry 才回落目录浏览器。
+const selectDirectory =
+  createTauriDirectoryPicker() ?? createServerDirectoryPicker();
 const platform = createCodePlatform(client, {
+  selectDirectory,
   ...(bootstrap?.managementAvailable
     ? { onOpenManagement: requestManagementOpen }
     : {}),
@@ -171,14 +167,9 @@ function CodeHost({
     client.subscribeServices,
     () => client.services,
   );
-  const pluginCardsVersion = useSyncExternalStore(
-    subscribePluginCards,
-    getPluginCardsVersion,
-    getPluginCardsVersion,
-  );
   const toolCallRenderers = useMemo(
-    () => [createMcpAppRenderer(client), ...generatedToolCallRenderers],
-    [pluginCardsVersion],
+    () => [createMcpAppRenderer(client), generatedMediaRenderer],
+    [],
   );
   const workspaceIdentity = workspace
     ? client.workspaces.identityFor(workspace.projectId, workspace.path)
@@ -292,30 +283,30 @@ try {
         )
       : undefined;
     root.render(
-      <StartupOverlayHandoff>
-        <CodeVoiceProvider transport={voiceTransport}>
-          <CodeHost
-            {...(workspace ? { workspace } : {})}
-            // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
-            // 侧栏底部据此显示用户而不是「连接使用」。
-            user={bootstrap?.user ?? null}
-            clientMode={hello.clientMode}
-          />
-        </CodeVoiceProvider>
-      </StartupOverlayHandoff>,
+      <CodeVoiceProvider transport={voiceTransport}>
+        <CodeHost
+          {...(workspace ? { workspace } : {})}
+          // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
+          // 侧栏底部据此显示用户而不是「连接使用」。
+          user={bootstrap?.user ?? null}
+          clientMode={hello.clientMode}
+        />
+      </CodeVoiceProvider>,
     );
   }
 } catch (error) {
   console.error("Code 工作台启动失败", error);
   root.render(
-    <StartupOverlayHandoff>
-      <RootStartupLoading
-        label={error instanceof Error ? error.message : "Code 工作台启动失败"}
-        busy={false}
-      />
-    </StartupOverlayHandoff>,
+    <RootStartupLoading
+      label={error instanceof Error ? error.message : "Code 工作台启动失败"}
+      busy={false}
+    />,
   );
 }
+// 应用（或失败屏）已提交：等两帧确认画出来了，再摘掉预渲染加载层并让父页撤下同一形态的那一屏。
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => dismissStartupOverlay()),
+);
 window.addEventListener(
   "pagehide",
   () => {
@@ -339,15 +330,11 @@ if (window.parent !== window && bootstrap) {
       event.origin !== window.location.origin
     )
       return;
-    if (pluginInventoryChangedSchema.safeParse(event.data).success) {
-      void loadPluginCards(client);
-      return;
-    }
-    const newTask = hostNewTaskRequestSchema.safeParse(event.data);
-    if (newTask.success) {
+    const task = hostNewTaskRequestSchema.safeParse(event.data);
+    if (task.success) {
       dispatchHostNewTask({
-        prompt: newTask.data.prompt,
-        executionMode: newTask.data.executionMode,
+        prompt: task.data.prompt,
+        executionMode: task.data.executionMode,
       });
       return;
     }

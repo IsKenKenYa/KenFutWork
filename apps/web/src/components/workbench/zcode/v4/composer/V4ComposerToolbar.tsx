@@ -42,7 +42,7 @@ import {
   type ChatCodingPlanUsageRemainingConfig,
   hasChatCodingPlanUsageRemaining,
 } from "@zui/chat-input-toolbar/CodingPlanContextUsage.js";
-import { ChatContextUsage } from "@zui/chat-input-toolbar/display.js";
+import { ChatContextUsage as VendoredChatContextUsage } from "@zui/chat-input-toolbar/display.js";
 import {
   resolveModelSelectTriggerDisplay,
   shouldShowManageModelsAction,
@@ -104,7 +104,16 @@ import {
 } from "@zui/v4/composer/draftWorkspaceDefaults.js";
 import { resolveV4ModelTriggerDisplay } from "@zui/v4/composer/modelTriggerDisplay.js";
 import { useToolbarShortcutBindings } from "@zui/v4/composer/toolbarShortcuts.js";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type ComponentType,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 // 拆分件再导出（模式选择移居 V4ComposerModeControls，超行数拆分）：
 // 既有消费方（ConversationComposer）继续从本模块入口 import，接口面不变。
@@ -401,13 +410,24 @@ export interface V4ComposerToolbarProps {
 }
 
 /** 模型 / 思考深度 / context usage 簇（渲染在发送键左侧，与旧 UI 同位）。 */
+/**
+ * 圆环由宿主适配层替换（`@zui/chat-input-toolbar/contextUsage.js` → `host/contextUsageAdapter`），
+ * 运行时签名比 vendored 声明多一个 `sessionId`（上下文分析入口）。声明仍是上游原签名，
+ * 这里只放宽这一个额外字段，不复制整份类型。
+ */
+const ChatContextUsage = VendoredChatContextUsage as unknown as ComponentType<
+  ComponentProps<typeof VendoredChatContextUsage> & {
+    sessionId?: string | null;
+  }
+>;
+
 function V4ComposerModelControlsImpl({
-  sessionId,
   workspacePath,
   workspaceIdentity,
   modelSelectionView = null,
   modelSelectionState = MODEL_SELECTION_LOADING_STATE,
   modelSelectionReload,
+  sessionId,
   provider,
   isMobileViewport = false,
   draftMode = false,

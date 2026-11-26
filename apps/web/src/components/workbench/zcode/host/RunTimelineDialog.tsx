@@ -1,8 +1,7 @@
-import {
-  type RunTimelineEntry,
-  runTimelineResponseSchema,
-  type TaskRunsResponse,
-  taskRunsResponseSchema,
+import type {
+  RunTimelineEntry,
+  RunTimelineResponse,
+  TaskRunsResponse,
 } from "@kenfutwork/shared";
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
@@ -16,9 +15,8 @@ import {
 } from "@zui/components/ui/dialog.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { HistoryIcon } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
-import { useSurfaceRead } from "./useSurfaceRead.js";
 
 /**
  * 运行记录回看（宿主件）：先按 Task 列出历史轮次，点选某一轮再进入单轮时间线。
@@ -84,18 +82,19 @@ function formatDuration(milliseconds: number): string {
     : `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
-function runDurationMs(run: RunSummary): number | null {
-  if (!run.completedAt || run.errorCode === "run_not_started") return null;
-  const started = new Date(run.startedAt).getTime();
-  const completed = new Date(run.completedAt).getTime();
+function spanDurationMs(
+  startedAt: string,
+  completedAt: string | null,
+): number | null {
+  if (!completedAt) return null;
+  const started = new Date(startedAt).getTime();
+  const completed = new Date(completedAt).getTime();
   if (Number.isNaN(started) || Number.isNaN(completed)) return null;
   return Math.max(0, completed - started);
 }
 
-function statusLabel(run: RunSummary): string {
-  return run.errorCode === "run_not_started"
-    ? "未开始"
-    : RUN_STATUS_LABEL[run.status];
+function readableError(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "读取失败";
 }
 
 function usageLabel(run: RunSummary): string {
@@ -104,7 +103,13 @@ function usageLabel(run: RunSummary): string {
     : "用量 未统计";
 }
 
-type RunTimelineDialogProps = {
+export function RunTimelineDialog({
+  taskId,
+  projectId,
+  initialRunId,
+  open,
+  onOpenChange,
+}: {
   taskId: string;
   /** 服务端按项目核对 Task 归属；缺失时如实说明，不发请求。 */
   projectId: string | null;
@@ -112,73 +117,80 @@ type RunTimelineDialogProps = {
   initialRunId?: string | null;
   open: boolean;
   onOpenChange: (next: boolean) => void;
-};
-
-async function readRuns(path: string, signal: AbortSignal) {
-  return taskRunsResponseSchema.parse(
-    await surfaceJson<unknown>(path, { signal }),
-  );
-}
-
-async function readTimeline(path: string, signal: AbortSignal) {
-  return runTimelineResponseSchema.parse(
-    await surfaceJson<unknown>(path, { signal }),
-  );
-}
-
-export function RunTimelineDialog({ open, ...props }: RunTimelineDialogProps) {
-  if (!open) return null;
-  return (
-    <RunTimelineContent
-      key={JSON.stringify([props.projectId, props.taskId])}
-      {...props}
-    />
-  );
-}
-
-function RunTimelineContent({
-  taskId,
-  projectId,
-  initialRunId,
-  onOpenChange,
-}: Omit<RunTimelineDialogProps, "open">) {
+}) {
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [runsFailure, setRunsFailure] = useState<string | null>(null);
   const [limit, setLimit] = useState(RUNS_PAGE_STEP);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const root = `/api/agent/tasks/${encodeURIComponent(taskId)}/runs`;
-  const query = projectId ? `projectId=${encodeURIComponent(projectId)}` : null;
-  const selectedPath = selectedRunId
-    ? `${root}/${encodeURIComponent(selectedRunId)}/timeline`
-    : null;
-  const runsRead = useSurfaceRead(
-    query && !selectedPath ? `${root}?${query}&limit=${limit}` : null,
-    readRuns,
-    "无法读取运行轮次 请重试",
+  const [payload, setPayload] = useState<RunTimelineResponse | null>(null);
+  const [timelineFailure, setTimelineFailure] = useState<string | null>(null);
+
+  const loadRuns = useCallback(async () => {
+    if (!projectId) {
+      setRuns(null);
+      setRunsFailure("缺少项目信息");
+      return;
+    }
+    setRuns(null);
+    setRunsFailure(null);
+    try {
+      const result = await surfaceJson<TaskRunsResponse>(
+        `/api/agent/tasks/${encodeURIComponent(taskId)}/runs?projectId=${encodeURIComponent(projectId)}&limit=${limit}`,
+      );
+      setRuns(result.runs);
+    } catch (error) {
+      setRunsFailure(readableError(error));
+    }
+  }, [limit, projectId, taskId]);
+
+  const loadRun = useCallback(
+    async (runId: string) => {
+      if (!projectId) {
+        setTimelineFailure("缺少项目信息");
+        return;
+      }
+      setPayload(null);
+      setTimelineFailure(null);
+      try {
+        setPayload(
+          await surfaceJson<RunTimelineResponse>(
+            `/api/agent/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}/timeline?projectId=${encodeURIComponent(projectId)}`,
+          ),
+        );
+      } catch (error) {
+        setTimelineFailure(readableError(error));
+      }
+    },
+    [projectId, taskId],
   );
-  const detailRead = useSurfaceRead(
-    query && selectedPath ? `${selectedPath}?${query}` : null,
-    readTimeline,
-    "无法读取运行记录 请重试",
-  );
-  const runs =
-    runsRead.state.status === "ready" ? runsRead.state.value.runs : null;
-  const payload =
-    detailRead.state.status === "ready" ? detailRead.state.value : null;
-  const runsFailure = !projectId
-    ? "缺少项目信息"
-    : runsRead.state.status === "error"
-      ? runsRead.state.message
-      : null;
-  const timelineFailure =
-    detailRead.state.status === "error" ? detailRead.state.message : null;
+
+  // 关闭后回到轮次列表与首页大小，下次打开不会停在上次翻到的位置。
+  useEffect(() => {
+    if (open) return;
+    setSelectedRunId(null);
+    setPayload(null);
+    setTimelineFailure(null);
+    setLimit(RUNS_PAGE_STEP);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || selectedRunId !== null) return;
+    void loadRuns();
+  }, [loadRuns, open, selectedRunId]);
+
+  useEffect(() => {
+    if (!open || selectedRunId === null) return;
+    void loadRun(selectedRunId);
+  }, [loadRun, open, selectedRunId]);
 
   const run = payload?.run;
-  const duration = run ? runDurationMs(run) : null;
+  const duration = run ? spanDurationMs(run.startedAt, run.completedAt) : null;
   const canShowMore =
     runs !== null && runs.length >= limit && limit < RUNS_MAX_LIMIT;
   const reachedLimit = runs !== null && runs.length >= RUNS_MAX_LIMIT;
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
@@ -189,13 +201,9 @@ function RunTimelineContent({
         {selectedRunId === null ? (
           <div className="space-y-3">
             {runsFailure ? (
-              <p role="alert" className="text-ui-sm text-foreground-subtle">
-                {runsFailure}
-              </p>
+              <p className="text-ui-sm text-foreground-subtle">{runsFailure}</p>
             ) : runs === null ? (
-              <p role="status" className="text-ui-sm text-foreground-subtle">
-                读取轮次…
-              </p>
+              <p className="text-ui-sm text-foreground-subtle">读取轮次…</p>
             ) : runs.length === 0 ? (
               <p className="text-ui-sm text-foreground-subtle">
                 这个 Task 还没有运行记录
@@ -204,23 +212,23 @@ function RunTimelineContent({
               <>
                 <ul className="max-h-72 space-y-1 overflow-auto text-ui-sm">
                   {runs.map((row) => {
-                    const rowDuration = runDurationMs(row);
+                    const rowDuration = spanDurationMs(
+                      row.startedAt,
+                      row.completedAt,
+                    );
                     return (
                       <li key={row.runId}>
                         <button
                           type="button"
                           data-testid={`run-row-${row.runId}`}
                           className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border border-border px-2 py-1 text-left hover:bg-[var(--color-hover)]"
-                          onClick={() => {
-                            detailRead.reload();
-                            setSelectedRunId(row.runId);
-                          }}
+                          onClick={() => setSelectedRunId(row.runId)}
                         >
                           <span className="shrink-0">
                             {formatStarted(row.startedAt)}
                           </span>
                           <span className="shrink-0 text-foreground-subtle">
-                            {statusLabel(row)}
+                            {RUN_STATUS_LABEL[row.status]}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             {row.model ?? "模型 未记录"}
@@ -278,17 +286,15 @@ function RunTimelineContent({
         ) : (
           <div className="space-y-3">
             {timelineFailure ? (
-              <p role="alert" className="text-ui-sm text-foreground-subtle">
+              <p className="text-ui-sm text-foreground-subtle">
                 {timelineFailure}
               </p>
             ) : payload === null || run === undefined ? (
-              <p role="status" className="text-ui-sm text-foreground-subtle">
-                读取记录…
-              </p>
+              <p className="text-ui-sm text-foreground-subtle">读取记录…</p>
             ) : (
               <>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-ui-sm">
-                  <span>状态 {statusLabel(run)}</span>
+                  <span>状态 {RUN_STATUS_LABEL[run.status]}</span>
                   <span>模型 {run.model ?? "未记录"}</span>
                   {duration === null ? null : (
                     <span>耗时 {formatDuration(duration)}</span>
@@ -321,19 +327,10 @@ function RunTimelineContent({
                         <span className="shrink-0 text-foreground-subtle">
                           {formatClock(entry.at)}
                         </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate">
-                            {entry.title}
-                            {entry.agentName ? ` · ${entry.agentName}` : ""}
-                          </div>
-                          {entry.kind === "run" &&
-                          entry.detail &&
-                          entry.detail !== run.errorMessage ? (
-                            <p className="break-words text-foreground-subtle">
-                              {entry.detail}
-                            </p>
-                          ) : null}
-                        </div>
+                        <span className="min-w-0 flex-1 truncate">
+                          {entry.title}
+                          {entry.agentName ? ` · ${entry.agentName}` : ""}
+                        </span>
                         {entry.durationMs === undefined ? null : (
                           <span className="shrink-0 text-foreground-subtle">
                             {formatDuration(entry.durationMs)}
@@ -360,11 +357,11 @@ function RunTimelineContent({
         <DialogFooter>
           {selectedRunId === null ? (
             <>
-              {runsFailure && projectId ? (
+              {runsFailure ? (
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={runsRead.reload}
+                  onClick={() => void loadRuns()}
                 >
                   重新读取
                 </Button>
@@ -378,26 +375,23 @@ function RunTimelineContent({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  runsRead.reload();
-                  setSelectedRunId(null);
-                }}
+                onClick={() => setSelectedRunId(null)}
               >
                 轮次列表
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={detailRead.reload}
+                onClick={() => void loadRun(selectedRunId)}
               >
                 重新读取
               </Button>
               <Button
                 type="button"
                 onClick={() => {
-                  if (!query || !selectedPath) return;
+                  if (!projectId) return;
                   window.open(
-                    `${getSurfaceApiBase()}${selectedPath}/export?${query}`,
+                    `${getSurfaceApiBase()}/api/agent/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(selectedRunId)}/timeline/export?projectId=${encodeURIComponent(projectId)}`,
                     "_blank",
                     "noopener",
                   );
@@ -421,28 +415,14 @@ export function RunHistoryEntry({
   workspacePath: string;
   workspaceIdentity?: string;
 }) {
-  const taskId = useZCodeSessionStore(
-    (state) =>
-      state.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
-  );
+  const [open, setOpen] = useState(false);
+  const taskId = useZCodeSessionStore
+    .getState()
+    .getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId;
   const projectId =
     parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspacePath)
       ?.projectId ?? null;
   if (!taskId) return null;
-  return (
-    <TaskRunHistoryEntry
-      key={JSON.stringify([projectId, taskId])}
-      taskId={taskId}
-      projectId={projectId}
-    />
-  );
-}
-
-function TaskRunHistoryEntry({
-  taskId,
-  projectId,
-}: Pick<RunTimelineDialogProps, "taskId" | "projectId">) {
-  const [open, setOpen] = useState(false);
   return (
     <>
       <Button

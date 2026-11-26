@@ -434,20 +434,9 @@ async function chooseProjectRoot(page: OriginalSessionBrowser, root: string) {
   const browseSelector = '[data-testid="virtual-project-directory-browser"]';
   const pathSelector = `${browseSelector} input[placeholder="输入路径"]`;
   const confirmSelector = `${browseSelector} [data-testid="directory-browser-confirm"]`;
-  const nativeChecks = () =>
-    page.requests.filter(
-      (request) =>
-        request !== null &&
-        typeof request === "object" &&
-        "path" in request &&
-        request.path === "/api/system/directory-picker",
-    ).length;
-  const checksBefore = nativeChecks();
   await clickOn(page.cdp, page.target.sessionId, {
     selector: '[data-testid="virtual-project-browse"]',
   });
-  // 无图形界面的真实服务先明确报告系统选择器不可用，才浏览服务端目录。
-  await vi.waitFor(() => expect(nativeChecks()).toBe(checksBefore + 1));
   // 真实目录读取可能超过默认的一秒轮询期限；仍等待原页面完成读取。
   await vi.waitFor(
     async () =>
@@ -1069,62 +1058,6 @@ async function expectArchivedChoiceRejected(
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "原项目创建表单的原Root公共 integration",
   () => {
-    it("目录选择先检查系统能力，取消后保留原项目和Task", async () => {
-      const httpLoading: Promise<{
-        createCodeUiHttpFixture(): Promise<HttpFixture>;
-      }> = import(fixturePath);
-      const [http, sessions, models] = await Promise.all([
-        httpLoading,
-        import("../../server/src/features/code-ui/host-session.fixture.js"),
-        import("../../server/src/features/code-ui/model-stream.fixture.js"),
-      ]);
-      const fixture = await http.createCodeUiHttpFixture();
-      let model: Model | undefined;
-      let host: Host | undefined;
-      let browser: OriginalSessionBrowser | undefined;
-      const failures: unknown[] = [];
-      try {
-        model = await models.heldModel();
-        host = await sessions.createCodeSessionFixture(model.baseUrl, {
-          client: fixture.client,
-        });
-        const projectsBefore = await readProjectDirectory(host);
-        const scopeBefore = await readTaskScope(host);
-        const root = join(host.workspacePath, "系统目录选择验证");
-        await mkdir(join(root, "真实可浏览子目录"), { recursive: true });
-        browser = await openOriginalSessionBrowser({
-          backendBaseUrl: fixture.baseUrl,
-          backendOrigin: fixture.origin,
-          accessToken: await fixture.app.kernel
-            .get("localAccess")
-            .getDesktopToken(),
-          workspacePath: host.workspacePath,
-          projectId: host.projectId,
-          sessionId: host.sessionId,
-          clientId: host.clientId,
-          workspaceShell: true,
-        });
-        await selectSidebarView(browser, "projects");
-        await openCreationEditor(browser);
-        await chooseProjectRoot(browser, root);
-        await clickExactText(browser, '[role="dialog"] button', "取消");
-        expect(await readProjectDirectory(host)).toEqual(projectsBefore);
-        expect(await readTaskScope(host)).toEqual(scopeBefore);
-        expect(model.requests).toEqual([]);
-      } catch (error) {
-        failures.push(error);
-      } finally {
-        await closeCreationResources(
-          { fixture, model, host, browser, createdProjectIds: new Set() },
-          failures,
-        );
-      }
-      if (failures.length)
-        throw new AggregateError(failures, "系统目录选择验证失败", {
-          cause: failures[0],
-        });
-    }, 180_000);
-
     const checkWithOriginalPage = async (
       run: (context: CreationPageCheck) => Promise<void>,
       options: CreationPageOptions,

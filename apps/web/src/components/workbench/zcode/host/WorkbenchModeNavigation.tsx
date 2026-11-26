@@ -119,8 +119,6 @@ export function HostWorkbenchModeNavigation({
           navigation={navigation}
           actions={actions}
         />
-      ) : actions ? (
-        <div className="flex justify-end px-3 py-2">{actions}</div>
       ) : null}
     </>
   );
@@ -205,8 +203,6 @@ export function HostSidebarRail({
       <button
         type="button"
         aria-label="展开侧栏"
-        aria-controls="sidebar"
-        aria-expanded={false}
         title="展开侧栏"
         onClick={onExpand}
         className="shrink-0 rounded-md p-2 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"

@@ -7,8 +7,19 @@ import {
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import { ChevronDown } from "lucide-react";
-import type { Ref } from "react";
-import type { TerminalShellRead } from "./useTerminalShellCatalog.js";
+import { useEffect, useState } from "react";
+import { surfaceJson } from "./surfaceApi.js";
+
+export interface TerminalShellMenuOption {
+  id: string;
+  label: string;
+}
+
+interface TerminalShellsResponse {
+  shells: TerminalShellMenuOption[];
+  /** 会话未显式选 shell（auto）时实际会用的那个。 */
+  resolvedShell: string;
+}
 
 /**
  * Code 终端面板工具栏的 shell 菜单（宿主适配件，G9/Q17）。
@@ -20,17 +31,29 @@ import type { TerminalShellRead } from "./useTerminalShellCatalog.js";
 export function TerminalShellMenu({
   activeShell,
   onSelectShell,
-  read,
-  triggerRef,
 }: {
   /** 当前会话显式选用的 shell id；缺省表示跟随实例设置默认。 */
   activeShell?: string | undefined;
   onSelectShell: (shell: string) => void;
-  read: TerminalShellRead;
-  triggerRef?: Ref<HTMLButtonElement>;
 }) {
-  if (read.status !== "ready" || read.catalog.shells.length === 0) return null;
-  const { catalog: response } = read;
+  const [response, setResponse] = useState<TerminalShellsResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    surfaceJson<TerminalShellsResponse>("/api/code/shells")
+      .then((data) => {
+        if (!cancelled) setResponse(data);
+      })
+      .catch((error) => {
+        console.warn("[TerminalShellMenu] shells 列表加载失败：", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 拿不到清单就不摆菜单（不放假开关）；清单为空同样是「这台机器没 shell」的事实。
+  if (!response || response.shells.length === 0) return null;
   const current = activeShell ?? response.resolvedShell;
   const currentLabel =
     response.shells.find((shell) => shell.id === current)?.label ?? "Shell";
@@ -38,11 +61,10 @@ export function TerminalShellMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          ref={triggerRef}
           type="button"
           size="default"
           variant="ghost"
-          className="max-w-40 px-2 text-foreground-subtle focus-visible:outline-2 focus-visible:outline-primary"
+          className="max-w-40 px-2 text-foreground-subtle"
           title="Shell"
           aria-label="Shell"
         >
@@ -66,34 +88,5 @@ export function TerminalShellMenu({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-export function TerminalShellReadNotice({
-  read,
-  onRetry,
-}: {
-  read: TerminalShellRead;
-  onRetry: (button: HTMLButtonElement) => void;
-}) {
-  if (read.status !== "error") return null;
-  return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-      <p role="alert" className="min-w-0 text-ui-base text-destructive">
-        {read.message}
-      </p>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="focus-visible:outline-2 focus-visible:outline-primary"
-        aria-label="重新读取 Shell 列表"
-        aria-disabled={read.retrying}
-        aria-busy={read.retrying}
-        onClick={(event) => onRetry(event.currentTarget)}
-      >
-        {read.retrying ? "正在读取…" : "重新读取"}
-      </Button>
-    </div>
   );
 }

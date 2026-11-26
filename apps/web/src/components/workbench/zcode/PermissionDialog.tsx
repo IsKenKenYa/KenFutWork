@@ -725,12 +725,6 @@ export function PermissionDialog({
             ) : (
               <PermissionBlock {...blockContext} />
             )}
-            {request.display?.kind === "mcp_tool" ? (
-              <details open className="text-ui-base">
-                <summary className="cursor-pointer">调用参数</summary>
-                <pre data-mcp-page-tool-arguments className="max-h-28 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(request.raw, null, 2)}</pre>
-              </details>
-            ) : null}
           </div>
 
           {/* 反馈行曾被外层 gap-3 隔开；用同一 4px 视觉分组，保留 listbox 的权限选项边界。 */}

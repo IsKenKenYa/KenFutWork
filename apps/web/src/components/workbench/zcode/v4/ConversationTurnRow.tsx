@@ -1,4 +1,6 @@
 import type {
+  AttachmentRef,
+  CommandAck,
   ConversationRow,
   ConversationRowTarget,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -8,7 +10,7 @@ import { extractPlanToolCallContent } from "@zui/lib/planToolCall.js";
 import { ConversationRowView } from "@zui/v4/ConversationRowView.js";
 import type {
   AssistantFeedbackHandler,
-  UserInputEditHandler,
+  EditWorkspaceRewindAvailability,
 } from "@zui/v4/ConversationRowView.js";
 import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
 import type { ConversationTurnRenderUnit } from "@zui/v4/conversationTurnRenderUnits.js";
@@ -20,7 +22,13 @@ interface ConversationTurnRowProps {
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
-  onEdit?: UserInputEditHandler;
+  onEdit?: (
+    target: ConversationRowTarget,
+    newText: string,
+    attachments?: readonly AttachmentRef[],
+    workspaceMode?: "preserve" | "rewind",
+  ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+  editWorkspaceRewindAvailability?: EditWorkspaceRewindAvailability;
   hideAssistantActions?: boolean;
   deferAssistantActions?: boolean;
   assistantCopyText?: string;
@@ -39,6 +47,7 @@ export function ConversationTurnRow({
   onRetry,
   onFeedbackChange,
   onEdit,
+  editWorkspaceRewindAvailability,
   hideAssistantActions,
   deferAssistantActions,
   assistantCopyText,
@@ -57,6 +66,7 @@ export function ConversationTurnRow({
       onRetry={onRetry}
       onFeedbackChange={onFeedbackChange}
       onEdit={onEdit}
+      editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
       hideAssistantActions={hideAssistantActions}
       deferAssistantActions={deferAssistantActions}
       assistantCopyText={assistantCopyText}

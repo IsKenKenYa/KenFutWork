@@ -14,7 +14,6 @@ export {
   installDesktopTitlebarDrag,
 } from "./host/desktopChrome.js";
 export { CodeHttpChannelClient } from "./host/httpChannelClient.js";
-export { MediaModelListNotice } from "./host/media/MediaModelListNotice.js";
 export { MediaModelPreferencePopover } from "./host/media/MediaModelPreferencePopover.js";
 export {
   type MediaModelPreference,
@@ -25,7 +24,6 @@ export {
   readImageModelPreference,
   useImageModelPreference,
 } from "./host/media/useImageModelPreference.js";
-export { useMediaModelList } from "./host/media/useMediaModelList.js";
 export {
   readVideoModelPreference,
   useVideoModelPreference,

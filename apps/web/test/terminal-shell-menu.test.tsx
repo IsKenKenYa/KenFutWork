@@ -1,4 +1,3 @@
-import { codeShellsResponseSchema } from "@kenfutwork/shared";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,12 +9,12 @@ import { TerminalShellMenu } from "../src/components/workbench/zcode/host/Termin
  * - 选项来自 GET /api/code/shells（按本机存在性），不伪造不可用选项；
  * - 未显式选过 shell 时，选中态与触发展示都落在 resolved 默认上；
  * - 选择只回调 onSelectShell——停旧会话/按新 shell 重开由面板状态负责；
- * - 只有读取成功且存在选项时才渲染菜单。
+ * - 拿不到清单（失败/空）就不渲染菜单（不摆空壳）。
  *
  * 注：radix 弹层在同一 jsdom 环境里跨用例二次渲染后无法再打开（执行档 chip 菜单
  * 测试同因只开一个用例），交互断言合并进同一个用例、多轮 open/select。
  */
-const catalog = codeShellsResponseSchema.parse({
+const SHELLS_BODY = {
   shells: [
     { id: "cmd", label: "cmd", executable: "C:\\Windows\\system32\\cmd.exe" },
     {
@@ -32,18 +31,26 @@ const catalog = codeShellsResponseSchema.parse({
   ],
   defaultShell: "auto",
   resolvedShell: "powershell",
-});
-const ready = { status: "ready", catalog } as const;
+};
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function stubShellsResponse(body: unknown = SHELLS_BODY, status = 200) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json(body, { status })),
+  );
+}
 
 describe("终端 shell 菜单", () => {
   it("打开菜单：按清单渲染选项、resolved 默认选中、activeShell 覆盖、选择回调 shell id", async () => {
+    stubShellsResponse();
     const user = userEvent.setup();
     const onSelectShell = vi.fn();
-    const view = render(
-      <TerminalShellMenu onSelectShell={onSelectShell} read={ready} />,
-    );
+    const view = render(<TerminalShellMenu onSelectShell={onSelectShell} />);
 
     // 未显式选过 shell：触发展示 resolved 默认（auto 解析后的那个）
     const trigger = await screen.findByRole("button", { name: "Shell" });
@@ -73,7 +80,6 @@ describe("终端 shell 菜单", () => {
       <TerminalShellMenu
         activeShell="git-bash"
         onSelectShell={onSelectShell}
-        read={ready}
       />,
     );
     await waitFor(() =>
@@ -94,13 +100,26 @@ describe("终端 shell 菜单", () => {
     expect(onSelectShell).toHaveBeenLastCalledWith("cmd");
   });
 
-  it("成功读取空清单时不展示选择入口", () => {
-    render(
-      <TerminalShellMenu
-        onSelectShell={vi.fn()}
-        read={{ status: "ready", catalog: { ...catalog, shells: [] } }}
-      />,
+  it("清单请求失败：不渲染菜单（不摆空壳）", async () => {
+    stubShellsResponse({ error: { code: "x", message: "boom" } }, 500);
+    const { container } = render(<TerminalShellMenu onSelectShell={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Shell" })).toBeNull(),
     );
-    expect(screen.queryByRole("button", { name: "Shell" })).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
+  it("清单为空：这台机器没有 shell，同样不渲染", async () => {
+    stubShellsResponse({
+      shells: [],
+      defaultShell: "auto",
+      resolvedShell: "auto",
+    });
+    render(<TerminalShellMenu onSelectShell={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Shell" })).toBeNull(),
+    );
   });
 });

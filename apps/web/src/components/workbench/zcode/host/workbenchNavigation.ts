@@ -1,14 +1,6 @@
 import { workbenchNavigationSchema } from "@kenfutwork/shared";
 import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 
-function resolveAvailableMode(
-  mode: HostWorkbenchMode,
-  availableModes: readonly HostWorkbenchMode[],
-): HostWorkbenchMode {
-  if (availableModes.includes(mode)) return mode;
-  return mode === "flow" ? "design" : "code";
-}
-
 /**
  * 工作台模式导航（融合后的唯一持有处）。
  *
@@ -32,7 +24,11 @@ export function createHostWorkbenchNavigation(
       saved === "flow" ||
       saved === "work"
     ) {
-      mode = resolveAvailableMode(saved, availableModes);
+      mode = availableModes.includes(saved)
+        ? saved
+        : saved === "flow"
+          ? "design"
+          : "code";
     }
   } catch {
     // 窗口偏好不可用时仍可打开工作台，项目权限继续由服务端验证。
@@ -82,19 +78,10 @@ export function createHostWorkbenchNavigation(
     if (!parsed.success) return;
     // 文档深链先解析真实项目并完成其准入，再由文档宿主切换工作方式。
     // 不能先为当前旧项目启用新方式，更不能在解析期间直接改主区。
-    const nextMode = resolveAvailableMode(
-      snapshot.mode,
-      parsed.data.availableModes,
-    );
-    if (
-      parsed.data.mode ||
-      parsed.data.documentTarget ||
-      nextMode !== snapshot.mode
-    )
-      modeRequest++;
+    if (parsed.data.mode || parsed.data.documentTarget) modeRequest++;
     publish({
-      // 能力更新保留仍可用的当前模式。插件失效时同时切换到可用页面。
-      mode: nextMode,
+      // 不带 mode 的推送只更新可用模式，不改动当前模式（避免把壳内已切的面弹回去）。
+      mode: snapshot.mode,
       availableModes: parsed.data.availableModes,
       ...(parsed.data.documentTarget
         ? { documentTarget: parsed.data.documentTarget }
@@ -120,7 +107,6 @@ export function createHostWorkbenchNavigation(
       requestMode(mode);
     },
     setActiveMode: (mode) => {
-      if (!snapshot.availableModes.includes(mode)) return;
       modeRequest++;
       if (mode === snapshot.mode) return;
       publish({ ...snapshot, mode });

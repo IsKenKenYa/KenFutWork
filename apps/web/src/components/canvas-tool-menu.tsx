@@ -194,27 +194,6 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
   );
 });
 
-function CanvasGenerationStatus(
-  options: Parameters<typeof useCanvasGenerationJobs>[0],
-) {
-  const issue = useCanvasGenerationJobs(options);
-  return (
-    <div
-      role="status"
-      aria-atomic="true"
-      className="pointer-events-none absolute bottom-20 left-1/2 z-30 w-max max-w-[calc(100%_-_2rem)] -translate-x-1/2 text-center"
-    >
-      {issue && (
-        <span className="inline-block rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground shadow-card">
-          {issue === "read"
-            ? "暂时无法读取生成进度 · 将继续查询"
-            : "暂时无法同步生成结果 · 将继续同步"}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function CanvasToolMenu({
   canvasId,
   projectId,
@@ -224,6 +203,13 @@ export function CanvasToolMenu({
   excalidrawApi,
   sessionId,
 }: CanvasToolMenuProps) {
+  useCanvasGenerationJobs({
+    api: excalidrawApi,
+    canvasId,
+    projectId,
+    accessToken,
+    refresh,
+  });
   const [activeTool, setActiveTool] = useState<string>("selection");
 
   // Image generator state
@@ -556,14 +542,6 @@ export function CanvasToolMenu({
 
   return (
     <>
-      <CanvasGenerationStatus
-        key={`${projectId}/${canvasId}`}
-        api={excalidrawApi}
-        canvasId={canvasId}
-        projectId={projectId}
-        accessToken={accessToken}
-        refresh={refresh}
-      />
       <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border bg-card p-1 shadow-card">
         {/*
           底部只此一条：视图控件（背景色/图层/生成文件/网格/缩放）与绘图工具同排。

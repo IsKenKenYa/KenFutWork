@@ -1,4 +1,3 @@
-import type { WorkbenchModes } from "@kenfutwork/shared";
 import type {
   CdpClient,
   CdpSessionTarget,
@@ -25,8 +24,6 @@ export function openOriginalSessionBrowser(options: {
   clientId: string;
   newDraft?: boolean;
   workspaceShell?: boolean;
-  supportsEmbeddedBrowser?: boolean;
-  workbenchModes?: WorkbenchModes;
   fileManagerPreview?: boolean;
   restoreSession?: boolean;
   beforeNavigate?: (

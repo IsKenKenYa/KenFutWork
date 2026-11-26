@@ -187,7 +187,7 @@ it("权限页只保留基础配置与规则与放行两组，必备项都在", a
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
   }
-  // 网络组里的两个协议开关在「编辑网络规则」弹窗内，主页面只有入口。
+  // 网络组的两个协议开关在「编辑网络规则」弹窗内，主页面只留入口。
   await userEvent.click(screen.getByRole("button", { name: "编辑网络规则" }));
   expect(await screen.findByRole("switch", { name: "HTTP 放行" })).toBeTruthy();
   expect(screen.getByRole("switch", { name: "SSL 证书校验" })).toBeTruthy();

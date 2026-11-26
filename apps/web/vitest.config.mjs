@@ -75,6 +75,7 @@ export default defineConfig({
     server: {
       deps: {
         // 真实 restoreElements 测试由 Vite 解析 JSON 依赖，避免 Node 24 裸加载 JSON。
+        // 上下文分析面板的 dsh 组件带 CSS module，同样必须由 Vite 解析。
         inline: [
           "@excalidraw/excalidraw",
           "open-color",

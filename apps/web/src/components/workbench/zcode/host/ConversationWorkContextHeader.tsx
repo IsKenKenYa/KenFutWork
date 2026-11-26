@@ -19,18 +19,10 @@ import {
 import type { MediaModelPreference } from "./media/mediaModelPreference.js";
 import { surfaceJson } from "./surfaceApi.js";
 
-function loadImages(signal?: AbortSignal) {
-  return surfaceJson<{ models: MediaModelInfo[] }>(
-    "/api/image-models",
-    signal ? { signal } : undefined,
-  );
-}
-function loadVideos(signal?: AbortSignal) {
-  return surfaceJson<{ models: MediaModelInfo[] }>(
-    "/api/video-models",
-    signal ? { signal } : undefined,
-  );
-}
+const loadImages: () => Promise<{ models: MediaModelInfo[] }> = () =>
+  surfaceJson("/api/image-models");
+const loadVideos: () => Promise<{ models: MediaModelInfo[] }> = () =>
+  surfaceJson("/api/video-models");
 
 export function ConversationWorkContextHeader({
   workspaceIdentity,

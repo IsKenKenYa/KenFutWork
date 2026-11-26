@@ -4,7 +4,7 @@ import { vi } from "vitest";
 type TestDom = { window: Window & typeof globalThis & { close(): void } };
 
 /** 服务端先在Node装配，再给原组件安装独立DOM；不改变服务端的URL解析。 */
-export async function installCodePublicHostDom(options: { url?: string } = {}) {
+export async function installCodePublicHostDom() {
   // 真实服务先在 Node 环境装配；仅给随后加载的原组件提供 DOM。
   const {
     JSDOM,
@@ -15,13 +15,10 @@ export async function installCodePublicHostDom(options: { url?: string } = {}) {
     ) => TestDom;
   } = createRequire(import.meta.url)("jsdom");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: options.url ?? "http://localhost:3300",
+    url: "http://localhost:3300",
     pretendToBeVisual: true,
   });
   const browserWindow = dom.window;
-  // JSDOM 没有布局滚动；下拉菜单仍使用实际焦点及键盘逻辑。
-  if (!browserWindow.HTMLElement.prototype.scrollIntoView)
-    browserWindow.HTMLElement.prototype.scrollIntoView = () => {};
   // JSDOM未实现PointerEvent时，只补鼠标型指针字段；产品PointerSensor保持原实现。
   const pointerEvent =
     browserWindow.PointerEvent ??
@@ -62,15 +59,10 @@ export async function installCodePublicHostDom(options: { url?: string } = {}) {
     "KeyboardEvent",
     "CustomEvent",
     "customElements",
+    "localStorage",
   ] as const) {
     vi.stubGlobal(key, browserWindow[key]);
   }
-  // 不在安装 DOM 时访问 localStorage，允许验证浏览器实际拒绝存储的场景。
-  vi.stubGlobal("localStorage", undefined);
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    get: () => browserWindow.localStorage,
-  });
   vi.stubGlobal(
     "getComputedStyle",
     browserWindow.getComputedStyle.bind(browserWindow),

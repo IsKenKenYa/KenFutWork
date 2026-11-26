@@ -12,7 +12,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   clickOn,
-  pressKey,
   typeText,
 } from "../../server/src/features/browser/cdp-client.js";
 import type { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
@@ -393,55 +392,13 @@ async function chooseArchiveDeletion(
       description: "删除后无法恢复",
     });
   });
-  if (choice === "取消") {
-    await vi.waitFor(async () =>
-      expect(
-        await page.evaluate(
-          "document.activeElement?.querySelector('span')?.textContent",
-        ),
-        "删除确认的初始焦点应在取消按钮",
-      ).toBe("取消"),
-    );
-    await pressConfirmationEnter(page);
-  } else {
-    await vi.waitFor(async () =>
-      expect(
-        await page.evaluate(
-          "document.activeElement?.querySelector('span')?.textContent",
-        ),
-      ).toBe("取消"),
-    );
-    await pressKey(page.cdp, page.target.sessionId, "Tab");
-    await vi.waitFor(async () =>
-      expect(
-        await page.evaluate(
-          "document.activeElement?.querySelector('span')?.textContent",
-        ),
-      ).toBe("删除"),
-    );
-    await pressConfirmationEnter(page);
-  }
+  await clickExactText(page, `${dialogSelector} button > span`, choice);
   await vi.waitFor(async () =>
     expect(
       await page.evaluate("document.querySelectorAll('[role=dialog]').length"),
       JSON.stringify(page.pageErrors),
     ).toBe(0),
   );
-}
-
-async function pressConfirmationEnter(page: OriginalSessionBrowser) {
-  for (const type of ["keyDown", "keyUp"] as const)
-    await page.cdp.send(
-      "Input.dispatchKeyEvent",
-      {
-        type,
-        key: "Enter",
-        code: "Enter",
-        windowsVirtualKeyCode: 13,
-        ...(type === "keyDown" ? { text: "\r" } : {}),
-      },
-      page.target.sessionId,
-    );
 }
 
 async function deleteThroughOriginalSettings(

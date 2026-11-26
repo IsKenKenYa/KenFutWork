@@ -10,7 +10,8 @@
     "README_CN.md",
     "README.md",
     "skills",
-    "mcp.json"
+    "mcp.json",
+    "assets/icon.svg"
   ],
   "kenfutwork": {
     "bundle": {
@@ -18,6 +19,8 @@
     },
     "title": "Unreal Engine",
     "category": "游戏与 3D",
+    "assets": true,
+    "icon": "assets/icon.svg",
     "userConfig": {
       "endpoint": {
         "type": "string",

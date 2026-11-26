@@ -1,22 +1,18 @@
 import {
-  type BrowserOpenTarget,
   type ManagementTarget,
   type PluginMarketEntry,
   projectPluginPanels,
-  readBrowserOpenTarget,
 } from "@kenfutwork/shared";
 import type {
   ApplicationIconInfo,
   HostWorkbenchNavigation,
   IPlatformService,
 } from "@zcode/shared";
-import { logger } from "@zui/logger.js";
 import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import { createMacDesktopChrome } from "./desktopChrome.js";
-import { createServerDirectoryPicker } from "./directoryPicker.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
@@ -25,8 +21,6 @@ import { createWebPlatform } from "./upstream/browserPlatform.js";
 /** 宿主管理入口带显式目标；`IPlatformService` 的声明保持无参兼容。 */
 export type CodePlatform = IPlatformService & {
   openSettingsDocument?: (target?: ManagementTarget) => void;
-  readMessageBrowserTarget(): BrowserOpenTarget;
-  openMessageLinkExternally?(url: string): Promise<unknown>;
 };
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
@@ -50,68 +44,7 @@ export function createCodePlatform(
     !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
-    selectDirectory: createServerDirectoryPicker(),
     ...createMacDesktopChrome(),
-    readMessageBrowserTarget: () => readBrowserOpenTarget(window.localStorage),
-    ...(desktop
-      ? {
-          openMessageLinkExternally: async (url: string) =>
-            desktop("open_external", { url: new URL(url).href }),
-          openInFileManager: async (path: string) => {
-            try {
-              await desktop("reveal_path", { path });
-              return { success: true };
-            } catch (error) {
-              return {
-                success: false,
-                error:
-                  typeof error === "string"
-                    ? error
-                    : "无法打开文件位置，请检查路径和权限。",
-              };
-            }
-          },
-          selectDirectory: async () => {
-            const selected = await desktop("select_directory");
-            if (selected === null || typeof selected === "string")
-              return selected;
-            throw new Error("系统未返回有效目录，请重新选择。");
-          },
-          selectDirectories: async () => {
-            const selected = await desktop("select_directories");
-            if (
-              Array.isArray(selected) &&
-              selected.every((path) => typeof path === "string")
-            )
-              return selected;
-            throw new Error("系统未返回有效目录，请重新选择。");
-          },
-          /**
-           * 桌面形态的「内置浏览器数据」指服务端受控浏览器自己的 profile
-           * （`<数据目录>/browser/chrome-profile`），不是用户日常浏览器：
-           * 清理走 `/api/browser/cdp/clear-data`，断开会话后删除。
-           */
-          supportsEmbeddedBrowserDataClear: true,
-          clearEmbeddedBrowserData: async (mode: "cache" | "all") => {
-            await client.request("/api/browser/cdp/clear-data", { mode });
-            return { success: true };
-          },
-          /**
-           * 录制快捷键时让桌面壳收掉原生菜单：否则 macOS 的 Cmd+W/Cmd+Q
-           * 会在页面录制监听之前被系统菜单消费，改键永远录不到。
-           * 页面内的应用快捷键由 shortcuts 内核的录制标记短路，两处同时生效。
-           */
-          setShortcutRecordingActive: (active: boolean) => {
-            void desktop("set_shortcut_recording_active", { active }).catch(
-              (error: unknown) => {
-                logger.error("[shortcuts] 原生菜单接管失败", {
-                  error: String(error),
-                });
-              },
-            );
-          },
-        }
-      : {}),
     ...(options.selectDirectory
       ? { selectDirectory: options.selectDirectory }
       : {}),
@@ -177,7 +110,7 @@ export function createCodePlatform(
       databaseRecords: true,
       projectScope: false,
       oauth: false,
-      httpHeaders: true,
+      httpHeaders: false,
       serverParameters: false,
       sse: false,
     },

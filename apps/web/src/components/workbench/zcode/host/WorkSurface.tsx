@@ -1,12 +1,9 @@
-import {
-  ApiAccessError,
-  ApiApplicationError,
-  type WorkEditor,
-  type WorkEditorInstallStatus,
-  type WorkFontsResponse,
-  type WorkHostEditorsResponse,
-  type WorkHostStatusResponse,
-  workFontsResponseSchema,
+import type {
+  WorkEditor,
+  WorkEditorInstallStatus,
+  WorkFontsResponse,
+  WorkHostEditorsResponse,
+  WorkHostStatusResponse,
 } from "@kenfutwork/shared";
 import {
   ZCodeStartupLogoBadge,
@@ -23,11 +20,10 @@ import {
 } from "react";
 import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
-import { useWorkEditorSave } from "./useWorkEditorSave.js";
 import {
   chooseWorkDirectory,
+  getWorkDirectory,
   refreshWorkDirectory,
-  useWorkDirectory,
 } from "./workProjectDirectory.js";
 import {
   getWorkSurfaceView,
@@ -131,7 +127,6 @@ export function HostWorkSurface({
       view.editorId;
     return (
       <EditorFrame
-        key={view.editorId}
         editorId={view.editorId}
         title={title}
         onBack={openWorkEditors}
@@ -340,95 +335,97 @@ function EditorsInfoView({
           </div>
         ) : null}
 
-        {editors ? <WorkFontsSection active={active && !loadError} /> : null}
+        {/* 探针失败时顶部已透出可读原因，字体面板不再重复请求与叠加错误。 */}
+        <WorkFontsSection active={active && !loadError} />
       </div>
     </div>
   );
 }
 
-const fontFallback = {
-  read: "无法读取字体 请检查本机连接",
-  upload: "无法上传字体 请检查本机连接",
-  remove: "无法删除字体 请检查本机连接",
-};
-
-async function requestFonts(path = "/api/work/host/fonts", init?: RequestInit) {
-  return workFontsResponseSchema.parse(await surfaceJson<unknown>(path, init));
-}
-
-function useWorkFonts(active: boolean) {
+/**
+ * 字体区：编辑器是 WASM 自绘、读不到系统字体，只能用它自带的或站点同源提供的字体。
+ * 这里把用户自己的 ttf/otf 放进实例数据目录，宿主托管编辑器时映射到 `fonts/user/`
+ * 并生成 manifest——Photocraft / VectorCraft 这类运行时加载字体的编辑器立刻可用。
+ *
+ * 边界：上传的是用户自己的字体，只在本机实例使用；商业字体（宋体/雅黑/方正系列）
+ * 的授权由用户自行保证，产品不随包分发。
+ */
+function WorkFontsSection({ active }: { active: boolean }) {
   const [fonts, setFonts] = useState<WorkFontsResponse | null>(null);
-  const [notice, setNotice] = useState<{
-    action: keyof typeof fontFallback;
-    message: string;
-  } | null>(null);
+  const [dir, setDir] = useState<string>("");
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const inFlight = useRef(false);
 
-  const run = useCallback(
-    async (
-      action: keyof typeof fontFallback,
-      operation: () => Promise<void>,
-    ) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
+  const load = useCallback(async (initial: boolean) => {
+    try {
+      const data = await surfaceJson<WorkFontsResponse>("/api/work/host/fonts");
+      setFonts(data);
+      setDir(data.dir);
+      setNotice(null);
+    } catch (error) {
+      // 自动首载失败静默：引擎探针失败时顶部已透出可读原因，这里不再叠加同一错误。
+      if (!initial)
+        setNotice(error instanceof Error ? error.message : "读取字体失败");
+    }
+  }, []);
+  useEffect(() => {
+    if (active) void load(true);
+  }, [active, load]);
+
+  const upload = useCallback(
+    async (file: File) => {
       setBusy(true);
+      setNotice(null);
       try {
-        await operation();
-        setNotice(null);
+        const body = new FormData();
+        body.append("file", file, file.name);
+        const response = await surfaceFetch("/api/work/host/fonts", {
+          method: "POST",
+          body,
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        if (!response.ok)
+          throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+        await load(false);
       } catch (error) {
-        const message =
-          error instanceof ApiApplicationError
-            ? error.status === 401
-              ? new ApiAccessError().message
-              : error.message
-            : fontFallback[action];
-        setNotice({ action, message });
+        setNotice(error instanceof Error ? error.message : "上传失败");
       } finally {
-        inFlight.current = false;
         setBusy(false);
       }
     },
-    [],
+    [load],
   );
-  const load = useCallback(
-    () => run("read", async () => setFonts(await requestFonts())),
-    [run],
-  );
-  useEffect(() => {
-    if (active) void load();
-  }, [active, load]);
 
-  function upload(file: File) {
-    return run("upload", async () => {
-      const body = new FormData();
-      body.append("file", file, file.name);
-      setFonts(await requestFonts(undefined, { method: "POST", body }));
-    });
-  }
-
-  function removeAll(fileNames: string[]) {
-    return run("remove", async () => {
-      for (const fileName of fileNames) {
-        setFonts(
-          await requestFonts(
-            `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
-            { method: "DELETE" },
-          ),
-        );
-      }
-    });
-  }
-
-  return { busy, fonts, notice, load, upload, removeAll };
-}
-
-/** 编辑器从该实例读取用户上传的字体。字体不会随应用分发。 */
-function WorkFontsSection({ active }: { active: boolean }) {
-  const { busy, fonts, notice, load, upload, removeAll } = useWorkFonts(active);
   // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
   // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
   const families = useMemo(() => fontFamilies(fonts?.fonts ?? []), [fonts]);
+
+  const remove = useCallback(
+    async (fileName: string) => {
+      setBusy(true);
+      try {
+        await surfaceFetch(
+          `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
+          { method: "DELETE" },
+        );
+        await load(false);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "删除失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  const removeAll = useCallback(
+    async (fileNames: string[]) => {
+      for (const fileName of fileNames) await remove(fileName);
+    },
+    [remove],
+  );
 
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-sm">
@@ -440,7 +437,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
             type="file"
             accept=".ttf,.otf,.ttc"
             className="hidden"
-            disabled={busy || !fonts}
+            disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
@@ -449,15 +446,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
           />
         </label>
       </div>
-      {!fonts && !notice ? (
-        <p
-          role="status"
-          className="px-4 py-3 text-center text-xs text-foreground-subtle"
-        >
-          读取字体中…
-        </p>
-      ) : null}
-      {fonts && families.length === 0 ? (
+      {families.length === 0 ? (
         <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
           暂无字体
         </p>
@@ -483,33 +472,25 @@ function WorkFontsSection({ active }: { active: boolean }) {
           </div>
         ))
       )}
-      {fonts?.dir ? (
+      {dir ? (
         <p
           className="truncate border-t border-border px-4 py-2 font-mono text-[11px] text-foreground-subtle"
-          title={fonts.dir}
+          title={dir}
         >
-          {fonts.dir}
+          {dir}
         </p>
       ) : null}
       {notice ? (
-        <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-xs">
-          <p role="alert" className="flex-1 text-destructive">
-            {notice.message}
-          </p>
-          {notice.action !== "upload" ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void load()}
-              className="rounded-md border border-border px-2 py-0.5 disabled:opacity-50"
-            >
-              刷新字体
-            </button>
-          ) : null}
-        </div>
+        <p className="border-t border-border px-4 py-2 text-xs text-destructive">
+          {notice}
+        </p>
       ) : null}
     </div>
   );
+}
+
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === "[object ArrayBuffer]";
 }
 
 function useEditorTheme(): "light" | "dark" {
@@ -528,6 +509,21 @@ function useEditorTheme(): "light" | "dark" {
   );
 }
 
+/**
+ * 编辑器给的文件名 → 项目内相对路径：只取最后一段。绝对路径与 `..` 到服务端也会被
+ * `validateRelativePath` 拒绝，这里先不把它发出去（保存失败要能说清是哪一片的锅）。
+ */
+function documentRelativePath(fileName: string): string | null {
+  const name = fileName.split(/[\\/]/u).pop()?.trim();
+  return name && name !== "." && name !== ".." ? name : null;
+}
+
+/** 回显用的路径拼接：跟随 workDir 的分隔符风格。 */
+function displayWorkPath(workDir: string, relativePath: string): string {
+  const separator = workDir.includes("\\") ? "\\" : "/";
+  return `${workDir.replace(/[\\/]+$/u, "")}${separator}${relativePath.split("/").join(separator)}`;
+}
+
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
@@ -539,18 +535,14 @@ function EditorFrame({
   onBack: () => void;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const saveIds = useRef(new Set<string>());
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const editorTheme = useEditorTheme();
   const initialTheme = useRef(editorTheme);
-  const { project } = useWorkDirectory();
-  // 这两个已锁定的编辑器通过检测系统保存能力来选择其下载备选路径。
-  const toProject =
-    (editorId === "gridcraft" || editorId === "wordcraft") &&
-    Boolean(project?.workDir);
-  const initialSaveTarget = useRef(toProject ? "&saveTarget=project" : "");
-  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}${initialSaveTarget.current}`;
-  const saveFeedback = useWorkEditorSave(frameRef, src, setReady);
+  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
 
   useEffect(() => {
     // about:blank 仍继承宿主 origin，加载前向编辑器 origin 发消息会触发目标源警告。
@@ -562,14 +554,108 @@ function EditorFrame({
     );
   }, [editorTheme, ready, src]);
 
+  // 就绪与保存都只信当前 iframe 的真实 origin/source；父页统一交付并回传结果。
   useEffect(() => {
-    if (!ready) return;
-    // 目录更新只通知原子页，保留其中尚未保存的编辑内容。
-    frameRef.current?.contentWindow?.postMessage(
-      { type: "kenfutwork:editor-save-target", toProject },
-      new URL(src).origin,
-    );
-  }, [ready, src, toProject]);
+    saveIds.current.clear();
+    setSaveError(null);
+    const expectedOrigin = new URL(src).origin;
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== expectedOrigin ||
+        event.source !== frameRef.current?.contentWindow
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        saveId?: unknown;
+        fileName?: unknown;
+        mimeType?: unknown;
+        bytes?: unknown;
+        message?: unknown;
+      } | null;
+      if (data?.type === "kenfutwork:editor-ready") {
+        setReady(true);
+        return;
+      }
+      if (data?.type === "kenfutwork:editor-save-error") {
+        setSaveError(
+          typeof data.message === "string" ? data.message : "读取保存内容失败",
+        );
+        return;
+      }
+      if (
+        data?.type !== "kenfutwork:editor-save" ||
+        typeof data.saveId !== "string" ||
+        typeof data.fileName !== "string" ||
+        !isArrayBuffer(data.bytes)
+      )
+        return;
+      if (saveIds.current.has(data.saveId)) return;
+      saveIds.current.add(data.saveId);
+      setSaveError(null);
+      setSaveNote(null);
+      const bound = getWorkDirectory();
+      const relativePath = documentRelativePath(data.fileName);
+      window.parent.postMessage(
+        {
+          type: "kenfutwork:work-save",
+          saveId: data.saveId,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+          bytes: data.bytes,
+          ...(bound?.workDir && relativePath
+            ? {
+                projectId: bound.id,
+                assetId: crypto.randomUUID(),
+                relativePath,
+              }
+            : {}),
+        },
+        window.location.origin,
+        [data.bytes],
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [src]);
+
+  useEffect(() => {
+    const onResult = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        ok?: boolean;
+        error?: unknown;
+        path?: unknown;
+        relativePath?: unknown;
+      } | null;
+      if (data?.type !== "kenfutwork:work-save-result") return;
+      if (!data.ok) {
+        setSaveNote(null);
+        setSaveError(
+          `保存失败：${typeof data.error === "string" ? data.error : "未知错误"}`,
+        );
+        return;
+      }
+      // 成功也要说清落到哪：以前只清掉错误态，用户点了保存什么提示都没有，
+      // 体感就是「保存没反应」。绑了项目目录的按项目路径回显，其余仍是落盘路径。
+      setSaveError(null);
+      const workDir = getWorkDirectory()?.workDir;
+      setSaveNote(
+        typeof data.relativePath === "string" && workDir
+          ? `已保存 ${displayWorkPath(workDir, data.relativePath)}`
+          : typeof data.path === "string" && data.path
+            ? `已保存 ${data.path}`
+            : "已保存",
+      );
+    };
+    window.addEventListener("message", onResult);
+    return () => window.removeEventListener("message", onResult);
+  }, []);
 
   useEffect(() => {
     if (!frameLoaded) return;
@@ -593,16 +679,16 @@ function EditorFrame({
         </button>
         <span className="truncate text-sm font-medium">{title}</span>
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          {saveFeedback?.kind === "error" ? (
+          {saveError ? (
             <span role="alert" className="truncate text-xs text-destructive">
-              {saveFeedback.text}
+              {saveError}
             </span>
-          ) : saveFeedback ? (
+          ) : saveNote ? (
             <span
               role="status"
               className="max-w-[36rem] truncate text-xs text-foreground-subtle"
             >
-              {saveFeedback.text}
+              {saveNote}
             </span>
           ) : null}
         </div>

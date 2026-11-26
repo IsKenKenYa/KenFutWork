@@ -62,7 +62,6 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@kenfutwork/context-insights-ui": "workspace:*",
     "@kenfutwork/config": "workspace:*",
     "@kenfutwork/ui": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",

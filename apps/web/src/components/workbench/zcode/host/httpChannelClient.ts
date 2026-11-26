@@ -1,6 +1,5 @@
 import {
   AGENT_GOVERNANCE_DEFAULTS,
-  ApiApplicationError,
   type CodeGoalControl,
   type CodeGoalControlState,
   type CodeUiViewerScope,
@@ -13,7 +12,6 @@ import {
   type ProjectDirectoryRelinkSnapshot,
   projectDirectoryRelinkResponseSchema,
   projectDirectoryRelinkSnapshotSchema,
-  throwPublicHttpError,
 } from "@kenfutwork/shared";
 import {
   Emitter,
@@ -84,8 +82,31 @@ function notificationReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
+class CodeHostHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * 宿主 5xx 可能回纯文本（Fastify 默认体就是 `Internal Server Error`）：
+ * 解析失败不能让 SyntaxError 顶替真实报错，兜底给状态码。
+ */
 async function readHostResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) return throwPublicHttpError(response);
+  if (!response.ok) {
+    const failure = (await response.json().catch(() => ({}))) as {
+      error?: { code?: string; message?: string };
+    };
+    throw new CodeHostHttpError(
+      response.status,
+      failure.error?.message ?? `Code 宿主请求失败：${response.status}`,
+      failure.error?.code,
+    );
+  }
   return (await response.json()) as T;
 }
 
@@ -272,7 +293,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     } catch (error) {
       if (
         choice === "independent" ||
-        !(error instanceof ApiApplicationError) ||
+        !(error instanceof CodeHostHttpError) ||
         error.status !== 409 ||
         error.code !== "project_directory_conflict"
       )
@@ -330,7 +351,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       if (
         projectId ||
         independent ||
-        !(error instanceof ApiApplicationError) ||
+        !(error instanceof CodeHostHttpError) ||
         error.status !== 409 ||
         error.code !== "project_directory_conflict"
       )
@@ -406,6 +427,12 @@ export class CodeHttpChannelClient implements IChannelClient {
     return readHostResponse<T>(response);
   }
 
+  /**
+   * MCP App 页面通过宿主连接调用同一 MCP 服务实例。
+   *
+   * 页面拿不到接入凭据：方法名与参数只经 `/api/code-ui/rpc` 的 `mcp-apps` 服务中转，
+   * 服务端按 Task 审批与可见性复核。连接代际变化时拒绝把结果交给旧页面。
+   */
   async callMcpApp<T>(
     method:
       | "open"
@@ -639,11 +666,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       )
     ) {
       await response.body?.cancel();
-      throw new ApiApplicationError(
-        "application_error",
-        errorMessage,
-        response.status,
-      );
+      throw new CodeHostHttpError(response.status, errorMessage);
     }
     return response.blob();
   }
@@ -671,7 +694,15 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    const result = await readHostResponse<{ text?: string }>(response);
+    const result = (await response.json()) as {
+      text?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok)
+      throw new CodeHostHttpError(
+        response.status,
+        result.error?.message ?? `语音转写失败：${response.status}`,
+      );
     return result.text ?? "";
   }
 
@@ -694,7 +725,15 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    if (!response.ok) return throwPublicHttpError(response);
+    if (!response.ok) {
+      const result = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      throw new CodeHostHttpError(
+        response.status,
+        result?.error?.message ?? `语音播报失败：${response.status}`,
+      );
+    }
     return await response.blob();
   }
 
@@ -736,12 +775,11 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    if (!response.ok) return throwPublicHttpError(response);
-    if (!response.body) {
-      throw new ApiApplicationError(
-        "application_error",
-        "工作台无法接收更新，请重新打开。",
+    if (!response.ok || !response.body) {
+      await response.body?.cancel();
+      throw new CodeHostHttpError(
         response.status,
+        `Code 通知通道不可用：${response.status}`,
       );
     }
     const reader = response.body.getReader();
@@ -804,7 +842,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.connectionId = "";
         this.goalStates.clear();
         if (
-          error instanceof ApiApplicationError &&
+          error instanceof CodeHostHttpError &&
           (error.status === 401 || error.status === 403)
         )
           throw error;

@@ -677,8 +677,6 @@ it.each(["succeeded", "dead_letter"])(
             project_id: projectId,
             payload: { generator_id: "generator", requested_count: 3 },
             status,
-            error_code:
-              status === "dead_letter" ? "provider_auth_failed" : null,
             error_message:
               status === "succeeded" ? "旧限流重试消息" : "第三张被供应商拒绝",
             result: {
@@ -734,14 +732,9 @@ it.each(["succeeded", "dead_letter"])(
     expect(elements[0]?.isDeleted).toBe(false);
     expect(elements[0]?.customData).toMatchObject({
       errorMessage: expect.stringContaining(
-        status === "succeeded"
-          ? "返回数量不足"
-          : "供应商拒绝访问，请在供应商设置中检查密钥和权限。",
+        status === "succeeded" ? "返回数量不足" : "第三张被供应商拒绝",
       ),
     });
-    expect(JSON.stringify(elements[0]?.customData)).not.toContain(
-      "第三张被供应商拒绝",
-    );
     expect(refresh).toHaveBeenCalledOnce();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.method === "GET")).toBe(true);

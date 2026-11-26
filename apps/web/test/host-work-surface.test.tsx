@@ -92,12 +92,6 @@ function workSaveCalls(post: ReturnType<typeof vi.spyOn>) {
   );
 }
 
-function forwardedSaveId(post: ReturnType<typeof vi.spyOn>, index = 0) {
-  const data = workSaveCalls(post)[index]?.[0] as { saveId?: unknown };
-  if (typeof data?.saveId !== "string") throw new Error("未转发实际保存编号");
-  return data.saveId;
-}
-
 function postSaveResult(
   saveId: string,
   ok: boolean,
@@ -254,18 +248,13 @@ describe("HostWorkSurface 统一保存桥", () => {
     ];
     expect(request).toMatchObject({
       type: "kenfutwork:work-save",
-      saveId: expect.any(String),
+      saveId: "save-1",
       fileName: "Book1.xlsx",
       bytes,
     });
     expect(targetOrigin).toBe(window.location.origin);
     expect(transfer).toEqual([bytes]);
-    postSaveResult(
-      forwardedSaveId(post),
-      true,
-      undefined,
-      "D:\\Desktop\\test\\Book1.xlsx",
-    );
+    postSaveResult("save-1", true, undefined, "D:\\Desktop\\test\\Book1.xlsx");
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     // 成功必须说清落到哪：以前只清错误态，用户点了保存没有任何反馈。
     await waitFor(() =>
@@ -284,7 +273,7 @@ describe("HostWorkSurface 统一保存桥", () => {
     };
 
     postEditorMessage(frame, message);
-    postSaveResult(forwardedSaveId(post), false, "磁盘不可写");
+    postSaveResult("save-failed", false, "磁盘不可写");
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("磁盘不可写"),
     );
@@ -293,15 +282,15 @@ describe("HostWorkSurface 统一保存桥", () => {
 
     postEditorMessage(frame, { ...message, saveId: "save-retry" });
     await waitFor(() => expect(workSaveCalls(post)).toHaveLength(2));
-    postSaveResult(forwardedSaveId(post, 1), true);
+    postSaveResult("save-retry", true);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     // 浏览器形态拿不到落盘路径，也要给一句「已保存」，不能静默。
     await waitFor(() => expect(screen.getByText("已保存")).toBeTruthy());
   });
 });
 
-describe("HostWorkSurface 编辑器设置", () => {
-  it("editor-ready 后才发送当前主题和保存目标", async () => {
+describe("HostWorkSurface 主题桥", () => {
+  it("editor-ready 前不发送主题，ready 后发送当前主题", async () => {
     const post = vi.fn();
     vi.spyOn(
       HTMLIFrameElement.prototype,
@@ -314,17 +303,10 @@ describe("HostWorkSurface 编辑器设置", () => {
     fireEvent.load(frame);
     expect(post).not.toHaveBeenCalled();
     postEditorMessage(frame, { type: "kenfutwork:editor-ready" });
-    await waitFor(() =>
-      expect(post.mock.calls).toEqual([
-        [
-          { type: "kenfutwork:editor-theme", theme: "light" },
-          "http://127.0.0.1:3001",
-        ],
-        [
-          { type: "kenfutwork:editor-save-target", toProject: false },
-          "http://127.0.0.1:3001",
-        ],
-      ]),
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      { type: "kenfutwork:editor-theme", theme: "light" },
+      "http://127.0.0.1:3001",
     );
   });
 });
@@ -353,12 +335,7 @@ describe("Work 保存落到绑定项目目录", () => {
     const calls = workSaveCalls(post);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).not.toHaveProperty("projectId");
-    postSaveResult(
-      forwardedSaveId(post),
-      true,
-      null,
-      "C:\\Downloads\\Book1.xlsx",
-    );
+    postSaveResult("save-download", true, null, "C:\\Downloads\\Book1.xlsx");
     await waitFor(() =>
       expect(screen.getByText("已保存 C:\\Downloads\\Book1.xlsx")).toBeTruthy(),
     );
@@ -412,7 +389,7 @@ describe("Work 保存落到绑定项目目录", () => {
       bytes: new ArrayBuffer(8),
     });
     expect(workSaveCalls(post)).toHaveLength(1);
-    postSaveResult(forwardedSaveId(post), true, null, null, "Book1.xlsx");
+    postSaveResult("save-note", true, null, null, "Book1.xlsx");
     await waitFor(() =>
       expect(
         screen.getByText("已保存 D:\\work\\books\\Book1.xlsx"),

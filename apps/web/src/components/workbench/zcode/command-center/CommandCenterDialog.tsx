@@ -1,5 +1,7 @@
 /* eslint-disable max-lines -- 聚合命令、任务、文件三类搜索结果，后续可按 result section 拆分。 */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
+import { fetchWorkspaceFileEntriesPacked } from "@zui/workspace-file-search/fetchWorkspaceFileEntries.js";
 import { Command as CommandPrimitive } from "cmdk";
 import {
   ChevronDownIcon,
@@ -52,8 +54,6 @@ import {
   type CommandCenterSearchHistoryEntry,
   type CommandCenterSearchScope,
 } from "@zui/command-center/commandCenterSearchHistory.js";
-import { CommandCenterReadFailure } from "./CommandCenterReadFailure.js";
-import { useCommandCenterFileIndex } from "./useCommandCenterFileIndex.js";
 
 const EMPTY_QUICK_PICK_COMMANDS: QuickPickCommand[] = [];
 const EMPTY_COMMAND_CENTER_WORKSPACE_TABS: WorkspaceTabState[] = [];
@@ -430,7 +430,6 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   const { fileService } = useServices();
   const { intl } = useZCodeIntl();
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [rawQuery, setRawQuery] = useState("");
   const [manualScope, setManualScope] = useState<CommandCenterSearchScope>("all");
   const [expandedSections, setExpandedSections] = useState<Set<CommandCenterSectionId>>(
@@ -438,6 +437,10 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   );
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<CommandCenterSearchHistoryEntry[]>([]);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
+  const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
+  const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
+  const [loadedWorkspaceKey, setLoadedWorkspaceKey] = useState<string | null>(null);
   // 性能修复：Command Center 关闭时不需要跟随 chat streaming 重算命令、任务和 recent changes。
   // 保留 hooks 顺序，但把关闭态输入降为空，避免隐藏弹窗在每个 token 批次重建结果区。
   const effectiveCommands = open ? commands : EMPTY_QUICK_PICK_COMMANDS;
@@ -450,13 +453,6 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   const searchConversations =
     open && hasSearchQuery && (activeScope === "all" || activeScope === "conversations");
   const searchFiles = open && hasSearchQuery && (activeScope === "all" || activeScope === "files");
-  const { read: fileRead, refresh: refreshFiles } = useCommandCenterFileIndex({
-    enabled: searchFiles,
-    fileService,
-    workspacePath: workspaceAbsPath,
-    workspaceKey,
-    activeTaskId,
-  });
   const searchWorkspaceTabs = useMemo(
     () => (searchConversations ? effectiveWorkspaceTabs : []),
     [effectiveWorkspaceTabs, searchConversations],
@@ -524,11 +520,8 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     [searchQuery, taskList.items],
   );
   const fileRows = useMemo(
-    () =>
-      fileRead.status === "ready"
-        ? filterWorkspaceFileEntries(fileRead.entries, searchQuery)
-        : [],
-    [searchQuery, fileRead],
+    () => filterWorkspaceFileEntries(workspaceFiles, searchQuery),
+    [searchQuery, workspaceFiles],
   );
   const recentChangeRows = useMemo(
     () => [...(effectiveActiveTaskChangeSummary?.files ?? [])].sort(compareRecentChangedFiles),
@@ -561,6 +554,48 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   useEffect(() => {
     setExpandedSections(new Set());
   }, [activeScope, searchQuery]);
+
+  useEffect(() => {
+    setWorkspaceFiles([]);
+    setWorkspaceFilesError(null);
+    setWorkspaceFilesLoading(false);
+    setLoadedWorkspaceKey(null);
+  }, [workspaceKey]);
+
+  useEffect(() => {
+    if (!searchFiles || loadedWorkspaceKey === workspaceKey) {
+      return;
+    }
+
+    let cancelled = false;
+    setWorkspaceFilesLoading(true);
+    setWorkspaceFilesError(null);
+    void fetchWorkspaceFileEntriesPacked(fileService, workspaceAbsPath)
+      .then((result) => {
+        // Host 返回列式 packed 字符串（避免大数组结构化克隆），此处一次性解包。
+        const entries = unpackWorkspaceFileEntries(result, workspaceAbsPath);
+        if (cancelled) {
+          return;
+        }
+
+        setWorkspaceFiles(entries);
+        setLoadedWorkspaceKey(workspaceKey);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setWorkspaceFilesError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setWorkspaceFilesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileService, loadedWorkspaceKey, searchFiles, workspaceAbsPath, workspaceKey]);
 
   const rememberSearch = useCallback(
     (scope: CommandCenterSearchScope = activeScope) => {
@@ -736,10 +771,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     rows?: ZCodeTaskMeta[];
     showEmpty?: boolean;
   } = {}) => {
-    if (
-      hasSearchQuery ||
-      (rows.length === 0 && (!showEmpty || recentTaskList.loading || recentTaskList.error))
-    ) {
+    if (hasSearchQuery || (rows.length === 0 && !showEmpty)) {
       return null;
     }
 
@@ -872,7 +904,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     if (
       !hasSearchQuery ||
       !shouldShowFileSection ||
-      (fileRead.status !== "loading" && fileRows.length === 0)
+      (!workspaceFilesLoading && !workspaceFilesError && fileRows.length === 0)
     ) {
       return null;
     }
@@ -883,10 +915,12 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
         : fileRows.slice(0, COMMAND_CENTER_SECTION_LIMIT);
     return (
       <CommandGroup heading={intl.formatMessage({ id: "commandCenter.section.files" })}>
-        {fileRead.status === "loading" ? (
+        {workspaceFilesLoading && fileRows.length === 0 ? (
           <CommandEmpty className="px-4 py-5 text-foreground-subtle">
             {intl.formatMessage({ id: "sidePane.openFileLoading" })}
           </CommandEmpty>
+        ) : workspaceFilesError ? (
+          <CommandEmpty className="px-4 py-5 text-destructive">{workspaceFilesError}</CommandEmpty>
         ) : null}
         {visibleRows.map((entry) => {
           const descriptor = resolveFileDisplayDescriptor(entry.path);
@@ -919,14 +953,10 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     (shouldShowCommandSection && commandOptions.length > 0) ||
     (shouldShowConversationSection && conversationRows.length > 0) ||
     (shouldShowFileSection && fileRows.length > 0);
-  const activeTaskList = hasSearchQuery ? taskList : recentTaskList;
-  const taskListError = shouldShowConversationSection ? activeTaskList.error : null;
   const hasSearchStatus =
-    (shouldShowConversationSection && taskList.loading) || fileRead.status === "loading";
-  const retryRead = (refresh: () => void | Promise<void>) => {
-    searchInputRef.current?.focus();
-    void refresh();
-  };
+    taskList.loading ||
+    workspaceFilesLoading ||
+    (shouldShowFileSection && Boolean(workspaceFilesError));
 
   const renderDefaultSections = () => {
     switch (activeScope) {
@@ -960,7 +990,6 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
           <div className="flex h-8 items-center gap-2 rounded-full border border-input-border bg-input px-2.5 transition-colors hover:border-input-border-hover focus-within:border-input-border-focused focus-within:bg-input-focused">
             <SearchIcon className="size-4 shrink-0 text-foreground-subtlest" />
             <CommandPrimitive.Input
-              ref={searchInputRef}
               value={rawQuery}
               onValueChange={setRawQuery}
               placeholder={intl.formatMessage({ id: "commandCenter.placeholder" })}
@@ -1002,26 +1031,6 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
             </CommandCenterScopeButton>
           </div>
         </div>
-        {taskListError ? (
-          <CommandCenterReadFailure
-            cause={taskListError.cause}
-            fallback={intl.formatMessage({
-              id: hasSearchQuery ? "commandCenter.error.taskSearch" : "commandCenter.error.recentTasks",
-            })}
-            retryLabel={intl.formatMessage({
-              id: hasSearchQuery ? "commandCenter.retry.taskSearch" : "commandCenter.retry.recentTasks",
-            })}
-            onRetry={() => retryRead(activeTaskList.refresh)}
-          />
-        ) : null}
-        {fileRead.status === "error" ? (
-          <CommandCenterReadFailure
-            cause={fileRead.cause}
-            fallback={intl.formatMessage({ id: "commandCenter.error.files" })}
-            retryLabel={intl.formatMessage({ id: "commandCenter.retry.files" })}
-            onRetry={() => retryRead(refreshFiles)}
-          />
-        ) : null}
         <CommandList className={commandCenterListClassName}>
           {!hasSearchQuery ? (
             renderDefaultSections()
@@ -1031,11 +1040,11 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
               {renderConversationSection()}
               {renderFileSection()}
             </>
-          ) : !taskListError && fileRead.status !== "error" ? (
+          ) : (
             <CommandEmpty className="px-4 py-5 text-foreground-subtle">
               {intl.formatMessage({ id: "commandCenter.noResults" })}
             </CommandEmpty>
-          ) : null}
+          )}
         </CommandList>
         {showHistory ? (
           <CommandCenterSearchHistory

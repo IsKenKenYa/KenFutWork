@@ -78,7 +78,20 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 义务履行 | 本仓不随产物分发上游二进制：优先复用用户本机已装的 `sag`；未来按需下载时在下载器内保留版本与校验和，并在本表更新分发说明 |
 | 说明 | 语义检索依赖上游 Jev 服务（TypeSafe，商业服务）；凭据由用户自持（BYOK），不得把本仓凭据写回上游配置以外的位置 |
 
-### A8. dsh-context 与 DeepSeek Harness 界面组件
+### A8. 插件市场「游戏与 3D」图标（simple-icons CC0-1.0 + 厂商官网标志）
+
+六个插件在 `plugins/<id>/assets/icon.svg` 的图标都是单色（`currentColor`，随主题反白）。按来源文件的许可状态分三类：
+
+| 项 | 内容 |
+| --- | --- |
+| 品牌标志，文件许可明确（4 个） | Blender、Godot、Unity、Unreal Engine 取 [simple-icons](https://github.com/simple-icons/simple-icons) 16.38.1 的 `blender` / `godotengine` / `unity` / `unrealengine` 条目，许可 **CC0-1.0**（公有领域奉献，无署名义务；本表仍登记以示来源）。落点 `plugins/blender\|godot\|unity\|unreal-engine/assets/icon.svg`。修改：去掉 `<svg>` 外层多余属性、补 `fill="currentColor"`；图形轮廓未改动 |
+| 官方矢量图原样取用（1 个） | `plugins/tripo-3d/assets/icon.svg` 的两段路径逐字符取自 Tripo 官方矢量图 [`developers.tripo3d.com/favicon.svg`](https://developers.tripo3d.com/favicon.svg)（顶部横条、V 形）：去掉黑色圆角底板，两段统一 `fill="currentColor"`，viewBox 按图形外接框居中留白。**许可待核**：该文件未附任何许可声明 |
+| 官方位图描摹（1 个） | `plugins/hyper3d-rodin/assets/icon.svg`：Hyper3D 官网只有位图（最大 64×64 透明底，[`www.hyper3d.com/_astro/logo.*.png`](https://www.hyper3d.com/_astro/logo.BuaY5JSh.png)），按其轮廓描摹成矢量（脚本 `.scratch/trace-logo.py`；与官方位图的重合度 IoU 0.89）；花瓣与月牙按标志自身的三重旋转对称各描一份，其余两份用 `<use>` 旋转得到。**许可待核**：来源文件未附许可声明 |
+| 为什么不直接放位图 | 插件包的资源白名单只收文本类扩展名（`.svg` 在内，`.png/.webp/.ico` 不在），见 `apps/server/src/features/plugins/bundle-source.ts`；位图也无法随主题变色 |
+| **商标声明** | Blender 是 Blender Foundation 的商标；Godot 是 Godot Foundation 的商标；Unity 是 Unity Technologies 的商标；Unreal Engine 是 Epic Games 的商标。Tripo 与 Hyper3D（Rodin）的商标权利人**待核**（未查证到官方权利人名称，不臆断）。六个图标仅用于**标识对应的第三方软件**（指示性使用，与 EULA §6.1 同一口径），不表示上述权利人对本项目的赞助、认可或关联；文件许可不授予商标权 |
+| 商业版可用性 | simple-icons 四枚：文件许可 CC0-1.0 允许商用与再分发，遵守上表商标口径即可。**Tripo 与 Hyper3D 两枚暂不可用于商业版**：来源文件没有许可声明，按「未满足许可证义务的无许可资产不得进商业版」处理，取得权利人许可或书面确认后再放开 |
+
+### A9. dsh-context 与 DeepSeek Harness 界面组件
 
 | 项 | 内容 |
 | --- | --- |

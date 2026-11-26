@@ -461,8 +461,6 @@ export async function openOriginalSessionBrowser(options) {
             clientId: options.clientId,
             newDraft: options.newDraft ?? false,
             workspaceShell: options.workspaceShell ?? false,
-            supportsEmbeddedBrowser: options.supportsEmbeddedBrowser ?? false,
-            workbenchModes: options.workbenchModes,
             fileManagerPreview: options.fileManagerPreview ?? false,
             restoreSession: options.restoreSession ?? false,
             initialPreview: options.initialPreview,

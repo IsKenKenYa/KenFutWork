@@ -302,6 +302,20 @@ function EffortSlider({
   // 整块重渲染，实测表现为「拖动很卡、界面一直闪」。
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   /**
+   * 指针是否已经拖离按下时那一档
+   * （用户口径 2026-11-25「加一点点过渡动画，就像下面的选择器文本一样」）。
+   *
+   * 按下不算拖动：手柄与填充带着过渡滑向按下的档位，与触发器文字的宽度过渡同款
+   * （300ms ease-out）。指针跨到别的档位后改为跟手、不做过渡——拖动时手柄要追着
+   * 指针，带过渡会发飘。
+   *
+   * 判据取「档位变了」：指针在同一档的范围内移动时档位不变，手柄本来就不需要动；
+   * 跨过分界的那一刻才需要立刻跟手。
+   */
+  const [tracking, setTracking] = useState(false);
+  /** 按下时指针所在的那一档，用来判断之后是否拖离。 */
+  const pressIndexRef = useRef<number | null>(null);
+  /**
    * 松手后上游尚未回写的档位：`value` 是松手选的档，`from` 是松手那一刻的上游值。
    *
    * 为什么需要：`option.currentValue` 是异步回写的。选档 → 草稿变化 →
@@ -401,18 +415,19 @@ function EffortSlider({
     }
   }, [ratio]);
 
-  const selectNearest = useCallback(
-    (clientX: number) => {
+  /** 指针横坐标吸附到哪一档；量不到轨道宽度时返回 null。 */
+  const nearestIndex = useCallback(
+    (clientX: number): number | null => {
       const element = trackRef.current;
-      if (!element || levels.length === 0) return;
+      if (!element || levels.length === 0) return null;
       const rect = element.getBoundingClientRect();
-      if (rect.width <= 0) return;
+      if (rect.width <= 0) return null;
       const travel = rect.width - EFFORT_KNOB;
       const nextRatio = Math.min(
         1,
         Math.max(0, (clientX - rect.left - EFFORT_KNOB / 2) / travel),
       );
-      setDragIndex(Math.round(nextRatio * last));
+      return Math.round(nextRatio * last);
     },
     [last, levels.length],
   );
@@ -427,6 +442,7 @@ function EffortSlider({
   const commitDrag = useCallback(() => {
     const index = dragIndex;
     setDragIndex(null);
+    setTracking(false);
     const next = index === null ? undefined : levels[index];
     if (!next || next.value === shownValue) return;
     setPendingChange({ value: next.value, from: currentValue });
@@ -507,14 +523,26 @@ function EffortSlider({
           )}
           onPointerDown={(event) => {
             if (disabled) return;
+            // 滑块独占这次按下。模型菜单是弹层，DOM 在页面根部，React 事件仍沿
+            // 组件树冒泡到输入框表层，那里的「按住说话」会起 200ms 计时，到点抢走
+            // 指针捕获并开始录音——按住超过 200ms 再松手，松手事件到不了滑块，
+            // 这次选择不会提交。
+            event.stopPropagation();
             event.currentTarget.setPointerCapture(event.pointerId);
-            selectNearest(event.clientX);
+            const next = nearestIndex(event.clientX);
+            if (next === null) return;
+            // 按下只是「指着这一档」，手柄带过渡滑过来；拖离之后才跟手。
+            pressIndexRef.current = next;
+            setTracking(false);
+            setDragIndex(next);
           }}
           onPointerMove={(event) => {
             if (disabled) return;
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-              selectNearest(event.clientX);
-            }
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            const next = nearestIndex(event.clientX);
+            if (next === null) return;
+            if (next !== pressIndexRef.current) setTracking(true);
+            setDragIndex(next);
           }}
           onPointerUp={() => {
             if (disabled) return;
@@ -573,8 +601,8 @@ function EffortSlider({
                         .join(", ")})`
                     : (coloredStops[0]?.color ?? "transparent"),
                 clipPath: `inset(0 calc(${((1 - ratio) * 100).toFixed(2)}% - ${((1 - ratio) * EFFORT_KNOB).toFixed(2)}px) 0 0 round ${EFFORT_KNOB / 2}px)`,
-                // 拖动时不做过渡：每一帧都重启动画会让拖动发飘。
-                transition: dragging
+                // 拖离按下那一档之后不做过渡：每一帧都重启动画会让拖动发飘。
+                transition: tracking
                   ? "none"
                   : "clip-path .32s cubic-bezier(.32, .72, .24, 1)",
                 willChange: dragging ? "clip-path" : undefined,
@@ -660,8 +688,9 @@ function EffortSlider({
               // 居中方式：`top-1/2` + 负 margin。手柄的位置过渡只动 `left`，
               // 居中不占用 `transform` / `translate`，不会被别的变换叠加出偏移。
               "pointer-events-none absolute top-1/2 z-[2] size-8 -mt-4 -ml-4 rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.03)]",
-              // 拖动时手柄跟手、不做位置过渡（过渡会让拖动看起来发飘）。
-              !dragging && "transition-[left] duration-300",
+              // 拖离按下那一档后手柄跟手、不做位置过渡；其余时候带 300ms ease-out，
+              // 与触发器文字的宽度过渡同款。
+              !tracking && "transition-[left] duration-300 ease-out",
             )}
             style={{
               left: `calc(${EFFORT_KNOB / 2}px + ${ratio.toFixed(4)} * (100% - ${EFFORT_KNOB}px))`,
