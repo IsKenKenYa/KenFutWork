@@ -449,6 +449,13 @@ export const instanceSettingsSchema = z.object({
   knowledgeListRetries: governanceSetting("knowledgeListRetries"),
   knowledgeCheckTimeoutMs: governanceSetting("knowledgeCheckTimeoutMs"),
   knowledgeAddTimeoutMs: governanceSetting("knowledgeAddTimeoutMs"),
+  /** 技能导入：来源拉取预算、落盘预算与暂存保留，默认值与护栏的唯一属主是 governance.ts。 */
+  skillImportSourceTimeoutMs: governanceSetting("skillImportSourceTimeoutMs"),
+  skillImportSourceMaxBytes: governanceSetting("skillImportSourceMaxBytes"),
+  skillImportSourceMaxEntries: governanceSetting("skillImportSourceMaxEntries"),
+  skillImportStagingTtlMs: governanceSetting("skillImportStagingTtlMs"),
+  skillImportStagedMaxSources: governanceSetting("skillImportStagedMaxSources"),
+  skillImportScanDepth: governanceSetting("skillImportScanDepth"),
 });
 
 export const modelInfoSchema = z.object({

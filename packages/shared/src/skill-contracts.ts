@@ -126,6 +126,36 @@ export const skillImportRequestSchema = z.object({
 export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
 
 /**
+ * 从 git 仓库地址暂存技能来源。服务端浅克隆仓库并解出最新一版的文件，
+ * 仓库里的技能随后出现在导入对话框的列表里，由用户选择后再导入。
+ */
+export const skillImportSourceGitRequestSchema = z.object({
+  url: z.url().min(1),
+});
+export type SkillImportSourceGitRequest = z.infer<
+  typeof skillImportSourceGitRequestSchema
+>;
+
+export const skillImportSourceKindSchema = z.enum(["git", "zip"]);
+export type SkillImportSourceKind = z.infer<typeof skillImportSourceKindSchema>;
+
+/** 已暂存的技能来源（git 仓库或 zip 包），导入完成后或关闭对话框时释放。 */
+export const skillImportSourceSchema = z.object({
+  id: z.string().min(1),
+  kind: skillImportSourceKindSchema,
+  /** 展示用名称：git 地址或 zip 文件名 */
+  label: z.string().min(1),
+});
+export type SkillImportSource = z.infer<typeof skillImportSourceSchema>;
+
+export const skillImportSourceResponseSchema = z.object({
+  source: skillImportSourceSchema,
+});
+export type SkillImportSourceResponse = z.infer<
+  typeof skillImportSourceResponseSchema
+>;
+
+/**
  * 从**沙箱工作目录**导入技能包（技能弹窗的「从工作目录导入」入口）。
  *
  * `canvasId` 决定沙箱目录（与 agent / git 同一处解析：工作目录映射优先，否则

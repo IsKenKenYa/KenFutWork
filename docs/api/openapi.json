@@ -15237,6 +15237,189 @@
         }
       }
     },
+    "/api/skills/import-sources/git": {
+      "post": {
+        "operationId": "postSkillsImportSourcesGit",
+        "summary": "暂存 git 仓库技能来源",
+        "description": "浅克隆仓库最新提交并解出文件，供导入对话框选择其中的技能；只收 https 公开仓库地址，受网络安全域名规则与实例设置里的来源预算约束。",
+        "tags": [
+          "skills"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/skillImportSourceGitRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/skillImportSourceResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/import-sources/zip": {
+      "post": {
+        "operationId": "postSkillsImportSourcesZip",
+        "summary": "暂存 zip 包技能来源",
+        "description": "上传 ZIP 压缩包并解压到本机临时目录，供导入对话框选择其中的技能；越界路径整包拒绝，解压字节与条目数受实例设置约束。",
+        "tags": [
+          "skills"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/skillImportSourceResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/import-sources/{id}": {
+      "delete": {
+        "operationId": "deleteSkillsImportSourcesById",
+        "summary": "释放暂存技能来源",
+        "description": "删除暂存目录并移出登记表；来源不存在或已释放返回 404，成功 204。",
+        "tags": [
+          "skills"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "成功，无响应体"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/skills/sandbox-packages": {
       "get": {
         "operationId": "getSkillsSandboxPackages",
@@ -16465,6 +16648,9 @@
                   "skill_uninstall_failed",
                   "skill_toggle_failed",
                   "skill_import_failed",
+                  "skill_import_source_failed",
+                  "skill_import_source_denied",
+                  "skill_import_source_not_found",
                   "skill_file_query_failed",
                   "marketplace_search_failed",
                   "marketplace_detail_failed",
@@ -22677,6 +22863,9 @@
                       "skill_uninstall_failed",
                       "skill_toggle_failed",
                       "skill_import_failed",
+                      "skill_import_source_failed",
+                      "skill_import_source_denied",
+                      "skill_import_source_not_found",
                       "skill_file_query_failed",
                       "marketplace_search_failed",
                       "marketplace_detail_failed",
@@ -25656,6 +25845,42 @@
                 "type": "integer",
                 "minimum": 5000,
                 "maximum": 600000
+              },
+              "skillImportSourceTimeoutMs": {
+                "default": 120000,
+                "type": "integer",
+                "minimum": 5000,
+                "maximum": 600000
+              },
+              "skillImportSourceMaxBytes": {
+                "default": 20971520,
+                "type": "integer",
+                "minimum": 1048576,
+                "maximum": 1073741824
+              },
+              "skillImportSourceMaxEntries": {
+                "default": 10000,
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 100000
+              },
+              "skillImportStagingTtlMs": {
+                "default": 1800000,
+                "type": "integer",
+                "minimum": 60000,
+                "maximum": 86400000
+              },
+              "skillImportStagedMaxSources": {
+                "default": 8,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "skillImportScanDepth": {
+                "default": 5,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
               }
             },
             "required": [
@@ -25751,7 +25976,13 @@
               "knowledgeListTimeoutMs",
               "knowledgeListRetries",
               "knowledgeCheckTimeoutMs",
-              "knowledgeAddTimeoutMs"
+              "knowledgeAddTimeoutMs",
+              "skillImportSourceTimeoutMs",
+              "skillImportSourceMaxBytes",
+              "skillImportSourceMaxEntries",
+              "skillImportStagingTtlMs",
+              "skillImportStagedMaxSources",
+              "skillImportScanDepth"
             ],
             "additionalProperties": false
           }
@@ -26446,6 +26677,36 @@
             "type": "integer",
             "minimum": 5000,
             "maximum": 600000
+          },
+          "skillImportSourceTimeoutMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 600000
+          },
+          "skillImportSourceMaxBytes": {
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 1073741824
+          },
+          "skillImportSourceMaxEntries": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 100000
+          },
+          "skillImportStagingTtlMs": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 86400000
+          },
+          "skillImportStagedMaxSources": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "skillImportScanDepth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
           }
         }
       },
@@ -40286,6 +40547,56 @@
         "required": [
           "url"
         ]
+      },
+      "skillImportSourceGitRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "skillImportSourceResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "git",
+                  "zip"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
       },
       "skillListResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

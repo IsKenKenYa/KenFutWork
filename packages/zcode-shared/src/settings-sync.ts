@@ -16,9 +16,17 @@ export type SettingsSyncAgent =
   | "kiroCli"
   | "roo"
   | "codeBuddy"
-  | "agents";
+  | "agents"
+  /** 技能导入的暂存来源：git 仓库快照与 zip 压缩包（不对应磁盘上的 Agent 目录）。 */
+  | "gitRepository"
+  | "zipArchive";
 
-export type SettingsSyncCategory = "providers" | "skills" | "commands" | "plugins" | "mcpServers";
+export type SettingsSyncCategory =
+  | "providers"
+  | "skills"
+  | "commands"
+  | "plugins"
+  | "mcpServers";
 
 export type SettingsSyncSourceScope = "global" | "project";
 
@@ -135,7 +143,10 @@ export interface SettingsSyncPluginImportResult {
   version?: string;
 }
 
-export type SettingsSyncMcpServerImportStatus = "imported" | "skipped" | "failed";
+export type SettingsSyncMcpServerImportStatus =
+  | "imported"
+  | "skipped"
+  | "failed";
 
 export interface SettingsSyncMcpServerImportResult {
   name: string;

@@ -257,6 +257,8 @@ import {
   skillCreateRequestSchema,
   skillDetailResponseSchema,
   skillImportRequestSchema,
+  skillImportSourceGitRequestSchema,
+  skillImportSourceResponseSchema,
   skillListResponseSchema,
   skillUpdateRequestSchema,
   taskRunsResponseSchema,
@@ -3255,6 +3257,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "从 URL 导入技能",
     description:
       "从外部 URL（GitHub/npm tarball/zip）下载 SKILL.md 与附属文件，落库并自动装进当前实例。同名 409。",
+  },
+  {
+    method: "post",
+    path: "/api/skills/import-sources/git",
+    tag: "skills",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: skillImportSourceGitRequestSchema,
+    responseSchema: skillImportSourceResponseSchema,
+    summary: "暂存 git 仓库技能来源",
+    description:
+      "浅克隆仓库最新提交并解出文件，供导入对话框选择其中的技能；只收 https 公开仓库地址，受网络安全域名规则与实例设置里的来源预算约束。",
+  },
+  {
+    method: "post",
+    path: "/api/skills/import-sources/zip",
+    tag: "skills",
+    auth: "local",
+    successStatus: 201,
+    multipart: { fileField: "file" },
+    responseSchema: skillImportSourceResponseSchema,
+    summary: "暂存 zip 包技能来源",
+    description:
+      "上传 ZIP 压缩包并解压到本机临时目录，供导入对话框选择其中的技能；越界路径整包拒绝，解压字节与条目数受实例设置约束。",
+  },
+  {
+    method: "delete",
+    path: "/api/skills/import-sources/:id",
+    tag: "skills",
+    auth: "local",
+    successStatus: 204,
+    summary: "释放暂存技能来源",
+    description:
+      "删除暂存目录并移出登记表；来源不存在或已释放返回 404，成功 204。",
   },
   {
     method: "get",

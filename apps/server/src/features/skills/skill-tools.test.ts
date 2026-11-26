@@ -1,3 +1,4 @@
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { composePlugins } from "../../kernel/compose.js";
@@ -230,6 +231,11 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
             repository: { ensure: async () => "ws-7" },
             dataDir: "/tmp/skill-plugin-test",
           }),
+          // 技能插件读取实例设置（导入来源的暂存策略等）；用默认值桩替身
+          settings: {
+            getInstanceSettings: async () =>
+              instanceSettingsSchema.parse({ defaultModel: "" }),
+          } as never,
           projects: {
             getProject: async () => {
               throw new Error("未配置项目");

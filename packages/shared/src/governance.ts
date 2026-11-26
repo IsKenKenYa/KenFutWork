@@ -158,6 +158,18 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   knowledgeCheckTimeoutMs: 8_000,
   /** SAG2 知识库：`add` 首次建库预算（要拉起 service 并索引）。 */
   knowledgeAddTimeoutMs: 120_000,
+  /** 技能导入：拉取 git 仓库或写入 zip 包的总等待预算（毫秒）。 */
+  skillImportSourceTimeoutMs: 120_000,
+  /** 技能导入：单个来源解压落盘的字节预算（zip 解压后与 git 仓库快照同一口径）。 */
+  skillImportSourceMaxBytes: 20_971_520,
+  /** 技能导入：单个来源的文件与目录条目数上限。 */
+  skillImportSourceMaxEntries: 10_000,
+  /** 技能导入：暂存来源的保留时长（毫秒），到期删除暂存目录。 */
+  skillImportStagingTtlMs: 1_800_000,
+  /** 技能导入：同一实例同时保留的暂存来源数上限，超出时删除最早暂存的来源。 */
+  skillImportStagedMaxSources: 8,
+  /** 技能导入：在 git 仓库或 zip 包里查找技能目录的层数上限（含最外层目录）。 */
+  skillImportScanDepth: 5,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -232,6 +244,12 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "knowledgeListRetries",
   "knowledgeCheckTimeoutMs",
   "knowledgeAddTimeoutMs",
+  "skillImportSourceTimeoutMs",
+  "skillImportSourceMaxBytes",
+  "skillImportSourceMaxEntries",
+  "skillImportStagingTtlMs",
+  "skillImportStagedMaxSources",
+  "skillImportScanDepth",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -326,6 +344,12 @@ export type AgentGovernanceOverrides = {
   knowledgeListRetries?: number | undefined;
   knowledgeCheckTimeoutMs?: number | undefined;
   knowledgeAddTimeoutMs?: number | undefined;
+  skillImportSourceTimeoutMs?: number | undefined;
+  skillImportSourceMaxBytes?: number | undefined;
+  skillImportSourceMaxEntries?: number | undefined;
+  skillImportStagingTtlMs?: number | undefined;
+  skillImportStagedMaxSources?: number | undefined;
+  skillImportScanDepth?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -455,6 +479,12 @@ export const AGENT_GOVERNANCE_LIMITS = {
   knowledgeListRetries: { min: 0, max: 5 },
   knowledgeCheckTimeoutMs: { min: 1_000, max: 120_000 },
   knowledgeAddTimeoutMs: { min: 5_000, max: 600_000 },
+  skillImportSourceTimeoutMs: { min: 5_000, max: 600_000 },
+  skillImportSourceMaxBytes: { min: 1_048_576, max: 1_073_741_824 },
+  skillImportSourceMaxEntries: { min: 100, max: 100_000 },
+  skillImportStagingTtlMs: { min: 60_000, max: 86_400_000 },
+  skillImportStagedMaxSources: { min: 1, max: 64 },
+  skillImportScanDepth: { min: 1, max: 10 },
 } as const;
 
 /**
@@ -710,6 +740,24 @@ export function resolveGovernanceEnvOverrides(
     ),
     knowledgeAddTimeoutMs: parseStrictInt(
       source.KENFUTWORK_KNOWLEDGE_ADD_TIMEOUT_MS,
+    ),
+    skillImportSourceTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_SOURCE_TIMEOUT_MS,
+    ),
+    skillImportSourceMaxBytes: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_SOURCE_MAX_BYTES,
+    ),
+    skillImportSourceMaxEntries: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_SOURCE_MAX_ENTRIES,
+    ),
+    skillImportStagingTtlMs: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_STAGING_TTL_MS,
+    ),
+    skillImportStagedMaxSources: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_STAGED_MAX_SOURCES,
+    ),
+    skillImportScanDepth: parseStrictInt(
+      source.KENFUTWORK_SKILL_IMPORT_SCAN_DEPTH,
     ),
   };
   return Object.fromEntries(
