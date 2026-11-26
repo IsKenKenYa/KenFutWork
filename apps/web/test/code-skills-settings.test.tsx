@@ -51,6 +51,8 @@ async function openSkillsPage(
     workspacePath?: string;
     deferToggle?: boolean;
     pluginSkill?: boolean;
+    /** 插件技能所属的插件在市场目录里带有图标。 */
+    pluginIcon?: boolean;
     onCreateTask?: (request?: unknown) => void;
   } = {},
 ) {
@@ -117,7 +119,21 @@ async function openSkillsPage(
               ? { plugins: pluginInstalled ? [info] : [], diagnostics: [] }
               : {
                   marketplaces: [],
-                  availablePlugins: [],
+                  availablePlugins:
+                    scenario.pluginSkill && scenario.pluginIcon
+                      ? [
+                          {
+                            id: "local__probe",
+                            name: "probe",
+                            marketplace: "kenfutwork-local",
+                            installed: pluginInstalled,
+                            listing: {
+                              displayName: "Probe",
+                              icon: "/api/plugins/local__probe/assets/icon.svg",
+                            },
+                          },
+                        ]
+                      : [],
                   installedPlugins: [],
                   restorableBuiltins: [],
                   diagnostics: [],
@@ -252,6 +268,25 @@ it("原技能页保留停用插件的只读定义与正文，不展示DB卸载/�
     expect(screen.queryByRole("heading", { name: "技能正文" })).toBeNull(),
   );
   expect(screen.queryByRole("button", { name: /native-skill/ })).toBeNull();
+});
+
+/** 技能行行首的图标位：应统一为技能图标（魔法棒），不出现图片或名字首字母。 */
+function expectUnifiedSkillIcon(trigger: HTMLElement) {
+  const row = trigger.parentElement;
+  expect(row).not.toBeNull();
+  expect(row?.querySelector("svg.lucide-wand-sparkles")).not.toBeNull();
+  expect(row?.querySelector("img")).toBeNull();
+  expect(row?.querySelector("svg text")).toBeNull();
+}
+
+it("技能图标统一：插件自带的技能不显示所属插件的图标", async () => {
+  await openSkillsPage({ pluginSkill: true, pluginIcon: true });
+  expectUnifiedSkillIcon(await screen.findByRole("button", { name: /native-skill/ }));
+});
+
+it("技能图标统一：个人技能与插件技能用同一个图标", async () => {
+  await openSkillsPage();
+  expectUnifiedSkillIcon(await screen.findByRole("button", { name: /native-skill/ }));
 });
 
 it("设置页新建技能入口以创造模式创建新任务", async () => {

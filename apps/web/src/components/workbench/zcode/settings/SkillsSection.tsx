@@ -37,7 +37,6 @@ import {
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@zui/lib/zcodeDraftSkillInvalidation.js";
-import { PluginStoreAvatar } from "@zui/settings/PluginStoreAvatar.js";
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 import {
   SettingsResourceGroupHeader,
@@ -534,16 +533,6 @@ export function SkillsSection({
     (skill) => skill.scope !== "plugin",
   ).length;
   const hideInstalledGroup = Boolean(query.trim()) && groupedSkills.local.length === 0;
-  const pluginIconItemById = useMemo(
-    () =>
-      new Map(
-        plugins.map((plugin) => [
-          plugin.id,
-          { name: plugin.name, listing: pluginListingById.get(plugin.id) },
-        ]),
-      ),
-    [pluginListingById, plugins],
-  );
   useEffect(() => {
     onVisibleCountChange?.(filteredSkillCount);
   }, [filteredSkillCount, onVisibleCountChange]);
@@ -595,29 +584,19 @@ export function SkillsSection({
         )
       : "";
   const renderSkillRow = (skill: SkillSummary) => {
-    const pluginIconItem = skill.pluginId
-      ? pluginIconItemById.get(skill.pluginId)
-      : skill.pluginName
-        ? {
-            name: skill.pluginName,
-            listing: resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
-          }
-        : undefined;
     return (
       <div
         key={skill.id}
         className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
       >
-        {skill.scope === "plugin" && pluginIconItem ? (
-          <PluginStoreAvatar item={pluginIconItem} className="size-9 bg-background" />
-        ) : (
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
-            aria-hidden="true"
-          >
-            <WandSparkles className="size-4" />
-          </div>
-        )}
+        {/* 技能行统一用魔法棒图标，个人技能与插件自带的技能相同
+            （用户口径 2026-11-26「技能全部变成这样的图标吧」）。 */}
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
+          aria-hidden="true"
+        >
+          <WandSparkles className="size-4" />
+        </div>
         <div
           role="button"
           tabIndex={0}
