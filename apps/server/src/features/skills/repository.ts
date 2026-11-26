@@ -12,6 +12,8 @@ export type InstanceSkillRecord = {
   name: string;
   description: string;
   skillContent: string;
+  /** 技能市场包名；非市场来源的技能不带。 */
+  packageName?: string;
 };
 
 /**
@@ -439,6 +441,8 @@ type JoinedSkillRow = {
   description: string;
   skill_content: string;
   installation_revision?: string;
+  /** 技能市场包名；非市场来源的技能为空。 */
+  package_name?: string | null;
 };
 
 /** 供导入事务复用：建技能与写回执在同一事务，实例谓词和列默认语义保持一致。 */
@@ -697,7 +701,8 @@ export function createSkillCatalogRepository(
         .query<JoinedSkillRow>(
           `select coalesce(ps.enabled, ws.enabled) as enabled,
                   s.id, s.slug, s.name, s.description, s.skill_content,
-                  (ws.installed_at at time zone 'UTC')::text as installation_revision
+                  (ws.installed_at at time zone 'UTC')::text as installation_revision,
+                  coalesce(s.package_name, s.metadata->>'package_name') as package_name
              from public.instance_skills ws
              join public.skills s on s.id = ws.skill_id
              left join public.project_skills ps on ps.instance_id = ws.instance_id
@@ -720,6 +725,7 @@ export function createSkillCatalogRepository(
         ...(row.installation_revision
           ? { installationRevision: row.installation_revision }
           : {}),
+        ...(row.package_name ? { packageName: row.package_name } : {}),
       }));
     },
   };

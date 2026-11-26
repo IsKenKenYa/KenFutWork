@@ -5,6 +5,8 @@ export interface SkillMetadata {
   version?: string;
   ownerId?: string;
   publishedAt?: number;
+  /** 从技能市场添加时的包名；技能市场据此标出「已添加」。 */
+  packageName?: string;
 }
 
 export interface SkillSummary {

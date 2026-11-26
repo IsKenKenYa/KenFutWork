@@ -177,6 +177,35 @@ describe("实例技能仓储", () => {
     }
   });
 
+  it("实例技能列表带出技能市场包名：专门的列优先，为空时读元数据里记的包名", async () => {
+    const base = {
+      enabled: true,
+      id: SKILL_ID,
+      slug: "writer",
+      name: "Writer",
+      description: "写作用技能",
+      skill_content: "---\nname: writer\n---\n正文",
+      installation_revision: "2026-11-04 00:00:00",
+    };
+    const { calls, persistence } = fixture([
+      { ...base, package_name: "writer-skill" },
+      { ...base, id: "skill-2", slug: "reviewer", package_name: null },
+    ]);
+
+    const listed = await createSkillCatalogRepository(persistence).listInstanceSkills(
+      INSTANCE_ID,
+    );
+
+    // 市场安装的包名可能在专门的列里，也可能只在 metadata JSON 里（早期安装），两处都取
+    expect(calls[0]?.sql).toContain(
+      "coalesce(s.package_name, s.metadata->>'package_name') as package_name",
+    );
+    expect(listed.map((item) => item.packageName ?? null)).toEqual([
+      "writer-skill",
+      null,
+    ]);
+  });
+
   it("启停只 UPDATE 现存安装，卸载后迟到请求返回 false，不重新 INSERT", async () => {
     const { calls, persistence, repository } = fixture();
     expect(await repository.setEnabled(INSTANCE_ID, SKILL_ID, false)).toBe(

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import type { SkillsListResult } from "@zcode/shared";
 import { CodeUiConnections } from "../code-ui/connections.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiSkillsHost } from "./code-ui-host.js";
@@ -46,6 +47,8 @@ function createHarness(
     project?: { id: string; name: string } | null;
     directoryProjects?: Array<{ id: string; name: string }>;
     projectRows?: { skillId: string; enabled: boolean; updatedAt: string }[];
+    /** 从技能市场安装时记下的包名；非市场来源不带。 */
+    packageName?: string;
   } = {},
 ) {
   const actor: LocalActor = Object.freeze({
@@ -72,6 +75,7 @@ function createHarness(
     description: "写作用技能",
     skillContent: content,
     installationRevision: "2026-11-04 00:00:00",
+    ...(options.packageName ? { packageName: options.packageName } : {}),
   };
   const installed = options.installed ?? true;
   const upserts: Array<{
@@ -498,4 +502,25 @@ it("项目设置只返回已安装技能，解析不到项目时返回空，插�
     statusCode: 400,
     message: "插件技能由插件管理，不能单独启停。",
   });
+});
+
+it("技能列表的元数据带出市场包名，非市场来源的技能不带", async () => {
+  const list = async (f: ReturnType<typeof createHarness>) => {
+    // 宿主对象按名称索引，入口类型是各种处理器的联合；列表入口的结果是 SkillsListResult
+    const entry = f.host["skills.list"] as
+      | { call(actor: LocalActor, args: unknown[]): Promise<SkillsListResult> }
+      | undefined;
+    if (!entry) throw new Error("列表入口未注册");
+    return entry.call(f.actor, [{}]);
+  };
+
+  const fromMarket = createHarness({ packageName: "writer-skill" });
+  expect(
+    (await list(fromMarket)).skills.map((skill) => skill.metadata),
+  ).toEqual([{ slug: "writer", packageName: "writer-skill" }]);
+
+  const local = createHarness();
+  expect((await list(local)).skills.map((skill) => skill.metadata)).toEqual([
+    { slug: "writer" },
+  ]);
 });
