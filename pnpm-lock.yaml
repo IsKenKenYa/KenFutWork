@@ -516,9 +516,6 @@ importers:
       '@kenfutwork/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@kenfutwork/context-insights-ui':
-        specifier: workspace:*
-        version: link:../../packages/context-insights-ui
       '@kenfutwork/ui':
         specifier: workspace:*
         version: link:../../packages/ui
