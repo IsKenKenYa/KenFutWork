@@ -39,6 +39,13 @@ function omitSkillMarketplace(platform: CodePlatform): CodePlatform {
   ) as CodePlatform;
 }
 
+/** 宿主没接通技能导入来源的形态：只摘掉这一项，其余能力保留。 */
+function omitSkillImportSources(platform: CodePlatform): CodePlatform {
+  return Object.fromEntries(
+    Object.entries(platform).filter(([key]) => key !== "skillImportSources"),
+  ) as CodePlatform;
+}
+
 let client: CodeHttpChannelClient | undefined;
 let release: (() => void) | undefined;
 afterEach(() => {
@@ -67,6 +74,10 @@ async function openSkillsPage(
     recordPackageName?: string;
     /** 宿主没有接通技能市场。 */
     withoutMarketplace?: boolean;
+    /** 宿主没有接通技能导入来源（git 仓库 / zip 上传）。 */
+    withoutImportSources?: boolean;
+    /** 技能导入来源接口的应答。 */
+    importSources?: { git?: "ok" | "fail"; zip?: "ok" | "fail" };
     /** 技能市场接口的应答；传入对象可在用例中途修改，用来测重试。 */
     marketplace?: {
       search?: "ok" | "fail";
@@ -80,6 +91,11 @@ async function openSkillsPage(
   installCodeRootBrowser();
   const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
   const fallback = createCodeRootHostFetch(calls, { rejectOpen: false });
+  // 技能导入来源的暂存状态：发生过暂存后，settings-sync.detect 返回来源里的技能
+  let stagedSeen = false;
+  let stagedLabel = "";
+  // 导入对话框的开关（受控渲染，供「关闭后释放来源」用例驱动）
+  let importDialogOpen = true;
   let delayNextRead = false;
   let pluginInstalled = true;
   let settleRead: (value: Response) => void = () => {};
@@ -155,10 +171,16 @@ async function openSkillsPage(
     }
     if (url.endsWith("/api/skills/marketplace/install")) {
       const body = JSON.parse(String(options?.body));
-      calls.push({ service: "skill-marketplace", method: "install", args: [body] });
+      calls.push({
+        service: "skill-marketplace",
+        method: "install",
+        args: [body],
+      });
       if (marketplace.install === "fail")
         return Response.json(
-          { error: { code: "marketplace_install_failed", message: "下载失败" } },
+          {
+            error: { code: "marketplace_install_failed", message: "下载失败" },
+          },
           { status: 502 },
         );
       if (marketplace.install === "duplicate")
@@ -172,12 +194,150 @@ async function openSkillsPage(
           { status: 409 },
         );
       return Response.json(
-        { skill: { id: "new-skill", slug: body.packageName, name: body.packageName } },
+        {
+          skill: {
+            id: "new-skill",
+            slug: body.packageName,
+            name: body.packageName,
+          },
+        },
         { status: 201 },
       );
     }
+    if (url.endsWith("/api/skills/import-sources/git")) {
+      const body = JSON.parse(String(options?.body)) as { url: string };
+      calls.push({
+        service: "skill-import-source",
+        method: "stageGit",
+        args: [body],
+      });
+      if (scenario.importSources?.git === "fail") {
+        return Response.json(
+          {
+            error: {
+              code: "skill_import_source_failed",
+              message: "仓库需要登录才能读取，技能导入只支持公开仓库。",
+            },
+          },
+          { status: 400 },
+        );
+      }
+      stagedSeen = true;
+      stagedLabel = body.url;
+      return Response.json(
+        { source: { id: "staged-git-1", kind: "git", label: body.url } },
+        { status: 201 },
+      );
+    }
+    if (url.endsWith("/api/skills/import-sources/zip")) {
+      const form = options?.body as FormData | undefined;
+      const file = form?.get("file");
+      const fileName = file instanceof File ? file.name : "unknown.zip";
+      calls.push({
+        service: "skill-import-source",
+        method: "stageZip",
+        args: [{ fileName }],
+      });
+      if (scenario.importSources?.zip === "fail") {
+        return Response.json(
+          {
+            error: {
+              code: "skill_import_source_failed",
+              message: "压缩包无法解压，请确认文件是完整的 ZIP 包。",
+            },
+          },
+          { status: 400 },
+        );
+      }
+      stagedSeen = true;
+      stagedLabel = fileName;
+      return Response.json(
+        { source: { id: "staged-zip-1", kind: "zip", label: fileName } },
+        { status: 201 },
+      );
+    }
+    if (url.includes("/api/skills/import-sources/")) {
+      const id = url.split("/").at(-1) ?? "";
+      calls.push({
+        service: "skill-import-source",
+        method: "release",
+        args: [{ id }],
+      });
+      return new Response(null, { status: 204 });
+    }
     if (url.endsWith("/rpc")) {
       const call = JSON.parse(String(options?.body));
+      if (call.service === "settings-sync") {
+        calls.push(call);
+        if (call.method === "detect") {
+          return Response.json({
+            result: stagedSeen
+              ? {
+                  agents: [
+                    {
+                      agent: "gitRepository",
+                      discovered: true,
+                      categories: [
+                        {
+                          category: "skills",
+                          discoveredCount: 1,
+                          importableCount: 1,
+                          skippedCount: 0,
+                          sourcePaths: [stagedLabel],
+                          sourceRoots: [
+                            {
+                              scope: "global",
+                              path: stagedLabel,
+                              discoveredCount: 1,
+                              importableCount: 1,
+                              skippedCount: 0,
+                              skills: [
+                                {
+                                  name: "Writer",
+                                  path: "staged://git/writer",
+                                  importable: true,
+                                },
+                              ],
+                            },
+                          ],
+                          selectedByDefault: true,
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : { agents: [] },
+          });
+        }
+        if (call.method === "importSelected") {
+          const request = call.args[0] as {
+            selections?: Array<{ skillPaths?: string[] }>;
+          };
+          const importedPaths = request.selections?.[0]?.skillPaths ?? [];
+          return Response.json({
+            result: {
+              successCount: importedPaths.length,
+              skippedCount: 0,
+              failedCount: 0,
+              taskResults: [
+                {
+                  agent: "gitRepository",
+                  category: "skills",
+                  status: "success",
+                  importedCount: importedPaths.length,
+                  skillResults: importedPaths.map((path) => ({
+                    name: "Writer",
+                    path,
+                    sourceScope: "global",
+                    status: "imported",
+                  })),
+                },
+              ],
+            },
+          });
+        }
+        return Response.json({ result: null });
+      }
       if (scenario.pluginSkill && call.service === "plugin-management") {
         calls.push(call);
         if (call.method === "uninstallPlugin") {
@@ -279,7 +439,9 @@ async function openSkillsPage(
         platform={
           scenario.withoutMarketplace
             ? omitSkillMarketplace(createCodePlatform(host))
-            : createCodePlatform(host)
+            : scenario.withoutImportSources
+              ? omitSkillImportSources(createCodePlatform(host))
+              : createCodePlatform(host)
         }
       >
         <ZCodeIntlProvider initialLocale="zh-CN">
@@ -299,10 +461,13 @@ async function openSkillsPage(
                 />
               ) : scenario.importDialog ? (
                 <SkillsImportDialog
-                  open
+                  open={importDialogOpen}
                   workspacePath={null}
                   settingsSyncService={host.services.settingsSyncService}
-                  onOpenChange={() => {}}
+                  onOpenChange={(next) => {
+                    importDialogOpen = next;
+                    view.rerender(page(scenario.workspacePath));
+                  }}
                   onImported={() => {}}
                 />
               ) : (
@@ -332,6 +497,11 @@ async function openSkillsPage(
     settleRead,
     settleToggle,
     changeTarget: (path: string) => view.rerender(page(path)),
+    /** 切换导入对话框开关并重渲染（onOpenChange 也走同一条路径）。 */
+    setImportDialogOpen: (open: boolean) => {
+      importDialogOpen = open;
+      view.rerender(page(scenario.workspacePath));
+    },
   };
 }
 
@@ -370,12 +540,16 @@ function expectUnifiedSkillIcon(trigger: HTMLElement) {
 
 it("技能图标统一：插件自带的技能不显示所属插件的图标", async () => {
   await openSkillsPage({ pluginSkill: true, pluginIcon: true });
-  expectUnifiedSkillIcon(await screen.findByRole("button", { name: /native-skill/ }));
+  expectUnifiedSkillIcon(
+    await screen.findByRole("button", { name: /native-skill/ }),
+  );
 });
 
 it("技能图标统一：个人技能与插件技能用同一个图标", async () => {
   await openSkillsPage();
-  expectUnifiedSkillIcon(await screen.findByRole("button", { name: /native-skill/ }));
+  expectUnifiedSkillIcon(
+    await screen.findByRole("button", { name: /native-skill/ }),
+  );
 });
 
 type Call = { service: string; method: string; args: unknown[] };
@@ -445,16 +619,12 @@ it("「导入」打开导入对话框", async () => {
   await openAddMenu();
   fireEvent.click(await screen.findByRole("menuitem", { name: "导入" }));
   const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).getByText("导入外部 Agent 技能"),
-  ).toBeTruthy();
+  expect(within(dialog).getByText("导入外部 Agent 技能")).toBeTruthy();
 });
 
 it("「从市场添加」打开技能市场：打开即浏览第一页", async () => {
   const { calls, dialog } = await openMarketplace();
-  const items = await within(dialog).findAllByTestId(
-    "skill-marketplace-item",
-  );
+  const items = await within(dialog).findAllByTestId("skill-marketplace-item");
   expect(items).toHaveLength(2);
   expect(items[0]?.textContent).toContain("skill-1");
   expect(items[0]?.textContent).toContain("第 1 个技能");
@@ -500,18 +670,14 @@ it("超过一页时出现「加载更多」，点击后取下一页接在后面"
     { q: "", page: 1, limit: 20 },
     { q: "", page: 2, limit: 20 },
   ]);
-  expect(
-    within(dialog).queryByRole("button", { name: "加载更多" }),
-  ).toBeNull();
+  expect(within(dialog).queryByRole("button", { name: "加载更多" })).toBeNull();
 });
 
 it("市场里点「添加」安装该技能并刷新技能列表，条目变成「已添加」", async () => {
   const { calls, dialog } = await openMarketplace({
     marketplace: { install: "ok" },
   });
-  const [item] = await within(dialog).findAllByTestId(
-    "skill-marketplace-item",
-  );
+  const [item] = await within(dialog).findAllByTestId("skill-marketplace-item");
   if (!item) throw new Error("市场条目未渲染");
   const listsBefore = skillListCalls(calls).length;
   fireEvent.click(within(item).getByRole("button", { name: "添加" }));
@@ -535,9 +701,7 @@ it("此前从市场添加过的技能直接显示「已添加」", async () => {
   expect(
     within(first as HTMLElement).getByRole("button", { name: "添加" }),
   ).toBeTruthy();
-  expect(
-    within(second as HTMLElement).getByText("已添加"),
-  ).toBeTruthy();
+  expect(within(second as HTMLElement).getByText("已添加")).toBeTruthy();
   expect(within(second as HTMLElement).queryByRole("button")).toBeNull();
 });
 
@@ -545,25 +709,19 @@ it("重复添加时条目也标成「已添加」，不显示失败", async () =
   const { dialog } = await openMarketplace({
     marketplace: { install: "duplicate" },
   });
-  const [item] = await within(dialog).findAllByTestId(
-    "skill-marketplace-item",
-  );
+  const [item] = await within(dialog).findAllByTestId("skill-marketplace-item");
   fireEvent.click(
     within(item as HTMLElement).getByRole("button", { name: "添加" }),
   );
   await within(item as HTMLElement).findByText("已添加");
-  expect(
-    within(item as HTMLElement).queryByText("添加失败"),
-  ).toBeNull();
+  expect(within(item as HTMLElement).queryByText("添加失败")).toBeNull();
 });
 
 it("添加失败时条目显示「添加失败」并保留「添加」按钮", async () => {
   const { dialog } = await openMarketplace({
     marketplace: { install: "fail" },
   });
-  const [item] = await within(dialog).findAllByTestId(
-    "skill-marketplace-item",
-  );
+  const [item] = await within(dialog).findAllByTestId("skill-marketplace-item");
   fireEvent.click(
     within(item as HTMLElement).getByRole("button", { name: "添加" }),
   );
@@ -597,9 +755,9 @@ it("翻下一页失败时保留已有结果，点「重试」只补取失败的�
   marketplace.search = "fail";
   fireEvent.click(more);
   const retry = await within(dialog).findByRole("button", { name: "重试" });
-  expect(
-    within(dialog).getAllByTestId("skill-marketplace-item"),
-  ).toHaveLength(20);
+  expect(within(dialog).getAllByTestId("skill-marketplace-item")).toHaveLength(
+    20,
+  );
   marketplace.search = "ok";
   fireEvent.click(retry);
   await waitFor(() =>
@@ -674,11 +832,133 @@ it("技能读取失败显示错误，不显示尚未安装的假空态", async (
   expect(screen.queryByText("尚未安装技能")).toBeNull();
 });
 
-it("原外部技能导入页明确未接入，禁止扫描、导入和假空结果", async () => {
+it("导入对话框接通后扫描技能来源，并出现添加仓库与 zip 入口", async () => {
   const { calls } = await openSkillsPage({ importDialog: true });
-  await screen.findByText("未接入");
-  expect(calls.filter((call) => call.service === "settings-sync")).toEqual([]);
-  expect(screen.queryByText(/暂无可导入技能/)).toBeNull();
+  await screen.findByRole("button", { name: "添加仓库" });
+  expect(screen.getByRole("button", { name: "添加 zip 包" })).not.toBeNull();
+  const detectCalls = calls.filter(
+    (call) => call.service === "settings-sync" && call.method === "detect",
+  );
+  expect(detectCalls).toHaveLength(1);
+  expect(detectCalls[0]?.args[0]).toMatchObject({ categories: ["skills"] });
+});
+
+it("宿主未接通导入来源时不出现添加入口", async () => {
+  await openSkillsPage({ importDialog: true, withoutImportSources: true });
+  expect(screen.queryByRole("button", { name: "添加仓库" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "添加 zip 包" })).toBeNull();
+});
+
+it("输入仓库地址添加后重新扫描，来源里的技能出现在列表", async () => {
+  const { calls } = await openSkillsPage({ importDialog: true });
+  fireEvent.change(screen.getByRole("textbox", { name: "仓库地址" }), {
+    target: { value: "https://github.com/anthropics/skills" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加仓库" }));
+  await screen.findByText("Git 仓库");
+  expect(
+    calls.filter((call) => call.service === "skill-import-source"),
+  ).toEqual([
+    {
+      service: "skill-import-source",
+      method: "stageGit",
+      args: [{ url: "https://github.com/anthropics/skills" }],
+    },
+  ]);
+  expect(
+    screen.getByText("https://github.com/anthropics/skills"),
+  ).not.toBeNull();
+  expect(
+    calls.filter(
+      (call) => call.service === "settings-sync" && call.method === "detect",
+    ),
+  ).toHaveLength(2);
+});
+
+it("仓库添加失败的原因直接显示在对话框里", async () => {
+  await openSkillsPage({ importDialog: true, importSources: { git: "fail" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "仓库地址" }), {
+    target: { value: "https://github.com/private/repo" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加仓库" }));
+  await screen.findByText(/只支持公开仓库/);
+});
+
+it("zip 包以表单上传并出现在来源列表", async () => {
+  const { calls } = await openSkillsPage({ importDialog: true });
+  const dialog = screen.getByRole("dialog");
+  const fileInput = dialog.querySelector(
+    'input[type="file"]',
+  ) as HTMLInputElement;
+  expect(fileInput).not.toBeNull();
+  fireEvent.change(fileInput, {
+    target: {
+      files: [new File(["PK"], "demo-skills.zip", { type: "application/zip" })],
+    },
+  });
+  // 重新扫描后来源行带出 zip 文件名
+  await screen.findByText("demo-skills.zip");
+  expect(
+    calls.filter((call) => call.service === "skill-import-source"),
+  ).toEqual([
+    {
+      service: "skill-import-source",
+      method: "stageZip",
+      args: [{ fileName: "demo-skills.zip" }],
+    },
+  ]);
+});
+
+it("暂存来源里的技能选中后按来源导入并回填结果", async () => {
+  const { calls } = await openSkillsPage({ importDialog: true });
+  fireEvent.change(screen.getByRole("textbox", { name: "仓库地址" }), {
+    target: { value: "https://github.com/anthropics/skills" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加仓库" }));
+  await screen.findByText("Git 仓库");
+  fireEvent.click(screen.getByRole("button", { name: "选择该来源下全部技能" }));
+  fireEvent.click(screen.getByRole("button", { name: "导入到全局" }));
+  await screen.findByText("技能导入结果");
+  const importCall = calls.find(
+    (call) =>
+      call.service === "settings-sync" && call.method === "importSelected",
+  );
+  expect(importCall?.args[0]).toMatchObject({
+    selections: [
+      {
+        agent: "gitRepository",
+        category: "skills",
+        targetScope: "global",
+        skillPaths: ["staged://git/writer"],
+      },
+    ],
+  });
+});
+
+it("关闭对话框释放本轮暂存的来源", async () => {
+  const { calls, setImportDialogOpen } = await openSkillsPage({
+    importDialog: true,
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "仓库地址" }), {
+    target: { value: "https://github.com/anthropics/skills" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加仓库" }));
+  await screen.findByText("Git 仓库");
+  setImportDialogOpen(false);
+  await waitFor(() => {
+    expect(
+      calls.filter(
+        (call) =>
+          call.service === "skill-import-source" && call.method === "release",
+      ),
+    ).toEqual([
+      {
+        service: "skill-import-source",
+        method: "release",
+        args: [{ id: "staged-git-1" }],
+      },
+    ]);
+  });
 });
 
 it("原Code侧栏提供技能与MCP直达原页，入口不创建新Task", async () => {

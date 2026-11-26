@@ -60,6 +60,8 @@ import {
   SettingsResourceList,
 } from "@zui/settings/SettingsResourceGroup.js";
 import { McpServersImportDialog } from "@zui/settings/ExternalAgentImportDialog.js";
+import { McpAddMenu } from "@zui/settings/McpAddMenu.js";
+import { McpMarketplaceDialog } from "@zui/settings/McpMarketplaceDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@zui/settings/RemoteSyncActions.js";
 import { useMcpStore } from "@zui/store/mcpStore.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
@@ -621,6 +623,9 @@ export function McpSettingsSection({
   const [formScopeKey, setFormScopeKey] = useState(parentScopeKey);
   const [editingServer, setEditingServer] = useState<ZCodeMcpServer | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  // MCP 市场由宿主提供：官方注册表检索 + 内置精选目录；未接通时菜单里不出现这一项
+  const mcpMarketplace = platform.mcpMarketplace;
+  const [marketDialogOpen, setMarketDialogOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
   const query = searchQuery;
   const [editorMode, setEditorMode] = useState<McpEditorMode>("form");
@@ -1232,6 +1237,10 @@ export function McpSettingsSection({
     [filteredServers],
   );
   const hideInstalledGroup = Boolean(query.trim()) && installedServers.length === 0;
+  const installedServerNames = useMemo(
+    () => new Set(installedServers.map((server) => server.name)),
+    [installedServers],
+  );
   useEffect(() => {
     onVisibleCountChange?.(filteredMcpCount);
   }, [filteredMcpCount, onVisibleCountChange]);
@@ -1510,16 +1519,24 @@ export function McpSettingsSection({
           <div data-mcp-plugin-installed-actions="true">
             <SettingsResourceGroupHeader
               actions={
-                <SettingsResourceHeaderActions
-                  onRefresh={() => void handleManualRefresh()}
-                  refreshing={refreshingStatusList}
-                  onImport={() => setImportDialogOpen(true)}
-                  onNew={handleCreate}
-                  newDisabled={databaseRecords && scopeFilter === "workspace"}
-                  importDisabled={databaseRecords && scopeFilter === "workspace"}
-                  importActionId="settings.mcp.import.open"
-                  newActionId="settings.mcp.create.open"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <SettingsResourceHeaderActions
+                    onRefresh={() => void handleManualRefresh()}
+                    refreshing={refreshingStatusList}
+                    onImport={() => setImportDialogOpen(true)}
+                    importDisabled={databaseRecords && scopeFilter === "workspace"}
+                    importActionId="settings.mcp.import.open"
+                  />
+                  <McpAddMenu
+                    onCreate={() => {
+                      handleCreate();
+                    }}
+                    createDisabled={databaseRecords && scopeFilter === "workspace"}
+                    onAddMarketplace={
+                      mcpMarketplace ? () => setMarketDialogOpen(true) : undefined
+                    }
+                  />
+                </div>
               }
               count={installedServers.length}
               title={intl.formatMessage({
@@ -1613,6 +1630,15 @@ export function McpSettingsSection({
           await loadMcpFromUserDirectory(services.mcpSyncService, activeWorkspaceIdentity);
         }}
       />
+      {mcpMarketplace ? (
+        <McpMarketplaceDialog
+          open={marketDialogOpen}
+          onOpenChange={setMarketDialogOpen}
+          marketplace={mcpMarketplace}
+          installedNames={installedServerNames}
+          onAdded={() => void handleManualRefresh()}
+        />
+      ) : null}
       <RemoteSyncDialogs
         canSyncSkills={false}
         canSyncMcp={Boolean(connectedRemoteSyncTarget && activeWorkspacePath)}

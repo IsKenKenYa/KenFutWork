@@ -443,6 +443,22 @@ export class CodeHttpChannelClient implements IChannelClient {
     return readHostResponse<T>(response);
   }
 
+  /** multipart 表单上传（技能导入的 zip 包）；boundary 由浏览器生成，不手动设 content-type。 */
+  async postMultipart<T>(path: string, form: FormData): Promise<T> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: "POST",
+        credentials: "include",
+        signal: this.controller.signal,
+        headers: this.headers(),
+        body: form,
+      },
+    );
+    reportAccessLost(response.status);
+    return readHostResponse<T>(response);
+  }
+
   /** PUT 请求（部分更新语音设置等幂等资源）。 */
   async putRequest<T>(path: string, body: unknown): Promise<T> {
     const response = await fetch(
