@@ -102,6 +102,15 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | DeepSeek 依赖 | [`@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.3`](https://www.npmjs.com/package/@deepseek-ai/dsh-client-ui-primitives)，MIT，Copyright (c) 2026 DeepSeek；复用真实 Markdown、JSON、图标、剪贴板组件；图标安装适配来自 DeepSeek Harness `ui-theme/icon-sprite.ts`，MIT 全文在 `packages/context-insights-ui/vendor/deepseek-harness/LICENSE` |
 | 分发义务 | 随包保留上述许可、来源和修改说明；商业版允许使用但须保留声明；商标不在代码许可授权范围内 |
 
+### A10. Claude Code 官方市场清单测试夹具（Anthropic 公开数据）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `apps/server/src/features/mcp/fixtures/claude-marketplace-2026-11-27.json`：`anthropics/claude-plugins-official` 仓库 `.claude-plugin/marketplace.json` 在 2026-11-27 的快照（317 个插件条目） |
+| 用途 | 服务端市场解析与换算的回归测试数据；**仅在测试中读取**，不进运行时产物、不随分发 |
+| 许可状态 | **待核**：该仓库的 LICENSE 未在本次核对中确认（`marketplace.json` 自身是插件目录数据，不含代码）。只作测试数据使用，未经核实前不用于商业版分发；若上游许可不允许再分发，改为测试时按需拉取 |
+| 数据内容 | 第三方厂商的插件名、描述、作者与仓库地址（这些是各厂商的商标与文案，仅作互操作目录展示） |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。

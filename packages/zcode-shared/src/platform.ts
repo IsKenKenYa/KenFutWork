@@ -1,11 +1,9 @@
-import type { ConversationWorkContext } from "./zcode-protocol-v4/work-context.js";
-/* eslint-disable max-lines -- 跨端 platform contract 集中声明 renderer 能力；OAuth 与 browser lifecycle 必须保持 desktop/web 类型合同，本 MR 不拆分平台边界。 */
+import type { BrowserViewportSize } from "./browser-use/command-metadata.js";
 import type {
-  DockerConnectOptions,
-  RemoteTarget,
-  SSHConnectOptions,
-  WSLConnectOptions,
-} from "./remoteTarget.js";
+  CuaAccessibilitySettingsResult,
+  OpenCuaPermissionOnboardingOptions,
+  PrepareCuaHelperPermissionDragResult,
+} from "./cuaAccessibilitySettings.js";
 import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
@@ -15,23 +13,29 @@ import type {
 } from "./mcp.js";
 import type { OAuthStateRegistration } from "./oauth.js";
 import type { AppSettings, Locale } from "./protocol.js";
-import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
+/* eslint-disable max-lines -- 跨端 platform contract 集中声明 renderer 能力；OAuth 与 browser lifecycle 必须保持 desktop/web 类型合同，本 MR 不拆分平台边界。 */
+import type {
+  DockerConnectOptions,
+  RemoteTarget,
+  SSHConnectOptions,
+  WSLConnectOptions,
+} from "./remoteTarget.js";
 import type {
   RendererActionTraceBatchV1,
   RendererActionTraceConfigV1,
 } from "./rendererActionTrace.js";
-import type { RendererHeapSample } from "./validation.js";
 import type {
-  CuaAccessibilitySettingsResult,
-  OpenCuaPermissionOnboardingOptions,
-  PrepareCuaHelperPermissionDragResult,
-} from "./cuaAccessibilitySettings.js";
-import type { BrowserViewportSize } from "./browser-use/command-metadata.js";
+  ArmsCustomEventPayload,
+  RendererTelemetryEventPayload,
+} from "./telemetry.js";
 import type {
   PostUpdateReleaseNotesPayload,
   UpdateCheckResultPayload,
   UpdateStatePayload,
 } from "./update.js";
+import type { RendererHeapSample } from "./validation.js";
+import type { ConversationWorkContext } from "./zcode-protocol-v4/work-context.js";
+
 export type {
   PostUpdateReleaseNotesPayload,
   UpdateCheckResultPayload,
@@ -40,7 +44,12 @@ export type {
 
 export interface TaskNotificationPayload {
   taskId: string;
-  status: "completed" | "failed" | "permission_request" | "elicitation_request" | "feedback_update";
+  status:
+    | "completed"
+    | "failed"
+    | "permission_request"
+    | "elicitation_request"
+    | "feedback_update";
   requestId?: string;
   title: string;
   body: string;
@@ -66,7 +75,8 @@ export type BrowserTabResidencyState =
   | "restoring";
 
 /** 仅用于创建尚未提交首个 navigation entry 的 residency restore guest。 */
-export const BROWSER_VIEW_RESTORE_BOOTSTRAP_URL = "zcode-browser-restore://pending";
+export const BROWSER_VIEW_RESTORE_BOOTSTRAP_URL =
+  "zcode-browser-restore://pending";
 
 /** Renderer 上报 tab shell 的展示事实；windowId 必须由 main 绑定可信 IPC sender。 */
 export interface BrowserViewResidencyReportPayload {
@@ -151,7 +161,8 @@ export interface BrowserViewRestoreTabsRequest {
 }
 
 /** Main 将 Agent viewport 变更定向投递给目标 tab 的 origin renderer。 */
-export interface BrowserViewViewportChangedPayload extends BrowserViewOperationPayload {
+export interface BrowserViewViewportChangedPayload
+  extends BrowserViewOperationPayload {
   viewport: BrowserViewportSize | null;
 }
 
@@ -163,7 +174,8 @@ export const BROWSER_SCREENSHOT_SURFACE_PREPARE_TIMEOUT_MS = 3_000;
 export type BrowserViewSurfaceScaleMode = "current" | "unscaled";
 
 /** Main 请求 owner renderer 在截图前准备后台 guest 合成表面。 */
-export interface BrowserViewScreenshotSurfacePreparePayload extends BrowserViewOperationPayload {
+export interface BrowserViewScreenshotSurfacePreparePayload
+  extends BrowserViewOperationPayload {
   requestId: string;
   webContentsId: number;
   viewport: BrowserViewportSize;
@@ -176,7 +188,8 @@ export interface BrowserViewScreenshotSurfacePreparePayload extends BrowserViewO
 }
 
 /** Owner renderer 确认目标 guest 的逻辑 viewport 与原生预览 surface 比例均已稳定。 */
-export interface BrowserViewScreenshotSurfaceReadyPayload extends BrowserViewScreenshotSurfacePreparePayload {
+export interface BrowserViewScreenshotSurfaceReadyPayload
+  extends BrowserViewScreenshotSurfacePreparePayload {
   surfaceScale: number;
 }
 
@@ -201,7 +214,11 @@ export type BrowserGuestAttachRejectReason =
 /** Renderer 上报 guest 后 main 返回的绑定结果；拒绝不能再被伪装成无返回的 ready timeout。 */
 export type BrowserGuestAttachResult =
   | { ok: true; guestGeneration: number }
-  | { ok: false; reason: BrowserGuestAttachRejectReason; recoveryRequested: boolean };
+  | {
+      ok: false;
+      reason: BrowserGuestAttachRejectReason;
+      recoveryRequested: boolean;
+    };
 
 /** 已安装的编辑器/终端信息 */
 export interface EditorInfo {
@@ -227,7 +244,10 @@ export interface ApplicationIconRequest {
 }
 
 export type OpenInEditorRemoteTarget =
-  | Pick<SSHConnectOptions, "kind" | "host" | "port" | "username" | "sshConfigAlias">
+  | Pick<
+      SSHConnectOptions,
+      "kind" | "host" | "port" | "username" | "sshConfigAlias"
+    >
   | Pick<WSLConnectOptions, "kind" | "distro" | "user">
   | Pick<DockerConnectOptions, "kind" | "container">;
 
@@ -276,7 +296,9 @@ export interface PrintPageToPdfResult {
   error?: string;
 }
 
-export function createOpenInEditorRemoteTarget(target: RemoteTarget): OpenInEditorRemoteTarget {
+export function createOpenInEditorRemoteTarget(
+  target: RemoteTarget,
+): OpenInEditorRemoteTarget {
   switch (target.kind) {
     case "ssh":
       // openInEditor 只需要构造 VS Code Remote-SSH URI 的连接标识，
@@ -286,7 +308,9 @@ export function createOpenInEditorRemoteTarget(target: RemoteTarget): OpenInEdit
         host: target.host,
         port: target.port,
         username: target.username,
-        ...(target.sshConfigAlias?.trim() ? { sshConfigAlias: target.sshConfigAlias.trim() } : {}),
+        ...(target.sshConfigAlias?.trim()
+          ? { sshConfigAlias: target.sshConfigAlias.trim() }
+          : {}),
       };
     case "wsl": {
       const user = target.user?.trim();
@@ -436,7 +460,12 @@ export interface RemoteSessionClosedEvent {
 
 export interface EmbeddedBrowserOpenUrlRequest {
   url: string;
-  disposition: "default" | "foreground-tab" | "background-tab" | "new-window" | "other";
+  disposition:
+    | "default"
+    | "foreground-tab"
+    | "background-tab"
+    | "new-window"
+    | "other";
   /** 触发 popup 的 browser-use tab 归属；旧版事件缺失时由 renderer 按当前 scope 兼容处理。 */
   workspaceKey?: string;
   remoteSessionId?: string;
@@ -502,7 +531,8 @@ export const DesktopCommandIds = {
   GetCuaOsSupport: "getCuaOsSupport",
 } as const;
 
-export type DesktopCommandId = (typeof DesktopCommandIds)[keyof typeof DesktopCommandIds];
+export type DesktopCommandId =
+  (typeof DesktopCommandIds)[keyof typeof DesktopCommandIds];
 
 /**
  * CUA Helper 的操作系统支持态（macOS 版本门槛判定结果，主进程经
@@ -537,29 +567,155 @@ export interface HostPluginSidebarEntry {
 
 export type HostWorkbenchMode = "code" | "design" | "flow" | "work";
 export interface HostWorkbenchNavigation {
-  getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[]; documentTarget?: { resourceType: "canvas"; documentId: string } };
+  getSnapshot(): {
+    mode: HostWorkbenchMode;
+    availableModes: readonly HostWorkbenchMode[];
+    documentTarget?: { resourceType: "canvas"; documentId: string };
+  };
   subscribe(listener: () => void): () => void;
   open(mode: HostWorkbenchMode): void;
   /** 壳内主区视图变化后回写当前模式（模式 pills 的 active 态以此为准）。 */
   setActiveMode(mode: HostWorkbenchMode): void;
 }
 
+/** 技能市场条目（宿主返回的只读摘要）。 */
+export interface HostSkillMarketplaceItem {
+  packageName: string;
+  name: string;
+  description: string;
+  author: string;
+  version: string;
+  keywords: readonly string[];
+  homepage?: string;
+  repository?: string;
+  license?: string;
+}
+
+export interface HostSkillMarketplaceSearchResult {
+  skills: readonly HostSkillMarketplaceItem[];
+  total: number;
+}
+
+/** 已暂存的技能导入来源：git 仓库快照或 zip 压缩包。 */
+export interface HostSkillImportSource {
+  id: string;
+  kind: "git" | "zip";
+  label: string;
+}
+
+/** Claude Code 官方市场里的一个 MCP 服务（随插件分发）。 */
+export interface HostMcpMarketplaceServer {
+  /** `<插件名>:<服务名>`，添加时按它取回定义。 */
+  id: string;
+  serverName: string;
+  /** 添加时建议的名称（只留字母数字与 - _）。 */
+  suggestedName: string;
+  plugin: string;
+  pluginTitle: string;
+  description: string;
+  author: string | null;
+  category: string | null;
+  homepage: string | null;
+  kind: "stdio" | "http";
+  /** 启动命令与参数，或远程地址。 */
+  summary: string;
+  /** 添加时要填的变量（`${VAR}`、`${VAR:-默认值}`、`user_config.*`）。 */
+  inputs: ReadonlyArray<{
+    name: string;
+    label: string;
+    description: string | null;
+    required: boolean;
+    /** 按密码框输入（插件标记 sensitive 或变量名像密钥）。 */
+    secret: boolean;
+    default: string | null;
+  }>;
+  /** 能否一键添加。 */
+  addable: boolean;
+  /** 不能添加的原因，仅 addable=false 时有值，直接展示。 */
+  unsupportedReason: string | null;
+}
+
+/** 市场读取快照：首次读取时逐条增长，读完整体替换并缓存。 */
+export interface HostMcpMarketplaceSnapshot {
+  marketplace: { name: string; owner: string } | null;
+  /** loading：首次读取进行中（servers 是已读到的部分）；ready：有完整结果；failed：读不到且无旧结果。 */
+  state: "loading" | "ready" | "failed";
+  /** 后台正在重读，此时 servers 是上一次的完整结果。 */
+  refreshing: boolean;
+  checked: number;
+  total: number;
+  unreadable: number;
+  completedAt: number | null;
+  servers: readonly HostMcpMarketplaceServer[];
+  message: string | null;
+}
+
 export interface IPlatformService {
   /** 宿主模式导航；运行和原会话仍留在各自文档。 */
   workbenchNavigation?: HostWorkbenchNavigation;
   /** 在提交时读取宿主的资源上下文；不改变Task或正在执行的Run。 */
-  getConversationWorkContext?: (workspace: { workspacePath: string; workspaceIdentity?: string }) => ConversationWorkContext;
+  getConversationWorkContext?: (workspace: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }) => ConversationWorkContext;
   /** 宿主独立管理文档；未声明的平台保留原窗口导航。 */
   openSettingsDocument?: () => void;
-  openPluginStoreDocument?: (target: { pluginId?: string; intent?: "add-marketplace"; returnScopeKey?: string }) => void;
+  openPluginStoreDocument?: (target: {
+    pluginId?: string;
+    intent?: "add-marketplace";
+    returnScopeKey?: string;
+  }) => void;
   /** 实例管理文档不控制工作区模式；模式由宿主导航持有。 */
   supportsInterfaceModeSettings?: boolean;
   /** 宿主原市场接线状态；来源安装与市场源管理是独立能力。 */
-  pluginManagementCapabilities?: { sourceInstall: boolean; marketplaceSources: boolean; instanceScope?: boolean };
+  pluginManagementCapabilities?: {
+    sourceInstall: boolean;
+    marketplaceSources: boolean;
+    instanceScope?: boolean;
+  };
   /** 外部Agent扫描/同步的实际支持态；不将安装包伪装文件目录。 */
   supportsExternalAgentSettingsSync?: boolean;
   /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */
   skillsSettingsCapabilities?: { databaseRecords: boolean };
+  /**
+   * 宿主接通的技能市场；未声明的平台不出现市场入口。
+   * install 返回本次结果：`added` 是新装上，`alreadyInstalled` 是此前已装过同一个包；
+   * 其余失败以异常形式返回，异常的 message 可直接展示。
+   */
+  skillMarketplace?: {
+    search(input: {
+      query: string;
+      page: number;
+      limit: number;
+    }): Promise<HostSkillMarketplaceSearchResult>;
+    install(input: {
+      packageName: string;
+    }): Promise<{ status: "added" | "alreadyInstalled" }>;
+  };
+  /**
+   * 宿主接通的技能导入来源（git 仓库 / zip 包暂存）；未声明的平台不出现对应入口。
+   * 暂存成功后重新扫描即可看到来源里的技能；release 释放一个来源，
+   * 来源不存在或已释放返回 false，其余失败以异常形式返回。
+   */
+  skillImportSources?: {
+    stageGit(input: { url: string }): Promise<HostSkillImportSource>;
+    stageZip(input: { file: File }): Promise<HostSkillImportSource>;
+    release(input: { id: string }): Promise<boolean>;
+  };
+  /**
+   * 宿主接通的 MCP 市场（官方注册表检索 + 内置精选目录）；未声明的平台不出现入口。
+   * add 对同名 server 已存在时返回 alreadyInstalled，其余失败以异常形式返回。
+   */
+  mcpMarketplace?: {
+    /** 读取 Claude Code 官方市场的 MCP 服务快照；首次调用在后台开始读。 */
+    read(input?: { refresh?: boolean }): Promise<HostMcpMarketplaceSnapshot>;
+    /** 按市场条目添加：values 是变量名到填写值的映射。 */
+    add(input: {
+      id: string;
+      name: string;
+      values: Record<string, string>;
+    }): Promise<{ status: "added" | "alreadyInstalled" }>;
+  };
   mcpSettingsCapabilities?: {
     databaseRecords: boolean;
     projectScope: boolean;
@@ -632,10 +788,14 @@ export interface IPlatformService {
   ): Promise<CreateTempTextAttachmentResult>;
 
   /** 订阅当前窗口内远程连接过程日志，返回 disposer */
-  onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;
+  onRemoteConnectionLog(
+    handler: (entry: RemoteConnectionRuntimeLog) => void,
+  ): () => void;
 
   /** 订阅远程 workspace session 关闭事件，返回 disposer */
-  onRemoteSessionClosed(handler: (event: RemoteSessionClosedEvent) => void): () => void;
+  onRemoteSessionClosed(
+    handler: (event: RemoteSessionClosedEvent) => void,
+  ): () => void;
 
   /** 订阅 Bot 触发的远程 workspace 重连成功事件，返回 disposer */
   onBotRemoteWorkspaceReconnected(
@@ -643,9 +803,17 @@ export interface IPlatformService {
   ): () => void;
 
   /** 检查目录是否已在其他窗口打开；如果是则激活该窗口并切到对应 tab */
-  activateOrSetWorkspace(path: string): Promise<{ activated: boolean; workspacePath?: string; workspaceIdentity?: string }>;
+  activateOrSetWorkspace(path: string): Promise<{
+    activated: boolean;
+    workspacePath?: string;
+    workspaceIdentity?: string;
+  }>;
   /** 宿主在新建Task前解析当前默认目录；既有Task身份不参与重绑。 */
-  resolveNewTaskWorkspace?(target: { workspacePath: string; workspaceIdentity?: string; taskId?: string }): Promise<{ workspacePath: string; workspaceIdentity?: string }>;
+  resolveNewTaskWorkspace?(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId?: string;
+  }): Promise<{ workspacePath: string; workspaceIdentity?: string }>;
 
   /** 建立远程连接（Desktop: 在当前窗口创建远程 session；Web: HTTP API） */
   connectRemote(
@@ -720,10 +888,14 @@ export interface IPlatformService {
   canOpenCommunity(locale: Locale): Promise<boolean>;
 
   /** 在系统文件管理器中打开指定路径 */
-  openInFileManager(path: string): Promise<{ success: boolean; error?: string }>;
+  openInFileManager(
+    path: string,
+  ): Promise<{ success: boolean; error?: string }>;
 
   /** 使用系统默认应用打开本地文件；普通 Web 平台返回 unsupported。 */
-  openExternalFile?(path: string): Promise<{ success: boolean; error?: string }>;
+  openExternalFile?(
+    path: string,
+  ): Promise<{ success: boolean; error?: string }>;
 
   /** 打开 ZCode Computer Use 的完整权限引导。Desktop only。 */
   openCuaPermissionOnboarding?(
@@ -756,7 +928,9 @@ export interface IPlatformService {
   onPaymentCallback(callback: (url: string) => void): () => void;
 
   /** 注册 `zcode://share/import?code=...` 导入意图。 */
-  onShareImport?(callback: (payload: { shareCode: string }) => void): () => void;
+  onShareImport?(
+    callback: (payload: { shareCode: string }) => void,
+  ): () => void;
 
   /** 通知 main process renderer 已就绪，触发缓存的冷启动 deep link 转发 */
   notifyRendererReady(): void;
@@ -810,7 +984,9 @@ export interface IPlatformService {
   onCloseActiveContextRequest?(handler: () => void): () => void;
 
   /** 注册内置浏览器 webview 请求打开新页面的回调，返回 disposer */
-  onOpenBrowserUrl?(handler: (request: EmbeddedBrowserOpenUrlRequest) => void): () => void;
+  onOpenBrowserUrl?(
+    handler: (request: EmbeddedBrowserOpenUrlRequest) => void,
+  ): () => void;
   /** 注册 agent 首次 browser 命令建好受控 view 的回调（自动开 browser-use tab），返回 disposer */
   onBrowserViewReady?(
     handler: (payload: {
@@ -824,7 +1000,9 @@ export interface IPlatformService {
   ): () => void;
 
   /** browser-use 命中真实 tab 时刷新标签页操作状态，返回 disposer。 */
-  onBrowserViewOperation?(handler: (payload: BrowserViewOperationPayload) => void): () => void;
+  onBrowserViewOperation?(
+    handler: (payload: BrowserViewOperationPayload) => void,
+  ): () => void;
 
   /** browser visibility capability：显式显示/隐藏当前 IAB browser-use pane。 */
   onBrowserViewVisibility?(
@@ -855,9 +1033,13 @@ export interface IPlatformService {
   ): () => void;
 
   /** 上报目标 guest 已在连续动画帧中稳定的截图合成表面。 */
-  browserViewScreenshotSurfaceReady?(payload: BrowserViewScreenshotSurfaceReadyPayload): void;
+  browserViewScreenshotSurfaceReady?(
+    payload: BrowserViewScreenshotSurfaceReadyPayload,
+  ): void;
 
-  onBrowserViewCloseTab?(handler: (payload: BrowserViewCloseTabNotification) => void): () => void;
+  onBrowserViewCloseTab?(
+    handler: (payload: BrowserViewCloseTabNotification) => void,
+  ): () => void;
 
   /** main 请求 renderer 卸载 guest、保留 logical shell。 */
   onBrowserViewSuspend?(
@@ -879,7 +1061,9 @@ export interface IPlatformService {
   onOpenWorkspacePath?(handler: (path: string) => void): () => void;
 
   /** 注册窗口全屏状态变化回调，返回 disposer */
-  onWindowFullscreenChanged(handler: (isFullscreen: boolean) => void): () => void;
+  onWindowFullscreenChanged(
+    handler: (isFullscreen: boolean) => void,
+  ): () => void;
 
   /** 读取当前桌面窗口最大化状态与系统原生圆角能力 */
   getDesktopWindowChromeState?(): Promise<DesktopWindowChromeState>;
@@ -901,7 +1085,9 @@ export interface IPlatformService {
   getDesktopZoomLevel?(): Promise<DesktopZoomState>;
 
   /** 注册当前桌面窗口页面缩放档位变化回调，返回 disposer */
-  onDesktopZoomLevelChanged?(handler: (state: DesktopZoomState) => void): () => void;
+  onDesktopZoomLevelChanged?(
+    handler: (state: DesktopZoomState) => void,
+  ): () => void;
 
   /** 注册用户点击系统通知后跳转到对应任务的回调，返回 disposer */
   onTaskNotificationClick(handler: (taskId: string) => void): () => void;
@@ -925,19 +1111,29 @@ export interface IPlatformService {
   }): Promise<BrowserGuestAttachResult>;
 
   /** 重建 `<webview>` 前让 main 精确断开旧 guest 的 CDP；false 时不得销毁旧节点。 */
-  browserViewDetachGuest?(payload: { key: string; webContentsId: number }): Promise<boolean>;
+  browserViewDetachGuest?(payload: {
+    key: string;
+    webContentsId: number;
+  }): Promise<boolean>;
 
   /** 用户显式关闭 Browser tab；与 budget suspend 使用不同 IPC authority。 */
   browserViewCloseTab?(payload: BrowserViewCloseTabRequest): Promise<void>;
 
   /** 上报 selected/visible/loading 与恢复元数据。 */
-  browserViewReportResidency?(payload: BrowserViewResidencyReportPayload): Promise<void>;
+  browserViewReportResidency?(
+    payload: BrowserViewResidencyReportPayload,
+  ): Promise<void>;
 
   /** renderer 已按指定 generation 卸载 guest。 */
-  browserViewSuspendReady?(payload: { tabId: string; generation: number }): Promise<void>;
+  browserViewSuspendReady?(payload: {
+    tabId: string;
+    generation: number;
+  }): Promise<void>;
 
   /** 用户选中 suspended tab 时请求 main single-flight 恢复。 */
-  browserViewEnsureResident?(payload: BrowserViewCloseTabRequest): Promise<void>;
+  browserViewEnsureResident?(
+    payload: BrowserViewCloseTabRequest,
+  ): Promise<void>;
 
   /** workspace/task 启动时读取持久化 logical shells。 */
   browserViewRestoreTabs?(
@@ -962,7 +1158,9 @@ export interface IPlatformService {
   supportsChromeBrowserDataImport?: boolean;
 
   /** 清理内置浏览器持久化分区；cache 模式保留认证数据，all 模式清理全部站点数据。 */
-  clearEmbeddedBrowserData?(mode: "cache" | "all"): Promise<EmbeddedBrowserDataClearResult>;
+  clearEmbeddedBrowserData?(
+    mode: "cache" | "all",
+  ): Promise<EmbeddedBrowserDataClearResult>;
 
   /** 宿主是否能真的清理内置浏览器数据；缺省/false 时设置页保持禁用并说明仅桌面可用。 */
   supportsEmbeddedBrowserDataClear?: boolean;
@@ -971,10 +1169,14 @@ export interface IPlatformService {
   onUpdateReady(callback: (version: string) => void): () => void;
 
   /** 注册"手动检查更新"结果的回调（用于 toast 反馈），返回 disposer */
-  onUpdateCheckResult(callback: (payload: UpdateCheckResultPayload) => void): () => void;
+  onUpdateCheckResult(
+    callback: (payload: UpdateCheckResultPayload) => void,
+  ): () => void;
 
   /** 注册自动更新持续状态变化的回调，返回 disposer */
-  onUpdateStateChanged?(callback: (payload: UpdateStatePayload) => void): () => void;
+  onUpdateStateChanged?(
+    callback: (payload: UpdateStatePayload) => void,
+  ): () => void;
 
   /** 主动读取当前自动更新状态，用于菜单打开时补偿异步事件丢失 */
   getUpdateState?(): Promise<UpdateStatePayload>;
@@ -1020,7 +1222,9 @@ export interface IPlatformService {
   getSystemLocale?(): Promise<Locale>;
 
   /** 注册更新完成后的版本说明，返回 disposer */
-  onPostUpdateReleaseNotes(callback: (payload: PostUpdateReleaseNotesPayload) => void): () => void;
+  onPostUpdateReleaseNotes(
+    callback: (payload: PostUpdateReleaseNotesPayload) => void,
+  ): () => void;
 
   /** 标记当前版本说明已读，允许 main 进程清理持久化状态 */
   acknowledgePostUpdateReleaseNotes(version: string): Promise<void>;

@@ -8,6 +8,17 @@ import type {
   SettingsSyncSourceSkillSummary,
 } from "@zcode/shared";
 import { z as zod } from "zod";
+/**
+ * 宿主只需要「列出本轮暂存来源」这一项；具体登记表由 HTTP 路由侧持有，
+ * 这里用窄接口，避免宿主与暂存实现互相依赖。
+ */
+export interface StagedSkillImportSource {
+  kind: "git" | "zip";
+  label: string;
+  rootPath: string;
+  sourceKey: string;
+}
+
 import {
   CodeUiHostRpcError,
   type CodeUiHostRpcHandler,
@@ -16,9 +27,10 @@ import type { LocalInstanceService } from "../local-instance/types.js";
 import {
   type ExternalSkillAgent,
   ExternalSkillPathError,
-  type ExternalSkillRoot,
+  type ExternalSkillScanRoot,
   ExternalSkillSlugConflictError,
   importExternalSkill,
+  importStagedSkill,
   resolveExternalSkillRoots,
   scanExternalSkillDirectories,
 } from "./external-directory-import.js";
@@ -57,6 +69,12 @@ const AGENT_LABEL: Record<ExternalSkillAgent, SettingsSyncAgent> = {
   agents: "agents",
 };
 
+/** 暂存来源在导入对话框里的名字：git 仓库与 zip 包各一行。 */
+const STAGED_AGENT_LABEL = {
+  git: "gitRepository",
+  zip: "zipArchive",
+} as const;
+
 function skipReasonFor(candidate: {
   imported: boolean;
   changed: boolean;
@@ -69,7 +87,7 @@ function skipReasonFor(candidate: {
 }
 
 function sourceRootFor(
-  root: ExternalSkillRoot,
+  root: ExternalSkillScanRoot,
   candidates: readonly {
     relativePath: string;
     name: string;
@@ -77,6 +95,8 @@ function sourceRootFor(
     changed: boolean;
     deleted: boolean;
   }[],
+  /** 展示用来源名；暂存来源用 git 地址或 zip 文件名，不暴露临时目录 */
+  displayPath: string = root.rootPath,
 ) {
   const skills: SettingsSyncSourceSkillSummary[] = candidates.map(
     (candidate) => {
@@ -92,7 +112,7 @@ function sourceRootFor(
   );
   return {
     scope: "global" as const,
-    path: root.rootPath,
+    path: displayPath,
     discoveredCount: skills.length,
     importableCount: skills.filter((skill) => skill.importable).length,
     skippedCount: skills.filter((skill) => !skill.importable).length,
@@ -102,8 +122,8 @@ function sourceRootFor(
 
 function resolveSelection(
   path: string,
-  roots: readonly ExternalSkillRoot[],
-): { root: ExternalSkillRoot; relativePath: string; name: string } {
+  roots: readonly ExternalSkillScanRoot[],
+): { root: ExternalSkillScanRoot; relativePath: string; name: string } {
   let realPath: string;
   try {
     realPath = realpathSync(path);
@@ -120,7 +140,7 @@ function resolveSelection(
   if (!root) {
     throw new CodeUiHostRpcError(
       "settings_sync_path_outside_whitelist",
-      "只能导入已知外部技能目录里的技能。",
+      "只能导入已知外部技能目录或本轮导入来源里的技能。",
       400,
     );
   }
@@ -135,6 +155,9 @@ function resolveSelection(
  * Code 宿主的设置同步 RPC：把外部技能目录扫描与导入映射为
  * `ISettingsSyncService.detect` / `.importSelected` 的形状。
  * 只支持 skills 类别；其他类别显式报错，不返回空壳结果。
+ *
+ * 本轮的暂存来源（git 仓库快照 / zip 包）作为额外的来源根一并列出：
+ * 读取位置是暂存目录，来源身份用 `sourceKey`，展示名用 `label`。
  */
 export function createCodeUiSettingsSyncHost(deps: {
   localInstance: LocalInstanceService;
@@ -142,9 +165,43 @@ export function createCodeUiSettingsSyncHost(deps: {
   receipts: SkillImportReceiptRepository;
   /** 测试注入的 home 目录；生产环境使用系统 home。 */
   homeDir?: string;
+  /** 本轮已暂存的技能来源；未接入时不出现这两类来源。 */
+  stagedSources?: {
+    list(instanceId: string): Promise<readonly StagedSkillImportSource[]>;
+  };
+  /**
+   * 查找技能目录的层数上限（实例设置 `skillImportScanDepth`）；
+   * 未接入时沿用沙箱技能包的固定上限。
+   */
+  readMaxDepth?: (instanceId: string) => Promise<number>;
 }): Record<string, CodeUiHostRpcHandler> {
   const supportSkillsOnly = (categories: readonly string[] | undefined) =>
     categories === undefined || categories.includes("skills");
+
+  /** 暂存来源转成扫描根；展示名重复时加序号，界面行不会撞 key。 */
+  const stagedScanRoots = (
+    sources: readonly StagedSkillImportSource[],
+  ): Array<
+    ExternalSkillScanRoot & {
+      label: string;
+      displayPath: string;
+      agent: "git" | "zip";
+    }
+  > => {
+    const usedLabels = new Map<string, number>();
+    return sources.map((source) => {
+      const seen = usedLabels.get(source.label) ?? 0;
+      usedLabels.set(source.label, seen + 1);
+      const label = seen === 0 ? source.label : `${source.label} (${seen + 1})`;
+      return {
+        agent: source.kind,
+        rootPath: source.rootPath,
+        sourceKey: source.sourceKey,
+        label,
+        displayPath: label,
+      };
+    });
+  };
 
   return {
     "settings-sync.detect": {
@@ -152,23 +209,48 @@ export function createCodeUiSettingsSyncHost(deps: {
         const owner = await deps.localInstance.resolve(actor);
         const input = detectRequestSchema.parse(args[0] ?? {});
         if (!supportSkillsOnly(input.categories)) {
-          return { agents: [] };
+          // 只接了技能类别：其余类别显式报错，不返回空壳结果
+          throw new CodeUiHostRpcError(
+            "settings_sync_category_unsupported",
+            "此导入入口只支持技能类别。",
+            400,
+          );
         }
+        const staged = stagedScanRoots(
+          (await deps.stagedSources?.list(owner.instanceId)) ?? [],
+        );
+        // 层数上限现读实例设置：改设置后下一次扫描立刻生效
+        const scanDepth = deps.readMaxDepth
+          ? await deps.readMaxDepth(owner.instanceId)
+          : undefined;
         const scan = await scanExternalSkillDirectories({
           instanceId: owner.instanceId,
           receipts: deps.receipts,
           ...(deps.homeDir ? { homeDir: deps.homeDir } : {}),
+          ...(staged.length > 0 ? { stagedRoots: staged } : {}),
+          ...(scanDepth !== undefined ? { maxDepth: scanDepth } : {}),
         });
-        const roots = resolveExternalSkillRoots(deps.homeDir);
+        const roots: Array<ExternalSkillScanRoot & { displayPath?: string }> = [
+          ...resolveExternalSkillRoots(deps.homeDir),
+          ...staged,
+        ];
         const agents = roots.flatMap((root) => {
           const candidates = scan.candidates.filter(
             (candidate) => candidate.rootPath === root.rootPath,
           );
           if (candidates.length === 0) return [];
-          const sourceRoot = sourceRootFor(root, candidates);
+          const sourceRoot = sourceRootFor(
+            root,
+            candidates,
+            root.displayPath ?? root.rootPath,
+          );
+          const agent =
+            root.agent === "git" || root.agent === "zip"
+              ? STAGED_AGENT_LABEL[root.agent]
+              : AGENT_LABEL[root.agent];
           return [
             {
-              agent: AGENT_LABEL[root.agent],
+              agent: agent as SettingsSyncAgent,
               discovered: true,
               categories: [
                 {
@@ -176,7 +258,7 @@ export function createCodeUiSettingsSyncHost(deps: {
                   discoveredCount: sourceRoot.discoveredCount,
                   importableCount: sourceRoot.importableCount,
                   skippedCount: sourceRoot.skippedCount,
-                  sourcePaths: [root.rootPath],
+                  sourcePaths: [sourceRoot.path],
                   sourceRoots: [sourceRoot],
                   selectedByDefault: sourceRoot.importableCount > 0,
                 },
@@ -191,7 +273,13 @@ export function createCodeUiSettingsSyncHost(deps: {
       async call(actor, args): Promise<SettingsSyncImportResult> {
         const owner = await deps.localInstance.resolve(actor);
         const input = importRequestSchema.parse(args[0]);
-        const roots = resolveExternalSkillRoots(deps.homeDir);
+        const staged = stagedScanRoots(
+          (await deps.stagedSources?.list(owner.instanceId)) ?? [],
+        );
+        const roots: ExternalSkillScanRoot[] = [
+          ...resolveExternalSkillRoots(deps.homeDir),
+          ...staged,
+        ];
         const taskResults: SettingsSyncImportResult["taskResults"] = [];
         let successCount = 0;
         let skippedCount = 0;
@@ -210,15 +298,28 @@ export function createCodeUiSettingsSyncHost(deps: {
             let status: SettingsSyncSkillImportResult["status"] = "imported";
             let skipReason: SettingsSyncSkillImportResult["skipReason"];
             try {
-              await importExternalSkill({
+              const common = {
                 instanceId: owner.instanceId,
-                rootPath: resolved.root.rootPath,
                 relativePath: resolved.relativePath,
                 installedByClientId: actor.accessClientId ?? null,
                 receipts: deps.receipts,
                 catalog: deps.catalog,
-                ...(deps.homeDir ? { homeDir: deps.homeDir } : {}),
-              });
+              };
+              if (
+                resolved.root.agent === "git" ||
+                resolved.root.agent === "zip"
+              ) {
+                await importStagedSkill({
+                  ...common,
+                  stagedRoot: resolved.root,
+                });
+              } else {
+                await importExternalSkill({
+                  ...common,
+                  rootPath: resolved.root.rootPath,
+                  ...(deps.homeDir ? { homeDir: deps.homeDir } : {}),
+                });
+              }
             } catch (error) {
               if (
                 error instanceof ConflictError ||

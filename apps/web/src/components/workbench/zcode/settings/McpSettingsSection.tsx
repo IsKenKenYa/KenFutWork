@@ -59,7 +59,8 @@ import {
   SettingsResourceGroupHeader,
   SettingsResourceList,
 } from "@zui/settings/SettingsResourceGroup.js";
-import { McpServersImportDialog } from "@zui/settings/ExternalAgentImportDialog.js";
+import { McpAddMenu } from "@zui/settings/McpAddMenu.js";
+import { McpMarketplaceDialog } from "@zui/settings/McpMarketplaceDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@zui/settings/RemoteSyncActions.js";
 import { useMcpStore } from "@zui/store/mcpStore.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
@@ -68,7 +69,7 @@ import { useBaseWorkspaceServices, useWorkspaceServices } from "@zui/hooks/useWo
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
 import type { WorkspaceTabState } from "@zui/store/tabStore.js";
 import { getPluginWorkspaceKey } from "@zui/settings/PluginScopeMenu.js";
-import { ExternalLink, Import, Plus, UploadCloud } from "lucide-react";
+import { ExternalLink, Plus, Store, UploadCloud } from "lucide-react";
 import { SettingsSegmentedTabs } from "@zui/settings/SettingsSegmentedTabs.js";
 import { formatRemoteSkillSyncTarget } from "@zui/settings/RemoteSkillSyncDialog.js";
 import { selectPluginsForScope } from "@zui/settings/pluginCapabilityProjection.js";
@@ -620,7 +621,9 @@ export function McpSettingsSection({
   const [showForm, setShowForm] = useState(false);
   const [formScopeKey, setFormScopeKey] = useState(parentScopeKey);
   const [editingServer, setEditingServer] = useState<ZCodeMcpServer | null>(null);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  // MCP 市场由宿主提供（Claude Code 官方市场的 MCP 服务）；未接通时菜单里不出现这一项
+  const mcpMarketplace = platform.mcpMarketplace;
+  const [marketDialogOpen, setMarketDialogOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
   const query = searchQuery;
   const [editorMode, setEditorMode] = useState<McpEditorMode>("form");
@@ -1232,6 +1235,10 @@ export function McpSettingsSection({
     [filteredServers],
   );
   const hideInstalledGroup = Boolean(query.trim()) && installedServers.length === 0;
+  const installedServerNames = useMemo(
+    () => new Set(installedServers.map((server) => server.name)),
+    [installedServers],
+  );
   useEffect(() => {
     onVisibleCountChange?.(filteredMcpCount);
   }, [filteredMcpCount, onVisibleCountChange]);
@@ -1510,16 +1517,21 @@ export function McpSettingsSection({
           <div data-mcp-plugin-installed-actions="true">
             <SettingsResourceGroupHeader
               actions={
-                <SettingsResourceHeaderActions
-                  onRefresh={() => void handleManualRefresh()}
-                  refreshing={refreshingStatusList}
-                  onImport={() => setImportDialogOpen(true)}
-                  onNew={handleCreate}
-                  newDisabled={databaseRecords && scopeFilter === "workspace"}
-                  importDisabled={databaseRecords && scopeFilter === "workspace"}
-                  importActionId="settings.mcp.import.open"
-                  newActionId="settings.mcp.create.open"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <SettingsResourceHeaderActions
+                    onRefresh={() => void handleManualRefresh()}
+                    refreshing={refreshingStatusList}
+                  />
+                  <McpAddMenu
+                    onCreate={() => {
+                      handleCreate();
+                    }}
+                    createDisabled={databaseRecords && scopeFilter === "workspace"}
+                    onAddMarketplace={
+                      mcpMarketplace ? () => setMarketDialogOpen(true) : undefined
+                    }
+                  />
+                </div>
               }
               count={installedServers.length}
               title={intl.formatMessage({
@@ -1563,15 +1575,19 @@ export function McpSettingsSection({
                       id: "settings.plugin.mcp.newServer",
                     })}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    onClick={() => setImportDialogOpen(true)}
-                  >
-                    <Import data-icon="inline-start" aria-hidden="true" />
-                    {intl.formatMessage({ id: "settings.mcp.import.action" })}
-                  </Button>
+                  {mcpMarketplace ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      onClick={() => setMarketDialogOpen(true)}
+                    >
+                      <Store data-icon="inline-start" aria-hidden="true" />
+                      {intl.formatMessage({
+                        id: "settings.mcp.add.marketplace",
+                      })}
+                    </Button>
+                  ) : null}
                 </>
               }
             />
@@ -1601,18 +1617,15 @@ export function McpSettingsSection({
           </section>
         ))}
       </div>
-      <McpServersImportDialog
-        // 对话框携带的是 mcpStore 的 currentProjectPath，只有它与当前 target
-        // 一致时才和 services 的 host 同源；不一致的过渡帧不能让导入按 A 的 host 落盘 B 的路径。
-        open={importDialogOpen && mcpStoreMatchesActiveWorkspace}
-        workspacePath={currentProjectPath}
-        workspaceIdentity={activeWorkspaceIdentity}
-        settingsSyncService={services.settingsSyncService}
-        onOpenChange={setImportDialogOpen}
-        onImported={async () => {
-          await loadMcpFromUserDirectory(services.mcpSyncService, activeWorkspaceIdentity);
-        }}
-      />
+      {mcpMarketplace ? (
+        <McpMarketplaceDialog
+          open={marketDialogOpen}
+          onOpenChange={setMarketDialogOpen}
+          marketplace={mcpMarketplace}
+          installedNames={installedServerNames}
+          onAdded={() => void handleManualRefresh()}
+        />
+      ) : null}
       <RemoteSyncDialogs
         canSyncSkills={false}
         canSyncMcp={Boolean(connectedRemoteSyncTarget && activeWorkspacePath)}

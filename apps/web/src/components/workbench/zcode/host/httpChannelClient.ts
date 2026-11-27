@@ -82,7 +82,8 @@ function notificationReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
-class CodeHostHttpError extends Error {
+/** 宿主 HTTP 请求失败；`status` 是宿主回的状态码（宿主能力据此区分「已存在」与其它失败）。 */
+export class CodeHostHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -480,6 +481,22 @@ export class CodeHttpChannelClient implements IChannelClient {
         credentials: "include",
         signal: this.controller.signal,
         headers: this.headers(),
+      },
+    );
+    reportAccessLost(response.status);
+    return readHostResponse<T>(response);
+  }
+
+  /** multipart 表单上传（技能导入的 zip 包）；boundary 由浏览器生成，不手动设 content-type。 */
+  async postMultipart<T>(path: string, form: FormData): Promise<T> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: "POST",
+        credentials: "include",
+        signal: this.controller.signal,
+        headers: this.headers(),
+        body: form,
       },
     );
     reportAccessLost(response.status);

@@ -157,7 +157,7 @@ export function ChatContextUsage({
           type="button"
           aria-label={canInspect ? "上下文分析" : "上下文容量"}
           title={view.fineLine ?? view.line ?? "上下文容量"}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover"
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover${canInspect ? " cursor-pointer" : ""}`}
           data-testid="context-usage-ring"
           onClick={() => {
             if (!sessionId || !openInspection) return;
@@ -219,6 +219,11 @@ export function ChatContextUsage({
               {view.cacheHitLabel ?? "模型未提供"}
             </span>
           </div>
+          {canInspect ? (
+            <div className="mt-1.5 text-ui-sm text-foreground-subtle">
+              点击查看分析
+            </div>
+          ) : null}
         </div>
       </HoverCardContent>
     </HoverCard>

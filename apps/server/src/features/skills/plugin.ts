@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { registerSkillImportSourceRoutes } from "../../http/skill-import-sources.js";
 import { registerSkillRoutes } from "../../http/skills.js";
 import { registerMarketplaceRoutes } from "../../http/skills-marketplace.js";
 import type {
@@ -13,6 +14,7 @@ import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCodeUiSkillsHost } from "./code-ui-host.js";
 import { createCodeUiSettingsSyncHost } from "./code-ui-settings-sync-host.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
+import { createSkillImportSourceStager } from "./import-source-staging.js";
 import {
   createProjectSkillRepository,
   createSkillCatalogRepository,
@@ -40,6 +42,7 @@ export function createSkillsPlugin(): PluginDefinition {
   let receiptsRepository: SkillImportReceiptRepository;
   let projectSkillsRepository: ReturnType<typeof createProjectSkillRepository>;
   let projectRepository: ReturnType<typeof createProjectRepository>;
+  let stagedSources: ReturnType<typeof createSkillImportSourceStager>;
   return {
     name: "skills",
     inject: [
@@ -49,6 +52,7 @@ export function createSkillsPlugin(): PluginDefinition {
       "projects",
       "executionScopes",
       "plugins",
+      "settings",
     ],
     apply(ctx) {
       // apply只声明消费；插件注册表可能在后续profile项才注册。
@@ -75,6 +79,21 @@ export function createSkillsPlugin(): PluginDefinition {
         localInstance: ctx.get("localInstance"),
         plugins: packages,
       });
+      // 暂存来源：git 地址与 zip 包先解到本机临时目录，扫描与导入都读它。
+      // 保留时长与数量上限每次现读实例设置，改设置后立刻生效。
+      stagedSources = createSkillImportSourceStager({
+        readPolicy: async (instanceId) => {
+          const actor = await ctx.get("localInstance").serviceActor();
+          const settings = await ctx
+            .get("settings")
+            .getInstanceSettings(actor, instanceId);
+          return {
+            ttlMs: settings.skillImportStagingTtlMs,
+            maxSources: settings.skillImportStagedMaxSources,
+          };
+        },
+      });
+      ctx.effect(() => () => stagedSources.dispose());
 
       const listSkillsTool: ToolDefinition = {
         name: "list_skills",
@@ -194,6 +213,14 @@ export function createSkillsPlugin(): PluginDefinition {
           localInstance: ctx.get("localInstance"),
           catalog: skillsRepository,
           receipts: receiptsRepository,
+          stagedSources,
+          readMaxDepth: async (instanceId) => {
+            const actor = await ctx.get("localInstance").serviceActor();
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, instanceId);
+            return settings.skillImportScanDepth;
+          },
         }),
       };
       for (const [id, value] of Object.entries(hostHandlers)) {
@@ -218,6 +245,19 @@ export function createSkillsPlugin(): PluginDefinition {
         localAccess: ctx.get("localAccess"),
         skillsRepository,
         localInstance: ctx.get("localInstance"),
+      });
+      void registerSkillImportSourceRoutes(ctx.app, {
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
+        settings: ctx.get("settings"),
+        stagedSources,
+        checkUrlPolicy: (url) => ctx.tryGet("permissions")?.checkUrlPolicy(url),
+        gitBinary: ctx.env.gitBinDir
+          ? join(
+              ctx.env.gitBinDir,
+              process.platform === "win32" ? "git.exe" : "git",
+            )
+          : "git",
       });
     },
   };

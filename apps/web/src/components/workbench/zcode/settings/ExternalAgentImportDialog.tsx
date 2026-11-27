@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- 外部 Agent 导入弹窗复用 skills/commands 的交互状态机，业务扫描与导入在服务层按类别分开 */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -27,12 +27,14 @@ import type {
   SettingsSyncSourceSkillSummary,
   SettingsSyncSourceRootSummary,
   SettingsSyncSourceScope,
+  IPlatformService,
 } from "@zcode/shared";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Badge } from "@zui/components/ui/badge.js";
 import { Button } from "@zui/components/ui/button.js";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@zui/components/ui/dialog.js";
+import { Input } from "@zui/components/ui/input.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -187,6 +189,10 @@ function getImportResults(
 
 function formatAgentName(agent: string, intl: ReturnType<typeof useZCodeIntl>["intl"]): string {
   switch (agent) {
+    case "gitRepository":
+      return intl.formatMessage({ id: "settingsSync.agent.gitRepository" });
+    case "zipArchive":
+      return intl.formatMessage({ id: "settingsSync.agent.zipArchive" });
     case "claudeCode":
       return intl.formatMessage({ id: "settingsSync.agent.claudeCode" });
     case "codexCli":
@@ -489,6 +495,93 @@ export function useExternalAgentImportCategoryState({
   };
 }
 
+/**
+ * 技能导入的暂存来源：git 仓库地址与 zip 上传，交给服务端暂存后从扫描结果里挑选。
+ * 关闭对话框时释放本轮添加的来源；释放失败由服务端的保留期兜底清理。
+ */
+function useStagedImportSources({
+  enabled,
+  importSources,
+}: {
+  enabled: boolean;
+  importSources?: NonNullable<IPlatformService["skillImportSources"]>;
+}) {
+  const [gitUrl, setGitUrl] = useState("");
+  const [staging, setStaging] = useState<"git" | "zip" | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const createdIdsRef = useRef<string[]>([]);
+  const zipInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (enabled) {
+      return;
+    }
+    const ids = createdIdsRef.current;
+    createdIdsRef.current = [];
+    setGitUrl("");
+    setStaging(null);
+    setSourceError(null);
+    if (ids.length > 0 && importSources) {
+      void Promise.allSettled(ids.map((id) => importSources.release({ id })));
+    }
+  }, [enabled, importSources]);
+
+  const stageGit = useCallback(async (): Promise<boolean> => {
+    if (!importSources || staging) {
+      return false;
+    }
+    const url = gitUrl.trim();
+    if (!url) {
+      return false;
+    }
+    setStaging("git");
+    setSourceError(null);
+    try {
+      const source = await importSources.stageGit({ url });
+      createdIdsRef.current = [...createdIdsRef.current, source.id];
+      setGitUrl("");
+      return true;
+    } catch (stageError) {
+      setSourceError(normalizeError(stageError));
+      return false;
+    } finally {
+      setStaging(null);
+    }
+  }, [gitUrl, importSources, staging]);
+
+  const stageZip = useCallback(
+    async (file: File): Promise<boolean> => {
+      if (!importSources || staging) {
+        return false;
+      }
+      setStaging("zip");
+      setSourceError(null);
+      try {
+        const source = await importSources.stageZip({ file });
+        createdIdsRef.current = [...createdIdsRef.current, source.id];
+        return true;
+      } catch (stageError) {
+        setSourceError(normalizeError(stageError));
+        return false;
+      } finally {
+        setStaging(null);
+      }
+    },
+    [importSources, staging],
+  );
+
+  return {
+    gitUrl,
+    setGitUrl,
+    staging,
+    sourceError,
+    zipInputRef,
+    stageGit,
+    stageZip,
+    openZipPicker: () => zipInputRef.current?.click(),
+  };
+}
+
 function ExternalAgentImportDialog({
   category,
   open,
@@ -499,7 +592,10 @@ function ExternalAgentImportDialog({
   onImported,
 }: CategorizedExternalAgentImportDialogProps) {
   const { intl } = useZCodeIntl();
-  const unavailable = useOptionalPlatform()?.supportsExternalAgentSettingsSync === false;
+  const platform = useOptionalPlatform();
+  const unavailable = platform?.supportsExternalAgentSettingsSync === false;
+  // 暂存来源（git 仓库 / zip 包）只对技能导入开放；宿主未接通时不出现入口。
+  const importSources = category === "skills" ? platform?.skillImportSources : undefined;
   const [step, setStep] = useState<ImportStep>("selection");
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<SettingsSyncImportResult | null>(null);
@@ -523,6 +619,10 @@ function ExternalAgentImportDialog({
     selectedKeys,
     totalImportableCount,
   } = importState;
+  const sourceState = useStagedImportSources({
+    enabled: Boolean(importSources) && open,
+    importSources,
+  });
 
   const importProgress = step === "complete" ? 100 : importing ? 62 : 0;
   const importedResults = useMemo(() => getImportResults(result, category), [category, result]);
@@ -586,6 +686,21 @@ function ExternalAgentImportDialog({
       ? intl.formatMessage({ id: `settings.${category}.import.finish` })
       : intl.formatMessage({ id: "settingsSync.action.skip" });
 
+  const handleAddGit = async () => {
+    const staged = await sourceState.stageGit();
+    if (staged) {
+      // 重新扫描后，仓库里的技能出现在来源列表里
+      void importState.loadDiscovery();
+    }
+  };
+
+  const handleAddZip = async (file: File) => {
+    const staged = await sourceState.stageZip(file);
+    if (staged) {
+      void importState.loadDiscovery();
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[min(84vh,640px)] max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden rounded-2xl p-0">
@@ -623,6 +738,68 @@ function ExternalAgentImportDialog({
                 ) : null}
               </div>
             </DialogHeader>
+
+            {importSources && step === "selection" ? (
+              <div className="flex shrink-0 flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    value={sourceState.gitUrl}
+                    onChange={(event) => sourceState.setGitUrl(event.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                    aria-label={intl.formatMessage({ id: "settingsSync.importSource.gitLabel" })}
+                    disabled={sourceState.staging !== null}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        void handleAddGit();
+                      }
+                    }}
+                    className="h-8 min-w-0 flex-1 basis-64 text-ui-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!sourceState.gitUrl.trim() || sourceState.staging !== null}
+                    onClick={() => void handleAddGit()}
+                  >
+                    {sourceState.staging === "git"
+                      ? intl.formatMessage({ id: "settingsSync.importSource.staging" })
+                      : intl.formatMessage({ id: "settingsSync.importSource.addGit" })}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={sourceState.staging !== null}
+                    onClick={sourceState.openZipPicker}
+                  >
+                    {sourceState.staging === "zip"
+                      ? intl.formatMessage({ id: "settingsSync.importSource.staging" })
+                      : intl.formatMessage({ id: "settingsSync.importSource.addZip" })}
+                  </Button>
+                  <input
+                    ref={sourceState.zipInputRef}
+                    type="file"
+                    accept=".zip,application/zip,application/x-zip-compressed"
+                    className="hidden"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (file) {
+                        void handleAddZip(file);
+                      }
+                    }}
+                  />
+                </div>
+                {sourceState.sourceError ? (
+                  <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-1.5 text-ui-sm text-foreground">
+                    {sourceState.sourceError}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
               <div className="h-full overflow-auto p-3">

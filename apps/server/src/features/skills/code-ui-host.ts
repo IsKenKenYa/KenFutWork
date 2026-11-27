@@ -222,7 +222,11 @@ export function createCodeUiSkillsHost(deps: {
               scope: "user" as const,
               enabled: row.enabled,
               resourceRef: `kenfutwork-skill:${row.skillId}`,
-              metadata: { slug: row.slug },
+              metadata: {
+                slug: row.slug,
+                // 市场包名：技能市场的「已添加」状态靠它对上，非市场来源不带
+                ...(row.packageName ? { packageName: row.packageName } : {}),
+              },
             })),
             ...plugins.flatMap((packageInfo) =>
               packageInfo.skills.map((skill) => ({

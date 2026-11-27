@@ -37,7 +37,6 @@ import {
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { filterSkillsForProvider } from "@zui/lib/skillSourceFilter.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@zui/lib/zcodeDraftSkillInvalidation.js";
-import { PluginStoreAvatar } from "@zui/settings/PluginStoreAvatar.js";
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 import {
   SettingsResourceGroupHeader,
@@ -54,6 +53,8 @@ import {
   resolveUniquePluginListingByName,
 } from "@zui/settings/pluginStoreListing.js";
 import { groupSkillsByPlugin } from "@zui/settings/pluginManagedResourceGroups.js";
+import { SkillAddMenu } from "@zui/settings/SkillAddMenu.js";
+import { SkillMarketplaceDialog } from "@zui/settings/SkillMarketplaceDialog.js";
 import { SkillsImportDialog } from "@zui/settings/ExternalAgentImportDialog.js";
 import { formatRemoteSkillSyncTarget } from "@zui/settings/RemoteSkillSyncDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@zui/settings/RemoteSyncActions.js";
@@ -221,6 +222,18 @@ export function SkillsSection({
   const [diagnostics, setDiagnostics] = useState<SkillDiagnostic[]>([]);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [marketDialogOpen, setMarketDialogOpen] = useState(false);
+  // 技能市场由宿主提供；技能列表里带市场包名的，就是此前从市场添加过的
+  const skillMarketplace = platform.skillMarketplace;
+  const installedMarketPackages = useMemo(
+    () =>
+      new Set(
+        skills.flatMap((skill) =>
+          skill.metadata?.packageName ? [skill.metadata.packageName] : [],
+        ),
+      ),
+    [skills],
+  );
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const latestRequestIdRef = useRef(0);
   const activeSkillTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
@@ -358,6 +371,7 @@ export function SkillsSection({
       setLoading(false);
       setError(null);
       setImportDialogOpen(false);
+      setMarketDialogOpen(false);
       setRemoteSkillSyncOpen(false);
       return;
     }
@@ -377,6 +391,26 @@ export function SkillsSection({
       skillsService,
     });
   }, [activeWorkspaceIdentity, activeWorkspacePath, skillsService]);
+
+  /** 从市场添加技能之后：让延迟创建的会话拿到新技能，再刷新技能列表与共享技能库存。 */
+  const refreshAfterMarketplaceInstall = useCallback(async () => {
+    await invalidateDeferredDraftSessionForSkillChange({
+      zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-skill-marketplace",
+    });
+    await Promise.all([
+      refresh(),
+      refreshSharedSkillStoreForCurrentWorkspace(),
+    ]);
+  }, [
+    activeWorkspaceIdentity,
+    activeWorkspacePath,
+    refresh,
+    refreshSharedSkillStoreForCurrentWorkspace,
+    zcodeSessionService,
+  ]);
 
   useEffect(() => {
     if (!databaseRecords || !platform.pluginSidebar) return;
@@ -534,16 +568,6 @@ export function SkillsSection({
     (skill) => skill.scope !== "plugin",
   ).length;
   const hideInstalledGroup = Boolean(query.trim()) && groupedSkills.local.length === 0;
-  const pluginIconItemById = useMemo(
-    () =>
-      new Map(
-        plugins.map((plugin) => [
-          plugin.id,
-          { name: plugin.name, listing: pluginListingById.get(plugin.id) },
-        ]),
-      ),
-    [pluginListingById, plugins],
-  );
   useEffect(() => {
     onVisibleCountChange?.(filteredSkillCount);
   }, [filteredSkillCount, onVisibleCountChange]);
@@ -595,29 +619,19 @@ export function SkillsSection({
         )
       : "";
   const renderSkillRow = (skill: SkillSummary) => {
-    const pluginIconItem = skill.pluginId
-      ? pluginIconItemById.get(skill.pluginId)
-      : skill.pluginName
-        ? {
-            name: skill.pluginName,
-            listing: resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
-          }
-        : undefined;
     return (
       <div
         key={skill.id}
         className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
       >
-        {skill.scope === "plugin" && pluginIconItem ? (
-          <PluginStoreAvatar item={pluginIconItem} className="size-9 bg-background" />
-        ) : (
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
-            aria-hidden="true"
-          >
-            <WandSparkles className="size-4" />
-          </div>
-        )}
+        {/* 技能行统一用魔法棒图标，个人技能与插件自带的技能相同
+            （用户口径 2026-11-26「技能全部变成这样的图标吧」）。 */}
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
+          aria-hidden="true"
+        >
+          <WandSparkles className="size-4" />
+        </div>
         <div
           role="button"
           tabIndex={0}
@@ -676,15 +690,20 @@ export function SkillsSection({
   );
 
   const skillHeaderActions = (
-    <SettingsResourceHeaderActions
-      onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
-      onImport={() => setImportDialogOpen(true)}
-      onNew={handleCreateSkill}
-      importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
-      newDisabled={scopeUnavailable || !onCreateTask}
-      importActionId="settings.skills.import.open"
-      newActionId="settings.skills.create.open"
-    />
+    <div className="flex flex-wrap items-center gap-2">
+      <SettingsResourceHeaderActions
+        onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
+      />
+      <SkillAddMenu
+        onImport={() => setImportDialogOpen(true)}
+        onAddMarketplace={
+          skillMarketplace ? () => setMarketDialogOpen(true) : undefined
+        }
+        onCreateWithAgent={handleCreateSkill}
+        importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
+        createDisabled={scopeUnavailable || !onCreateTask}
+      />
+    </div>
   );
   const remoteSyncAction = connectedRemoteSyncTarget ? (
     <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.remoteSync.open" })}>
@@ -1002,6 +1021,15 @@ export function SkillsSection({
           await refresh();
         }}
       />
+      {skillMarketplace ? (
+        <SkillMarketplaceDialog
+          open={marketDialogOpen}
+          onOpenChange={setMarketDialogOpen}
+          marketplace={skillMarketplace}
+          installedPackageNames={installedMarketPackages}
+          onInstalled={() => void refreshAfterMarketplaceInstall()}
+        />
+      ) : null}
       <RemoteSyncDialogs
         canSyncSkills={Boolean(
           targetServiceResolution.rpcReady && connectedRemoteSyncTarget && activeWorkspacePath,

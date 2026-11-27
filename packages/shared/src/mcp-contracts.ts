@@ -281,3 +281,94 @@ export const mcpRegistrySearchResponseSchema = z.object({
 export type McpRegistrySearchResponse = z.infer<
   typeof mcpRegistrySearchResponseSchema
 >;
+
+// === Claude Code 官方市场的 MCP 服务（`/api/mcp/claude-marketplace*`） ===
+
+/**
+ * Claude Code 的 MCP 服务随插件分发：官方市场仓库的 `marketplace.json` 列出插件，
+ * 每个插件在 `.mcp.json` 或 `plugin.json` 里声明 `mcpServers`。服务端读完这些声明后
+ * 换算成本项目可添加的形态；下面是交给界面的形状。
+ */
+
+/** 添加市场服务时要填的一个变量（`${VAR}`、`${VAR:-默认值}` 或 `user_config.*`）。 */
+export const claudeMcpMarketplaceInputSchema = z.object({
+  /** 变量名，提交时作为 `values` 的键。 */
+  name: z.string().min(1),
+  /** 展示名：插件 `userConfig` 的标题，没有就用变量名。 */
+  label: z.string().min(1),
+  description: z.string().nullable(),
+  required: z.boolean(),
+  /** 按密码框输入（插件标记 sensitive，或变量名像密钥）。 */
+  secret: z.boolean(),
+  /** 预填的默认值；没有为 null。 */
+  default: z.string().nullable(),
+});
+export type ClaudeMcpMarketplaceInput = z.infer<
+  typeof claudeMcpMarketplaceInputSchema
+>;
+
+export const claudeMcpMarketplaceServerSchema = z.object({
+  /** 稳定标识：`<插件名>:<服务名>`，添加时按它取回定义。 */
+  id: z.string().min(1),
+  /** 服务名（插件里 `mcpServers` 的键）。 */
+  serverName: z.string().min(1),
+  /** 添加时建议的名称（只留字母数字与 - _）。 */
+  suggestedName: z.string().min(1),
+  plugin: z.string().min(1),
+  pluginTitle: z.string().min(1),
+  description: z.string(),
+  author: z.string().nullable(),
+  category: z.string().nullable(),
+  homepage: z.string().nullable(),
+  kind: mcpServerKindSchema,
+  /** 启动命令与参数，或远程地址；变量保留原样。 */
+  summary: z.string().min(1),
+  inputs: z.array(claudeMcpMarketplaceInputSchema),
+  addable: z.boolean(),
+  /** 不能添加的原因，`addable` 为 false 时有值，直接展示。 */
+  unsupportedReason: z.string().nullable(),
+});
+export type ClaudeMcpMarketplaceServer = z.infer<
+  typeof claudeMcpMarketplaceServerSchema
+>;
+
+export const claudeMcpMarketplaceSnapshotSchema = z.object({
+  marketplace: z
+    .object({ name: z.string().min(1), owner: z.string().min(1) })
+    .nullable(),
+  /**
+   * loading：首次读取进行中，`servers` 是已读到的部分；
+   * ready：有完整结果；failed：市场清单读不到，且没有旧结果可给。
+   */
+  state: z.enum(["loading", "ready", "failed"]),
+  /** 正在后台重读，此时 `servers` 是上一次的完整结果。 */
+  refreshing: z.boolean(),
+  /** 已读取的插件数与可读取的插件总数。 */
+  checked: z.number().int().min(0),
+  total: z.number().int().min(0),
+  /** 读取失败的插件数（网络、超时、文件损坏）。 */
+  unreadable: z.number().int().min(0),
+  /** 这份结果读完的时间（毫秒时间戳）；没读完过为 null。 */
+  completedAt: z.number().nullable(),
+  servers: z.array(claudeMcpMarketplaceServerSchema),
+  /** `state` 为 failed 时的原因。 */
+  message: z.string().nullable(),
+});
+export type ClaudeMcpMarketplaceSnapshot = z.infer<
+  typeof claudeMcpMarketplaceSnapshotSchema
+>;
+
+export const claudeMcpMarketplaceAddRequestSchema = z.object({
+  id: z.string().min(1),
+  name: mcpServerCreateRequestSchema.shape.name,
+  /** 变量名到填写值的映射。 */
+  values: z.record(z.string().min(1), z.string().max(4096)),
+});
+export type ClaudeMcpMarketplaceAddRequest = z.infer<
+  typeof claudeMcpMarketplaceAddRequestSchema
+>;
+
+export const claudeMcpMarketplaceAddResponseSchema = mcpServerResponseSchema;
+export type ClaudeMcpMarketplaceAddResponse = z.infer<
+  typeof claudeMcpMarketplaceAddResponseSchema
+>;

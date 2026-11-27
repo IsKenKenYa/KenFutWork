@@ -312,5 +312,61 @@ describe.skipIf(process.env.KENFUTWORK_CRUD_TEST_PG !== "1")(
         await database.close();
       }
     });
+
+    it("实例技能列表带出市场包名：专门的列与元数据两处都认，普通技能不带", async () => {
+      const database = await createTaskWorkDatabase();
+      try {
+        const instanceId = await createLocalInstanceRepository(
+          database.persistence,
+        ).ensure();
+        const repository = createSkillCatalogRepository(database.persistence);
+        const suffix = randomUUID();
+        const common = {
+          category: "custom",
+          description: "说明",
+          skillContent: "正文",
+          createdByClientId: null,
+        };
+        // 技能市场安装接口的写法：包名只记在元数据里
+        const viaMetadata = await repository.insertOwned(instanceId, {
+          ...common,
+          name: "元数据包名",
+          slug: `mkt-meta-${suffix}`,
+          metadata: { package_name: "meta-skill" },
+        });
+        // 包名写进专门的一列
+        const viaColumn = await repository.insertOwned(instanceId, {
+          ...common,
+          name: "列包名",
+          slug: `mkt-col-${suffix}`,
+          packageName: "column-skill",
+        });
+        const plain = await repository.insertOwned(instanceId, {
+          ...common,
+          name: "普通技能",
+          slug: `plain-${suffix}`,
+        });
+        for (const skill of [viaMetadata, viaColumn, plain]) {
+          if (!skill || typeof skill.id !== "string")
+            throw new Error("技能夹具未创建。");
+          await repository.upsertInstallation({
+            instanceId,
+            installedByClientId: null,
+            skillId: skill.id,
+            enabled: true,
+          });
+        }
+
+        const listed = await repository.listInstanceSkills(instanceId);
+        const packageBySlug = new Map(
+          listed.map((row) => [row.slug, row.packageName ?? null]),
+        );
+        expect(packageBySlug.get(`mkt-meta-${suffix}`)).toBe("meta-skill");
+        expect(packageBySlug.get(`mkt-col-${suffix}`)).toBe("column-skill");
+        expect(packageBySlug.get(`plain-${suffix}`)).toBeNull();
+      } finally {
+        await database.close();
+      }
+    });
   },
 );

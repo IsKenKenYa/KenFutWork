@@ -37,12 +37,32 @@ import { generateSlug } from "./slug.js";
 /**
  * 已知外部技能目录（白名单）：只扫描用户显式配置过的位置，不跟随任意路径。
  * 目录布局与对应客户端一致：`~/.claude/skills`、`~/.codex/skills` 等。
+ *
+ * `git` 与 `zip` 是暂存来源的标签：用户给出 git 地址或上传 zip 包后，
+ * 服务端把内容解到本机临时目录，再按同一套扫描与导入流程处理。
  */
 export type ExternalSkillAgent = "claude" | "codex" | "cursor" | "agents";
+
+/** 扫描与导入的来源标签：外部 Agent 目录，或暂存的仓库 / 压缩包。 */
+export type ExternalSkillSourceAgent = ExternalSkillAgent | "git" | "zip";
 
 export type ExternalSkillRoot = {
   agent: ExternalSkillAgent;
   rootPath: string;
+};
+
+/**
+ * 一个可扫描的来源根：读取位置 `rootPath`，身份 `sourceKey`。
+ *
+ * 外部 Agent 目录用目录本身作身份；暂存来源的临时目录每次都不一样，
+ * 身份必须换成稳定值（git 地址 + 提交号 / 压缩包内容摘要），
+ * 否则同一个仓库再导入一次会被当成新来源重复建技能。
+ */
+export type ExternalSkillScanRoot = {
+  agent: ExternalSkillSourceAgent;
+  rootPath: string;
+  /** 稳定来源标识；缺省用 `rootPath` 作身份（外部 Agent 目录）。 */
+  sourceKey?: string;
 };
 
 const EXTERNAL_SKILL_ROOT_DEFINITIONS: ReadonlyArray<{
@@ -148,9 +168,10 @@ interface ScannedRoot {
 
 /**
  * 扫描一个白名单根目录。符号链接一律跳过（不跟随到白名单之外），
- * 深度与目录数沿用沙箱技能包的同一组上限。
+ * 目录数沿用沙箱技能包的上限；层数上限由调用方给定
+ * （沙箱包与外部 Agent 目录用固定 `MAX_DEPTH`，git 仓库 / zip 包按实例设置）。
  */
-function scanRoot(rootPath: string): ScannedRoot {
+function scanRoot(rootPath: string, maxDepth: number): ScannedRoot {
   const packagePaths: string[] = [];
   const diagnostics: ExternalSkillScanDiagnostic[] = [];
   const queue: Array<{ dir: string; depth: number }> = [
@@ -182,7 +203,7 @@ function scanRoot(rootPath: string): ScannedRoot {
       packagePaths.push(toPosixPath(rootPath, current.dir));
       continue;
     }
-    if (current.depth >= MAX_DEPTH) {
+    if (current.depth >= maxDepth) {
       continue;
     }
 
@@ -235,15 +256,22 @@ function buildImportSlug(
 /**
  * 只读扫描白名单目录，返回可导入的技能包候选与不可读原因。
  * 同来源同摘要标记已导入，内容变化的标记为冲突候选；已删除的来源明确标记。
+ *
+ * `stagedRoots` 是已解析好的暂存来源（git 仓库 / zip 包），不经白名单校验，
+ * 身份用调用方给的 `sourceKey`。`maxDepth` 是查找技能目录的层数上限
+ * （实例设置 `skillImportScanDepth`，缺省沿用沙箱技能包的固定上限）。
  */
 export async function scanExternalSkillDirectories(input: {
   instanceId: string;
   homeDir?: string;
   receipts: SkillImportReceiptRepository;
   roots?: readonly string[];
+  stagedRoots?: readonly ExternalSkillScanRoot[];
+  maxDepth?: number;
 }): Promise<ExternalSkillScanResponse> {
+  const maxDepth = input.maxDepth ?? MAX_DEPTH;
   const diagnostics: ExternalSkillScanDiagnostic[] = [];
-  let roots: ExternalSkillRoot[];
+  let roots: ExternalSkillScanRoot[];
 
   if (input.roots && input.roots.length > 0) {
     const seen = new Set<string>();
@@ -261,13 +289,17 @@ export async function scanExternalSkillDirectories(input: {
         });
       }
     }
+    roots.push(...(input.stagedRoots ?? []));
   } else {
-    roots = resolveExternalSkillRoots(input.homeDir);
+    roots = [
+      ...resolveExternalSkillRoots(input.homeDir),
+      ...(input.stagedRoots ?? []),
+    ];
   }
 
   const candidates: ExternalSkillCandidate[] = [];
   for (const root of roots) {
-    const scanned = scanRoot(root.rootPath);
+    const scanned = scanRoot(root.rootPath, maxDepth);
     diagnostics.push(...scanned.diagnostics);
     for (const packagePath of scanned.packagePaths) {
       const packageDir = join(root.rootPath, packagePath);
@@ -331,7 +363,7 @@ export async function scanExternalSkillDirectories(input: {
       const digest = externalSkillPackageDigest(files);
       const receipt = await input.receipts.findImportReceipt(
         input.instanceId,
-        skillImportRequestKey(root.rootPath, sourcePath),
+        skillImportRequestKey(root.sourceKey ?? root.rootPath, sourcePath),
       );
       candidates.push({
         rootPath: root.rootPath,
@@ -370,6 +402,45 @@ export async function importExternalSkill(input: {
   catalog: SkillCatalogRepository;
 }): Promise<ExternalSkillImportResponse> {
   const root = resolveWhitelistedRoot(input.rootPath, input.homeDir);
+  return importSkillFromRoot({ ...input, root });
+}
+
+/**
+ * 从暂存来源（git 仓库快照 / zip 包解压目录）导入一个技能包。
+ *
+ * 与外部 Agent 目录导入同一套流程：读取位置是暂存目录，身份用稳定来源标识。
+ * 暂存目录不在白名单里，路径校验改为「必须在暂存根目录之内」。
+ */
+export async function importStagedSkill(input: {
+  instanceId: string;
+  stagedRoot: ExternalSkillScanRoot;
+  relativePath: string;
+  installedByClientId: string | null;
+  receipts: SkillImportReceiptRepository;
+  catalog: SkillCatalogRepository;
+}): Promise<ExternalSkillImportResponse> {
+  return importSkillFromRoot({
+    instanceId: input.instanceId,
+    rootPath: input.stagedRoot.rootPath,
+    relativePath: input.relativePath,
+    installedByClientId: input.installedByClientId,
+    receipts: input.receipts,
+    catalog: input.catalog,
+    root: input.stagedRoot,
+  });
+}
+
+async function importSkillFromRoot(input: {
+  instanceId: string;
+  rootPath: string;
+  relativePath: string;
+  installedByClientId: string | null;
+  homeDir?: string;
+  receipts: SkillImportReceiptRepository;
+  catalog: SkillCatalogRepository;
+  root: ExternalSkillScanRoot;
+}): Promise<ExternalSkillImportResponse> {
+  const root = input.root;
   const lexicalPackageDir = resolveInsideRoot(
     root.rootPath,
     input.relativePath,
@@ -394,12 +465,13 @@ export async function importExternalSkill(input: {
     );
   }
   const sourcePath = toPosixPath(root.rootPath, realPackageDir);
+  const sourceIdentity = root.sourceKey ?? root.rootPath;
   const imported = buildSkillFromFiles(files, {
     label: "sandbox",
-    url: `external:${root.agent}:${sourcePath}`,
+    url: `external:${root.agent}:${sourceIdentity}:${sourcePath}`,
   });
   const sourceSlug = basename(realPackageDir);
-  const requestKey = skillImportRequestKey(root.rootPath, sourcePath);
+  const requestKey = skillImportRequestKey(sourceIdentity, sourcePath);
   const digest = externalSkillPackageDigest(files);
   const slug = buildImportSlug(imported.manifest.name, sourceSlug, digest);
 
@@ -417,7 +489,7 @@ export async function importExternalSkill(input: {
       instanceId: input.instanceId,
       requestKey,
       parameterFingerprint: digest,
-      sourceRootPath: root.rootPath,
+      sourceRootPath: sourceIdentity,
       sourceSlug: sourcePath,
       create: async (client) => {
         const skillRow = await insertOwnedSkillRecord(client, {
@@ -430,7 +502,7 @@ export async function importExternalSkill(input: {
             source: {
               type: "external-directory",
               agent: root.agent,
-              rootPath: root.rootPath,
+              rootPath: sourceIdentity,
               slug: sourceSlug,
               digest,
             },

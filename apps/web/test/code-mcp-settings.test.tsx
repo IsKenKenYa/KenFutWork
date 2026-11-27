@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
@@ -82,6 +83,14 @@ async function openNativeMcpEditor(
     envOrigin?: boolean;
     deferSave?: boolean;
     secondRecord?: boolean;
+    /** MCP 市场的接口应答与宿主接通状态。 */
+    marketplace?: {
+      /** 市场读取失败。 */
+      registry?: "ok" | "fail";
+      add?: "ok" | "duplicate" | "fail";
+      /** 宿主没有接通 MCP 市场。 */
+      withoutCapability?: boolean;
+    };
   } = {},
 ) {
   installCodeRootBrowser();
@@ -129,6 +138,114 @@ async function openNativeMcpEditor(
     if (scenario.noProject && url.endsWith("/workspaces"))
       return Response.json({ workspaces: [] });
     if (url.endsWith("/api/plugins")) return Response.json({ plugins: [] });
+    if (
+      url.includes("/api/mcp/claude-marketplace") &&
+      !url.includes("/servers")
+    ) {
+      const params = new URL(url, "https://host.example").searchParams;
+      calls.push({
+        service: "mcp-marketplace",
+        method: "read",
+        args: [{ refresh: params.get("refresh") === "1" }],
+      });
+      if (scenario.marketplace?.registry === "fail")
+        return Response.json(
+          { error: { code: "mcp_marketplace_failed", message: "读取失败" } },
+          { status: 502 },
+        );
+      return Response.json({
+        marketplace: { name: "claude-plugins-official", owner: "Anthropic" },
+        state: "ready",
+        refreshing: false,
+        checked: 3,
+        total: 3,
+        unreadable: 0,
+        completedAt: 1_700_000_000_000,
+        message: null,
+        servers: [
+          {
+            id: "notion:notion",
+            serverName: "notion",
+            suggestedName: "notion",
+            plugin: "notion",
+            pluginTitle: "Notion",
+            description: "Notion 数据库读写。",
+            author: null,
+            category: "productivity",
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.notion.com/mcp",
+            inputs: [],
+            addable: true,
+            unsupportedReason: null,
+          },
+          {
+            id: "zoom:zoom-mcp",
+            serverName: "zoom-mcp",
+            suggestedName: "zoom-mcp",
+            plugin: "zoom-plugin",
+            pluginTitle: "Zoom",
+            description: "Zoom 会议服务。",
+            author: null,
+            category: null,
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.zoom.us/mcp/zoom/streamable",
+            inputs: [
+              {
+                name: "ZOOM_ACCESS_TOKEN",
+                label: "访问令牌",
+                description: "在 Zoom 应用里创建",
+                required: true,
+                secret: true,
+                default: null,
+              },
+            ],
+            addable: true,
+            unsupportedReason: null,
+          },
+          {
+            id: "slack:slack",
+            serverName: "slack",
+            suggestedName: "slack",
+            plugin: "slack",
+            pluginTitle: "Slack",
+            description: "Slack 消息。",
+            author: null,
+            category: null,
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.slack.com/mcp",
+            inputs: [],
+            addable: false,
+            unsupportedReason: "要登录授权才能连接",
+          },
+        ],
+      });
+    }
+    if (
+      url.endsWith("/api/mcp/claude-marketplace/servers") &&
+      options?.method === "POST"
+    ) {
+      const body = JSON.parse(String(options.body));
+      calls.push({ service: "mcp-marketplace", method: "add", args: [body] });
+      if (scenario.marketplace?.add === "duplicate")
+        return Response.json(
+          {
+            error: {
+              code: "mcp_server_exists",
+              message: "同名 MCP server 已存在。",
+            },
+          },
+          { status: 409 },
+        );
+      if (scenario.marketplace?.add === "fail")
+        return Response.json(
+          { error: { code: "mcp_marketplace_failed", message: "添加失败" } },
+          { status: 500 },
+        );
+      return Response.json({ server: { name: body.name } }, { status: 201 });
+    }
     if (url.endsWith("/rpc")) {
       const call = JSON.parse(String(options?.body));
       if (call.service === "mcp-sync") {
@@ -226,6 +343,12 @@ async function openNativeMcpEditor(
   await client.connect();
   client.registerWorkspaces(scenario.noProject ? [] : [rootWorkspace]);
   release = bindCodeWorkspaceServices(client);
+  const platform = createCodePlatform(client);
+  const renderPlatform = scenario.marketplace?.withoutCapability
+    ? (Object.fromEntries(
+        Object.entries(platform).filter(([key]) => key !== "mcpMarketplace"),
+      ) as typeof platform)
+    : platform;
   render(
     <ZCodeIntlProvider initialLocale="zh-CN">
       {scenario.noProject ? (
@@ -233,7 +356,7 @@ async function openNativeMcpEditor(
       ) : (
         <Root
           services={client.services}
-          platform={createCodePlatform(client)}
+          platform={renderPlatform}
           initialWorkspaceAbsPath="/code"
           initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
           restoreSession={false}
@@ -651,4 +774,139 @@ it("保存A后取消并编辑B，A的迟到写响应不能关闭B草稿", async 
   expect((screen.getByPlaceholderText("npx") as HTMLInputElement).value).toBe(
     "B-draft",
   );
+});
+
+/** 打开 MCP 页的「添加」下拉，返回当前菜单内容。 */
+async function openMcpAddMenu() {
+  const trigger = await screen.findByTestId("mcp-add-trigger");
+  // Radix 下拉在 jsdom 里用键盘事件打开（fireEvent.click 不触发开菜单）
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
+  return screen.findByTestId("mcp-add-menu");
+}
+
+it("MCP 页头部出现添加下拉：宿主接通市场时有新建与从市场添加", async () => {
+  await openNativeMcpEditor({ skipEdit: true });
+  const menu = await openMcpAddMenu();
+  expect(within(menu).getByTestId("mcp-add-create").textContent).toContain(
+    "新建",
+  );
+  expect(within(menu).getByTestId("mcp-add-marketplace").textContent).toContain(
+    "从市场添加",
+  );
+});
+
+it("宿主未接通 MCP 市场时菜单只有新建，页头没有外部 Agent 导入入口", async () => {
+  await openNativeMcpEditor({
+    skipEdit: true,
+    marketplace: { withoutCapability: true },
+  });
+  const menu = await openMcpAddMenu();
+  expect(within(menu).getByTestId("mcp-add-create")).toBeTruthy();
+  expect(within(menu).queryByTestId("mcp-add-marketplace")).toBeNull();
+  // 「从外部 Agent 导入 MCP 服务器」入口已撤掉
+  expect(screen.queryByText("从外部 Agent 导入 MCP 服务器")).toBeNull();
+});
+
+it("市场对话框列出 Claude 市场的 MCP 服务，带插件名与不可添加原因", async () => {
+  await openNativeMcpEditor({ skipEdit: true });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("notion");
+  expect(screen.getAllByTestId("mcp-marketplace-item")).toHaveLength(3);
+  expect(screen.getByText("Zoom")).toBeTruthy();
+  // 不可添加的条目只给原因，不给添加按钮
+  const slackRow = screen.getByText("slack").closest("li") as HTMLElement;
+  expect(slackRow.textContent).toContain("要登录授权才能连接");
+  expect(within(slackRow).queryByRole("button", { name: "添加" })).toBeNull();
+});
+
+it("要填变量的条目在填齐前不能添加，填齐后按 id 与填写值添加", async () => {
+  const { calls } = await openNativeMcpEditor({ skipEdit: true });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("zoom-mcp");
+  const zoomRow = screen.getByText("zoom-mcp").closest("li") as HTMLElement;
+  const addButton = within(zoomRow).getByRole("button", { name: "添加" });
+  expect((addButton as HTMLButtonElement).disabled).toBe(true);
+  // 密钥类变量是密码框：没有 textbox 角色，按 aria-label 定位
+  fireEvent.change(
+    zoomRow.querySelector('input[aria-label="访问令牌"]') as HTMLInputElement,
+    { target: { value: "zoom-token" } },
+  );
+  expect((addButton as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(addButton);
+  await screen.findByTestId("mcp-marketplace-installed");
+  expect(calls.filter((call) => call.service === "mcp-marketplace")).toEqual([
+    { service: "mcp-marketplace", method: "read", args: [{ refresh: false }] },
+    {
+      service: "mcp-marketplace",
+      method: "add",
+      args: [
+        {
+          id: "zoom:zoom-mcp",
+          name: "zoom-mcp",
+          values: { ZOOM_ACCESS_TOKEN: "zoom-token" },
+        },
+      ],
+    },
+  ]);
+});
+
+it("输入关键词按服务名、插件名与说明筛选", async () => {
+  await openNativeMcpEditor({ skipEdit: true });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("notion");
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "zoom" },
+  });
+  await waitFor(() => {
+    expect(screen.getAllByTestId("mcp-marketplace-item")).toHaveLength(1);
+  });
+  expect(screen.getByText("zoom-mcp")).toBeTruthy();
+  expect(screen.queryByText("notion")).toBeNull();
+});
+
+it("同名 server 已存在时市场条目显示已添加", async () => {
+  await openNativeMcpEditor({
+    skipEdit: true,
+    marketplace: { add: "duplicate" },
+  });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("notion");
+  const notionRow = screen.getByText("notion").closest("li") as HTMLElement;
+  fireEvent.click(within(notionRow).getByRole("button", { name: "添加" }));
+  await waitFor(() => {
+    expect(screen.getAllByTestId("mcp-marketplace-installed")).toHaveLength(1);
+  });
+});
+
+it("添加失败在条目上显示原因，不伪装成功", async () => {
+  await openNativeMcpEditor({
+    skipEdit: true,
+    marketplace: { add: "fail" },
+  });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("notion");
+  const notionRow = screen.getByText("notion").closest("li") as HTMLElement;
+  fireEvent.click(within(notionRow).getByRole("button", { name: "添加" }));
+  await screen.findByText("添加失败");
+  expect(screen.queryByTestId("mcp-marketplace-installed")).toBeNull();
+});
+
+it("市场读取失败时给原因与重试，不显示空列表", async () => {
+  await openNativeMcpEditor({
+    skipEdit: true,
+    marketplace: { registry: "fail" },
+  });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("MCP 市场暂不可用");
+  expect(
+    screen.getAllByRole("button", { name: "重试" }).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByTestId("mcp-marketplace-item")).toBeNull();
 });

@@ -1,10 +1,14 @@
 import {
   type ManagementTarget,
+  type MarketplaceSearchResponse,
   type PluginMarketEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
 import type {
   ApplicationIconInfo,
+  HostMcpMarketplaceSnapshot,
+  HostSkillImportSource,
+  HostSkillMarketplaceSearchResult,
   HostWorkbenchNavigation,
   IPlatformService,
 } from "@zcode/shared";
@@ -13,7 +17,10 @@ import {
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import { createMacDesktopChrome } from "./desktopChrome.js";
-import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import {
+  CodeHostHttpError,
+  type CodeHttpChannelClient,
+} from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
@@ -22,6 +29,10 @@ import { createWebPlatform } from "./upstream/browserPlatform.js";
 export type CodePlatform = IPlatformService & {
   openSettingsDocument?: (target?: ManagementTarget) => void;
 };
+
+interface HostSkillImportSourceResponse {
+  source: HostSkillImportSource;
+}
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
@@ -92,7 +103,8 @@ export function createCodePlatform(
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
-    supportsExternalAgentSettingsSync: false,
+    // 技能导入已接通：外部 Agent 目录扫描 + 暂存来源（git 仓库 / zip 包）走服务端宿主 RPC。
+    supportsExternalAgentSettingsSync: true,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
     getApplicationIcon: (request) =>
@@ -106,6 +118,117 @@ export function createCodePlatform(
       instanceScope: true,
     },
     skillsSettingsCapabilities: { databaseRecords: true },
+    // 技能市场：接本机服务的搜索与安装接口。只把界面用得到的字段交给上层，
+    // 接口里的 downloads 是用 npm 热度分数折算出来的，不是真实下载量，不外传。
+    skillMarketplace: {
+      search: async ({ query, page, limit }) => {
+        const result = await client.request<MarketplaceSearchResponse>(
+          `/api/skills/marketplace/search?${new URLSearchParams({
+            q: query,
+            page: String(page),
+            limit: String(limit),
+          })}`,
+        );
+        return {
+          total: result.total,
+          skills: result.skills.map(
+            ({
+              packageName,
+              name,
+              description,
+              author,
+              version,
+              keywords,
+              homepage,
+              repository,
+              license,
+            }) => ({
+              packageName,
+              name,
+              description,
+              author,
+              version,
+              keywords,
+              ...(homepage ? { homepage } : {}),
+              ...(repository ? { repository } : {}),
+              ...(license ? { license } : {}),
+            }),
+          ),
+        } satisfies HostSkillMarketplaceSearchResult;
+      },
+      install: async ({ packageName }) => {
+        try {
+          await client.request("/api/skills/marketplace/install", {
+            packageName,
+          });
+        } catch (error) {
+          // 服务端对重复安装回 409：这是「此前已添加过」，界面据此标成已添加
+          if (error instanceof CodeHostHttpError && error.status === 409) {
+            return { status: "alreadyInstalled" as const };
+          }
+          throw error;
+        }
+        return { status: "added" as const };
+      },
+    },
+    // 技能导入来源：git 仓库与 zip 包先暂存到服务端本机目录，导入对话框再从中挑选。
+    // 暂存的保留时长与数量上限由实例设置约束，对话框关闭时界面会主动释放。
+    skillImportSources: {
+      stageGit: async ({ url }) => {
+        const result = await client.request<HostSkillImportSourceResponse>(
+          "/api/skills/import-sources/git",
+          { url },
+        );
+        return result.source;
+      },
+      stageZip: async ({ file }) => {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        const result =
+          await client.postMultipart<HostSkillImportSourceResponse>(
+            "/api/skills/import-sources/zip",
+            form,
+          );
+        return result.source;
+      },
+      release: async ({ id }) => {
+        try {
+          await client.deleteRequest(`/api/skills/import-sources/${id}`);
+          return true;
+        } catch (error) {
+          // 404 = 来源已释放或已过期，对界面来说就是「没有这个来源」
+          if (error instanceof CodeHostHttpError && error.status === 404) {
+            return false;
+          }
+          throw error;
+        }
+      },
+    },
+    // MCP 市场：Claude Code 官方市场的 MCP 服务（随插件分发），一键添加走 MCP server 管理接口。
+    mcpMarketplace: {
+      read: async (input) => {
+        const result = await client.request<HostMcpMarketplaceSnapshot>(
+          `/api/mcp/claude-marketplace${input?.refresh ? "?refresh=1" : ""}`,
+        );
+        return result;
+      },
+      add: async ({ id, name, values }) => {
+        try {
+          await client.request("/api/mcp/claude-marketplace/servers", {
+            id,
+            name,
+            values,
+          });
+        } catch (error) {
+          // 服务端对同名 server 回 409：这是「此前已添加过」
+          if (error instanceof CodeHostHttpError && error.status === 409) {
+            return { status: "alreadyInstalled" as const };
+          }
+          throw error;
+        }
+        return { status: "added" as const };
+      },
+    },
     mcpSettingsCapabilities: {
       databaseRecords: true,
       projectScope: false,

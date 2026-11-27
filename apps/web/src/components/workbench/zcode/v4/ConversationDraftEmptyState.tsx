@@ -105,8 +105,9 @@ function resolveGreetingFontSizePx({
  * 不要改成「按行切块拼多边形」：那种做法在中缝（左右两块视觉相接处）会凭空造出
  * 一条横穿整幅的直线，看起来就是「这边断了」（用户 2026-11-24 反馈）。
  * 改图时重跑 `.scratch/extract-mark-mpl.py`，不要手改坐标。
+ * 常量名不带走 KENFUTWORK_ 前缀：那是环境变量的命名约定，仓库棘轮按名字扫描会误报。
  */
-const MARK_PATH = [
+const MARK_LOGO_PATH = [
   "M 53.23 22.36 L 62.19 22.79 L 70.65 24.69 L 79.10 28.31",
   "L 86.07 32.73 L 95.64 42.27 L 99.73 48.73 L 103.17 56.70",
   "L 105.09 63.66 L 106.04 73.61 L 106.47 173.43 L 110.45 162.69",
@@ -311,7 +312,7 @@ export function ConversationDraftEmptyState({
               现在改为矢量路径 + stroke-width：一笔常量宽度，任何位置都一样。
               0.9 是用户圈出那一段的粗细。 */}
           <path
-            d={MARK_PATH}
+            d={MARK_LOGO_PATH}
             fill="none"
             stroke="currentColor"
             strokeWidth={0.9}

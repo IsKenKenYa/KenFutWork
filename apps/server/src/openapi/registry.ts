@@ -42,6 +42,7 @@ import {
   checkpointRestoreFileRequestSchema,
   checkpointRestoreRequestSchema,
   checkpointRestoreResponseSchema,
+  claudeMcpMarketplaceAddRequestSchema,
   codeFilesResponseSchema,
   codeGitBranchCreateRequestSchema,
   codeGitChangesResponseSchema,
@@ -148,6 +149,7 @@ import {
   localAccessTicketResponseSchema,
   marketplaceInstallRequestSchema,
   mcpServerCreateRequestSchema,
+  mcpServerResponseSchema,
   mcpServerUpdateRequestSchema,
   mediaDriverConnectionResponseSchema,
   mediaDriverConnectionSaveResponseSchema,
@@ -257,6 +259,8 @@ import {
   skillCreateRequestSchema,
   skillDetailResponseSchema,
   skillImportRequestSchema,
+  skillImportSourceGitRequestSchema,
+  skillImportSourceResponseSchema,
   skillListResponseSchema,
   skillUpdateRequestSchema,
   taskRunsResponseSchema,
@@ -2606,6 +2610,34 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "代理官方 MCP Registry 的 search 检索。上游不可用返回 502 mcp_registry_unavailable。",
   },
   {
+    method: "get",
+    path: "/api/mcp/claude-marketplace",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({
+      refresh: z
+        .string()
+        .optional()
+        .describe("传 1 强制重读（市场页刷新按钮）"),
+    }),
+    summary: "读取 Claude Code 市场的 MCP 服务",
+    description:
+      "官方市场 anthropics/claude-plugins-official 的 MCP 服务随插件分发。首次调用在后台开始读取（约十几秒），按 checked/total 轮询进度；state=loading 时 servers 是已读到的部分，读完整体替换并缓存，缓存过期先给旧结果再后台重读。未装配市场返回 503。",
+  },
+  {
+    method: "post",
+    path: "/api/mcp/claude-marketplace/servers",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: claudeMcpMarketplaceAddRequestSchema,
+    responseSchema: mcpServerResponseSchema,
+    summary: "按市场定义添加 MCP 服务器",
+    description:
+      "按市场条目 id 取回服务定义，用 values 替换声明里的变量后落库并连接；同名已存在返回 409，定义不在当前结果或变量缺失返回 400 mcp_marketplace_failed。需已授权的本机接入。",
+  },
+  {
     method: "post",
     path: "/api/mcp/servers",
     tag: "mcp",
@@ -3255,6 +3287,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "从 URL 导入技能",
     description:
       "从外部 URL（GitHub/npm tarball/zip）下载 SKILL.md 与附属文件，落库并自动装进当前实例。同名 409。",
+  },
+  {
+    method: "post",
+    path: "/api/skills/import-sources/git",
+    tag: "skills",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: skillImportSourceGitRequestSchema,
+    responseSchema: skillImportSourceResponseSchema,
+    summary: "暂存 git 仓库技能来源",
+    description:
+      "浅克隆仓库最新提交并解出文件，供导入对话框选择其中的技能；只收 https 公开仓库地址，受网络安全域名规则与实例设置里的来源预算约束。",
+  },
+  {
+    method: "post",
+    path: "/api/skills/import-sources/zip",
+    tag: "skills",
+    auth: "local",
+    successStatus: 201,
+    multipart: { fileField: "file" },
+    responseSchema: skillImportSourceResponseSchema,
+    summary: "暂存 zip 包技能来源",
+    description:
+      "上传 ZIP 压缩包并解压到本机临时目录，供导入对话框选择其中的技能；越界路径整包拒绝，解压字节与条目数受实例设置约束。",
+  },
+  {
+    method: "delete",
+    path: "/api/skills/import-sources/:id",
+    tag: "skills",
+    auth: "local",
+    successStatus: 204,
+    summary: "释放暂存技能来源",
+    description:
+      "删除暂存目录并移出登记表；来源不存在或已释放返回 404，成功 204。",
   },
   {
     method: "get",

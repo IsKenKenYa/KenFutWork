@@ -453,6 +453,22 @@ export const instanceSettingsSchema = z.object({
   knowledgeListRetries: governanceSetting("knowledgeListRetries"),
   knowledgeCheckTimeoutMs: governanceSetting("knowledgeCheckTimeoutMs"),
   knowledgeAddTimeoutMs: governanceSetting("knowledgeAddTimeoutMs"),
+  /** 技能导入：来源拉取预算、落盘预算与暂存保留，默认值与护栏的唯一属主是 governance.ts。 */
+  skillImportSourceTimeoutMs: governanceSetting("skillImportSourceTimeoutMs"),
+  skillImportSourceMaxBytes: governanceSetting("skillImportSourceMaxBytes"),
+  skillImportSourceMaxEntries: governanceSetting("skillImportSourceMaxEntries"),
+  skillImportStagingTtlMs: governanceSetting("skillImportStagingTtlMs"),
+  skillImportStagedMaxSources: governanceSetting("skillImportStagedMaxSources"),
+  skillImportScanDepth: governanceSetting("skillImportScanDepth"),
+  /** MCP 市场：读取预算、缓存时长与并发，默认值与护栏的唯一属主是 governance.ts。 */
+  mcpMarketplaceFetchTimeoutMs: governanceSetting(
+    "mcpMarketplaceFetchTimeoutMs",
+  ),
+  mcpMarketplaceReadMaxBytes: governanceSetting("mcpMarketplaceReadMaxBytes"),
+  mcpMarketplaceCacheTtlMs: governanceSetting("mcpMarketplaceCacheTtlMs"),
+  mcpMarketplaceFetchConcurrency: governanceSetting(
+    "mcpMarketplaceFetchConcurrency",
+  ),
 });
 
 export const modelInfoSchema = z.object({

@@ -5,6 +5,10 @@ import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import type { CodeApprovalService } from "../permissions/approval-types.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import {
+  type ClaudeMarketplaceService,
+  createClaudeMarketplaceService,
+} from "./claude-marketplace-service.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
 import {
   createMcpEnvCredentialReader,
@@ -68,6 +72,7 @@ export function createMcpPlugin(): PluginDefinition {
   // 同一个 service 实例贯穿 apply（连接）与 mounted（路由）：
   // 两处各建一个实例会让路由拿到空连接表——状态恒为 error、重连会开出第二条连接
   let service: McpService | undefined;
+  let marketplace: ClaudeMarketplaceService | undefined;
   let tasks: TaskMcpService | undefined;
   let permissions: CodeApprovalService | undefined;
   let settings: SettingsService | undefined;
@@ -125,6 +130,26 @@ export function createMcpPlugin(): PluginDefinition {
         },
         onDisconnect: (name) => tasks?.closeSource(name) ?? Promise.resolve(),
       });
+      // Claude Code 官方市场的 MCP 服务：读取放后台（十几秒），路由只查快照。
+      // 市场文件是公开只读，不经过本项目的插件装载与沙箱；添加时只落 mcp_servers 配置。
+      const readMarketplaceSettings = async () => {
+        const actor = await ctx.get("localInstance").serviceActor();
+        return ctx.get("settings").getInstanceSettings(actor, actor.instanceId);
+      };
+      marketplace = createClaudeMarketplaceService({
+        readLimits: async () => {
+          const settings = await readMarketplaceSettings();
+          return {
+            timeoutMs: settings.mcpMarketplaceFetchTimeoutMs,
+            maxBytes: settings.mcpMarketplaceReadMaxBytes,
+            concurrency: settings.mcpMarketplaceFetchConcurrency,
+          };
+        },
+        readCacheTtlMs: async () =>
+          (await readMarketplaceSettings()).mcpMarketplaceCacheTtlMs,
+        logger: console,
+      });
+      ctx.effect(() => () => marketplace?.shutdown());
     },
     mounted(ctx) {
       if (!service) {
@@ -263,6 +288,7 @@ export function createMcpPlugin(): PluginDefinition {
         localAccess: ctx.get("localAccess"),
         localInstance: ctx.get("localInstance"),
         service,
+        ...(marketplace ? { marketplace } : {}),
       });
       // 最后登记：LIFO卸载先夹紧准入并join真实stop，再撤销工具和生命周期订阅。
       ctx.effect(() => shutdown);
