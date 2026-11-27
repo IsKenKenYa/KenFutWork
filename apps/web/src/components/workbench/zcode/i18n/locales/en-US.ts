@@ -2697,8 +2697,6 @@ const enUS: Record<string, string> = {
   "settings.mcp.description":
     "Manage MCP server configurations used by KenFutWork Agent.",
   "settings.mcp.create.open": "Add MCP server",
-  "settings.mcp.import.open": "Import MCP servers from external agents",
-  "settings.mcp.import.action": "Import",
   "settings.mcp.add": "Add",
   "settings.mcp.add.create": "New server",
   "settings.mcp.add.marketplace": "Add from marketplace",
@@ -2714,8 +2712,10 @@ const enUS: Record<string, string> = {
   "settings.mcp.marketplace.installed": "Added",
   "settings.mcp.marketplace.kindLocal": "Local command",
   "settings.mcp.marketplace.kindRemote": "Remote server",
-  "settings.mcp.marketplace.requiresNode": "Requires Node",
-  "settings.mcp.marketplace.requiresPython": "Requires Python",
+  "settings.mcp.marketplace.refresh": "Reload marketplace",
+  "settings.mcp.marketplace.reading": "Reading marketplace {checked}/{total}",
+  "settings.mcp.marketplace.partial": "Showing servers found so far",
+  "settings.mcp.marketplace.stale": "Updating in background; showing last result",
   "settings.mcp.emptyTitle": "No MCP servers yet",
   "settings.mcp.emptyDescription":
     "Add an MCP server to give the agent extra capabilities.",

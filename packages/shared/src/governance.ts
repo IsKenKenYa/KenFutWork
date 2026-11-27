@@ -170,6 +170,14 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   skillImportStagedMaxSources: 8,
   /** 技能导入：在 git 仓库或 zip 包里查找技能目录的层数上限（含最外层目录）。 */
   skillImportScanDepth: 5,
+  /** MCP 市场：读取市场清单与插件定义文件时，单个请求的等待预算（毫秒）。 */
+  mcpMarketplaceFetchTimeoutMs: 15_000,
+  /** MCP 市场：单个文件（市场清单、`.mcp.json`、`plugin.json`）的字节上限。 */
+  mcpMarketplaceReadMaxBytes: 2_097_152,
+  /** MCP 市场：读取结果视为新鲜的时长（毫秒），到期后先给旧结果再在后台重读。 */
+  mcpMarketplaceCacheTtlMs: 21_600_000,
+  /** MCP 市场：同时读取的插件数上限。 */
+  mcpMarketplaceFetchConcurrency: 12,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -250,6 +258,10 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "skillImportStagingTtlMs",
   "skillImportStagedMaxSources",
   "skillImportScanDepth",
+  "mcpMarketplaceFetchTimeoutMs",
+  "mcpMarketplaceReadMaxBytes",
+  "mcpMarketplaceCacheTtlMs",
+  "mcpMarketplaceFetchConcurrency",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -350,6 +362,10 @@ export type AgentGovernanceOverrides = {
   skillImportStagingTtlMs?: number | undefined;
   skillImportStagedMaxSources?: number | undefined;
   skillImportScanDepth?: number | undefined;
+  mcpMarketplaceFetchTimeoutMs?: number | undefined;
+  mcpMarketplaceReadMaxBytes?: number | undefined;
+  mcpMarketplaceCacheTtlMs?: number | undefined;
+  mcpMarketplaceFetchConcurrency?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -485,6 +501,10 @@ export const AGENT_GOVERNANCE_LIMITS = {
   skillImportStagingTtlMs: { min: 60_000, max: 86_400_000 },
   skillImportStagedMaxSources: { min: 1, max: 64 },
   skillImportScanDepth: { min: 1, max: 10 },
+  mcpMarketplaceFetchTimeoutMs: { min: 1_000, max: 120_000 },
+  mcpMarketplaceReadMaxBytes: { min: 262_144, max: 16_777_216 },
+  mcpMarketplaceCacheTtlMs: { min: 60_000, max: 604_800_000 },
+  mcpMarketplaceFetchConcurrency: { min: 1, max: 32 },
 } as const;
 
 /**
@@ -758,6 +778,18 @@ export function resolveGovernanceEnvOverrides(
     ),
     skillImportScanDepth: parseStrictInt(
       source.KENFUTWORK_SKILL_IMPORT_SCAN_DEPTH,
+    ),
+    mcpMarketplaceFetchTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_MCP_MARKETPLACE_FETCH_TIMEOUT_MS,
+    ),
+    mcpMarketplaceReadMaxBytes: parseStrictInt(
+      source.KENFUTWORK_MCP_MARKETPLACE_READ_MAX_BYTES,
+    ),
+    mcpMarketplaceCacheTtlMs: parseStrictInt(
+      source.KENFUTWORK_MCP_MARKETPLACE_CACHE_TTL_MS,
+    ),
+    mcpMarketplaceFetchConcurrency: parseStrictInt(
+      source.KENFUTWORK_MCP_MARKETPLACE_FETCH_CONCURRENCY,
     ),
   };
   return Object.fromEntries(

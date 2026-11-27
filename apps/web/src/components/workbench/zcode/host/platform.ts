@@ -1,13 +1,12 @@
 import {
-  type MarketplaceSearchResponse,
   type ManagementTarget,
+  type MarketplaceSearchResponse,
   type PluginMarketEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
 import type {
   ApplicationIconInfo,
-  HostMcpCatalogItem,
-  HostMcpMarketplaceItem,
+  HostMcpMarketplaceSnapshot,
   HostSkillImportSource,
   HostSkillMarketplaceSearchResult,
   HostWorkbenchNavigation,
@@ -18,7 +17,10 @@ import {
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import { createMacDesktopChrome } from "./desktopChrome.js";
-import { CodeHostHttpError, type CodeHttpChannelClient } from "./httpChannelClient.js";
+import {
+  CodeHostHttpError,
+  type CodeHttpChannelClient,
+} from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
@@ -30,37 +32,6 @@ export type CodePlatform = IPlatformService & {
 
 interface HostSkillImportSourceResponse {
   source: HostSkillImportSource;
-}
-
-interface HostMcpRegistrySearchResponse {
-  servers: Array<
-    Pick<
-      HostMcpMarketplaceItem,
-      | "name"
-      | "description"
-      | "version"
-      | "kind"
-      | "installable"
-      | "unsupportedReason"
-      | "suggestedCommand"
-      | "suggestedArgs"
-      | "suggestedUrl"
-      | "suggestedName"
-    >
-  >;
-}
-
-interface HostMcpCatalogResponse {
-  servers: ReadonlyArray<{
-    id: string;
-    name: string;
-    title: string;
-    description: string;
-    command: string;
-    argsTemplate: readonly string[];
-    params: HostMcpCatalogItem["params"];
-    requires: "node" | "python";
-  }>;
 }
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
@@ -161,7 +132,17 @@ export function createCodePlatform(
         return {
           total: result.total,
           skills: result.skills.map(
-            ({ packageName, name, description, author, version, keywords, homepage, repository, license }) => ({
+            ({
+              packageName,
+              name,
+              description,
+              author,
+              version,
+              keywords,
+              homepage,
+              repository,
+              license,
+            }) => ({
               packageName,
               name,
               description,
@@ -177,7 +158,9 @@ export function createCodePlatform(
       },
       install: async ({ packageName }) => {
         try {
-          await client.request("/api/skills/marketplace/install", { packageName });
+          await client.request("/api/skills/marketplace/install", {
+            packageName,
+          });
         } catch (error) {
           // 服务端对重复安装回 409：这是「此前已添加过」，界面据此标成已添加
           if (error instanceof CodeHostHttpError && error.status === 409) {
@@ -201,10 +184,11 @@ export function createCodePlatform(
       stageZip: async ({ file }) => {
         const form = new FormData();
         form.append("file", file, file.name);
-        const result = await client.postMultipart<HostSkillImportSourceResponse>(
-          "/api/skills/import-sources/zip",
-          form,
-        );
+        const result =
+          await client.postMultipart<HostSkillImportSourceResponse>(
+            "/api/skills/import-sources/zip",
+            form,
+          );
         return result.source;
       },
       release: async ({ id }) => {
@@ -220,53 +204,20 @@ export function createCodePlatform(
         }
       },
     },
-    // MCP 市场：官方注册表检索 + 内置精选目录，一键添加走服务端 MCP server 管理接口。
+    // MCP 市场：Claude Code 官方市场的 MCP 服务（随插件分发），一键添加走 MCP server 管理接口。
     mcpMarketplace: {
-      search: async ({ query, limit }) => {
-        const result = await client.request<HostMcpRegistrySearchResponse>(
-          `/api/mcp/registry?${new URLSearchParams({
-            q: query,
-            limit: String(limit),
-          })}`,
+      read: async (input) => {
+        const result = await client.request<HostMcpMarketplaceSnapshot>(
+          `/api/mcp/claude-marketplace${input?.refresh ? "?refresh=1" : ""}`,
         );
-        return {
-          items: result.servers.map((server) => ({
-            name: server.name,
-            description: server.description,
-            version: server.version,
-            kind: server.kind,
-            installable: server.installable,
-            unsupportedReason: server.unsupportedReason,
-            suggestedCommand: server.suggestedCommand,
-            suggestedArgs: server.suggestedArgs,
-            suggestedUrl: server.suggestedUrl,
-            suggestedName: server.suggestedName,
-          })),
-        };
+        return result;
       },
-      catalog: async () => {
-        const result = await client.request<HostMcpCatalogResponse>(
-          "/api/mcp/catalog",
-        );
-        return result.servers.map((server) => ({
-          id: server.id,
-          name: server.name,
-          title: server.title,
-          description: server.description,
-          command: server.command,
-          argsTemplate: server.argsTemplate,
-          params: server.params,
-          requires: server.requires,
-        })) satisfies HostMcpCatalogItem[];
-      },
-      add: async ({ name, kind, command, args, url }) => {
+      add: async ({ id, name, values }) => {
         try {
-          await client.request("/api/mcp/servers", {
+          await client.request("/api/mcp/claude-marketplace/servers", {
+            id,
             name,
-            kind,
-            ...(kind === "stdio"
-              ? { command, args: args ?? [] }
-              : { url }),
+            values,
           });
         } catch (error) {
           // 服务端对同名 server 回 409：这是「此前已添加过」

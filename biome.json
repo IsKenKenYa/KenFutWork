@@ -17,6 +17,7 @@
       "!**/out",
       "!**/public/code-ui",
       "!apps/server/src/features/model-providers/models-dev.snapshot.ts",
+      "!apps/server/src/features/mcp/fixtures/claude-marketplace-2026-11-27.json",
       "!**/.pnpm-store",
       "!**/tmp",
       "!**/.zcode",

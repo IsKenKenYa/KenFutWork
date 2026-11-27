@@ -91,6 +91,15 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | **商标声明** | Blender 是 Blender Foundation 的商标；Godot 是 Godot Foundation 的商标；Unity 是 Unity Technologies 的商标；Unreal Engine 是 Epic Games 的商标。Tripo 与 Hyper3D（Rodin）的商标权利人**待核**（未查证到官方权利人名称，不臆断）。六个图标仅用于**标识对应的第三方软件**（指示性使用，与 EULA §6.1 同一口径），不表示上述权利人对本项目的赞助、认可或关联；文件许可不授予商标权 |
 | 商业版可用性 | simple-icons 四枚：文件许可 CC0-1.0 允许商用与再分发，遵守上表商标口径即可。**Tripo 与 Hyper3D 两枚暂不可用于商业版**：来源文件没有许可声明，按「未满足许可证义务的无许可资产不得进商业版」处理，取得权利人许可或书面确认后再放开 |
 
+### A9. Claude Code 官方市场清单测试夹具（Anthropic 公开数据）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `apps/server/src/features/mcp/fixtures/claude-marketplace-2026-11-27.json`：`anthropics/claude-plugins-official` 仓库 `.claude-plugin/marketplace.json` 在 2026-11-27 的快照（317 个插件条目） |
+| 用途 | 服务端市场解析与换算的回归测试数据；**仅在测试中读取**，不进运行时产物、不随分发 |
+| 许可状态 | **待核**：该仓库的 LICENSE 未在本次核对中确认（`marketplace.json` 自身是插件目录数据，不含代码）。只作测试数据使用，未经核实前不用于商业版分发；若上游许可不允许再分发，改为测试时按需拉取 |
+| 数据内容 | 第三方厂商的插件名、描述、作者与仓库地址（这些是各厂商的商标与文案，仅作互操作目录展示） |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。

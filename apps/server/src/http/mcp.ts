@@ -1,14 +1,23 @@
 import {
+  type applicationErrorCodeSchema,
   applicationErrorResponseSchema,
+  claudeMcpMarketplaceAddRequestSchema,
+  localAccessErrorResponseSchema,
   mcpServerCreateRequestSchema,
   mcpServerUpdateRequestSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { z } from "zod";
 
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { LocalAccessError } from "../features/local-access/types.js";
 import { LocalInstanceError } from "../features/local-instance/service.js";
 import type { LocalInstanceService } from "../features/local-instance/types.js";
+import {
+  ClaudeMarketplaceError,
+  instantiateMarketplaceServer,
+} from "../features/mcp/claude-marketplace.js";
+import type { ClaudeMarketplaceService } from "../features/mcp/claude-marketplace-service.js";
 import { CURATED_MCP_SERVERS } from "../features/mcp/curated-catalog.js";
 import type { McpService } from "../features/mcp/mcp-service.js";
 import { searchOfficialRegistry } from "../features/mcp/registry-client.js";
@@ -24,11 +33,13 @@ export interface McpRoutesDeps {
   localAccess: LocalAccessVerifier;
   localInstance: LocalInstanceService;
   service: McpService;
+  /** Claude Code 官方市场的 MCP 服务（随插件分发）；未装配时不出现市场路由。 */
+  marketplace?: ClaudeMarketplaceService;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
-    applicationErrorResponseSchema.parse({
+    localAccessErrorResponseSchema.parse({
       error: { code: "unauthorized", message: "本机访问未授权。" },
     }),
   );
@@ -36,7 +47,7 @@ function sendUnauthenticated(reply: FastifyReply) {
 
 function sendError(
   reply: FastifyReply,
-  code: string,
+  code: z.infer<typeof applicationErrorCodeSchema>,
   message: string,
   status: number,
 ) {
@@ -61,15 +72,24 @@ export async function registerMcpRoutes(
       }
       await options.localInstance.resolve(actor);
     } catch (error) {
-      if (
-        !(
-          error instanceof LocalAccessError ||
-          error instanceof LocalInstanceError
-        )
-      )
-        throw error;
-      void sendError(reply, error.code, error.message, error.statusCode);
-      return false;
+      // 本机接入错误有它自己的契约（码集与实例错误不同），按来源分别序列化
+      if (error instanceof LocalAccessError) {
+        void reply.code(error.statusCode).send(
+          localAccessErrorResponseSchema.parse({
+            error: { code: error.code, message: error.message },
+          }),
+        );
+        return false;
+      }
+      if (error instanceof LocalInstanceError) {
+        void reply.code(error.statusCode).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: error.code, message: error.message },
+          }),
+        );
+        return false;
+      }
+      throw error;
     }
     return true;
   };
@@ -107,6 +127,74 @@ export async function registerMcpRoutes(
           error instanceof Error ? error.message : String(error)
         }`,
         502,
+      );
+    }
+  });
+
+  // GET /api/mcp/claude-marketplace — Claude Code 官方市场的 MCP 服务快照
+  // 首次调用在后台开始读取（约十几秒），界面按 checked/total 轮询进度。
+  app.get("/api/mcp/claude-marketplace", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    if (!options.marketplace) {
+      return sendError(
+        reply,
+        "service_unavailable",
+        "MCP 市场未装配，请重启应用。",
+        503,
+      );
+    }
+    const refresh = (request.query as Record<string, string>).refresh === "1";
+    const snapshot = refresh
+      ? options.marketplace.refresh()
+      : options.marketplace.read();
+    // unreadablePlugins 只进日志与诊断，不下发（里面可能有上游错误细节）
+    const { unreadablePlugins: _diagnostics, ...visible } = snapshot;
+    return reply.code(200).send(visible);
+  });
+
+  // POST /api/mcp/claude-marketplace/servers — 按市场里的服务定义一键添加
+  app.post("/api/mcp/claude-marketplace/servers", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    if (!options.marketplace) {
+      return sendError(
+        reply,
+        "service_unavailable",
+        "MCP 市场未装配，请重启应用。",
+        503,
+      );
+    }
+    const parsed = claudeMcpMarketplaceAddRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(
+        reply,
+        "invalid_request",
+        parsed.error.issues[0]?.message ?? "填写的内容不符合要求。",
+        400,
+      );
+    }
+    try {
+      const compiled = options.marketplace.find(parsed.data.id);
+      const raw = instantiateMarketplaceServer(compiled, parsed.data);
+      const server = await options.service.create(raw);
+      return reply.code(201).send({ server });
+    } catch (error) {
+      if (error instanceof ClaudeMarketplaceError) {
+        return sendError(reply, "mcp_marketplace_failed", error.message, 400);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/duplicate|unique/i.test(message)) {
+        return sendError(
+          reply,
+          "mcp_server_exists",
+          "同名 MCP server 已存在。",
+          409,
+        );
+      }
+      return sendError(
+        reply,
+        "mcp_marketplace_failed",
+        `添加失败：${message}`,
+        500,
       );
     }
   });

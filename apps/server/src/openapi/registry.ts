@@ -42,6 +42,7 @@ import {
   checkpointRestoreFileRequestSchema,
   checkpointRestoreRequestSchema,
   checkpointRestoreResponseSchema,
+  claudeMcpMarketplaceAddRequestSchema,
   codeFilesResponseSchema,
   codeGitBranchCreateRequestSchema,
   codeGitChangesResponseSchema,
@@ -148,6 +149,7 @@ import {
   localAccessTicketResponseSchema,
   marketplaceInstallRequestSchema,
   mcpServerCreateRequestSchema,
+  mcpServerResponseSchema,
   mcpServerUpdateRequestSchema,
   mediaDriverConnectionResponseSchema,
   mediaDriverConnectionSaveResponseSchema,
@@ -2606,6 +2608,34 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "检索官方 MCP 注册表",
     description:
       "代理官方 MCP Registry 的 search 检索。上游不可用返回 502 mcp_registry_unavailable。",
+  },
+  {
+    method: "get",
+    path: "/api/mcp/claude-marketplace",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({
+      refresh: z
+        .string()
+        .optional()
+        .describe("传 1 强制重读（市场页刷新按钮）"),
+    }),
+    summary: "读取 Claude Code 市场的 MCP 服务",
+    description:
+      "官方市场 anthropics/claude-plugins-official 的 MCP 服务随插件分发。首次调用在后台开始读取（约十几秒），按 checked/total 轮询进度；state=loading 时 servers 是已读到的部分，读完整体替换并缓存，缓存过期先给旧结果再后台重读。未装配市场返回 503。",
+  },
+  {
+    method: "post",
+    path: "/api/mcp/claude-marketplace/servers",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: claudeMcpMarketplaceAddRequestSchema,
+    responseSchema: mcpServerResponseSchema,
+    summary: "按市场定义添加 MCP 服务器",
+    description:
+      "按市场条目 id 取回服务定义，用 values 替换声明里的变量后落库并连接；同名已存在返回 409，定义不在当前结果或变量缺失返回 400 mcp_marketplace_failed。需已授权的本机接入。",
   },
   {
     method: "post",

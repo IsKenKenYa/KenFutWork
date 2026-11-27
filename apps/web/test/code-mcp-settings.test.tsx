@@ -85,7 +85,7 @@ async function openNativeMcpEditor(
     secondRecord?: boolean;
     /** MCP 市场的接口应答与宿主接通状态。 */
     marketplace?: {
-      catalog?: "ok" | "fail";
+      /** 市场读取失败。 */
       registry?: "ok" | "fail";
       add?: "ok" | "duplicate" | "fail";
       /** 宿主没有接通 MCP 市场。 */
@@ -138,90 +138,95 @@ async function openNativeMcpEditor(
     if (scenario.noProject && url.endsWith("/workspaces"))
       return Response.json({ workspaces: [] });
     if (url.endsWith("/api/plugins")) return Response.json({ plugins: [] });
-    if (url.endsWith("/api/mcp/catalog")) {
-      if (scenario.marketplace?.catalog === "fail")
-        return Response.json(
-          { error: { message: "目录读取失败" } },
-          { status: 502 },
-        );
-      return Response.json({
-        servers: [
-          {
-            id: "fetch",
-            name: "fetch",
-            title: "网页抓取",
-            description: "抓取网页并转成 Markdown。",
-            command: "uvx",
-            argsTemplate: ["mcp-server-fetch"],
-            params: [],
-            requires: "python",
-          },
-          {
-            id: "filesystem",
-            name: "filesystem",
-            title: "本地文件系统",
-            description: "让 agent 读写你指定的目录。",
-            command: "npx",
-            argsTemplate: [
-              "-y",
-              "@modelcontextprotocol/server-filesystem",
-              "{{dir}}",
-            ],
-            params: [
-              {
-                key: "dir",
-                label: "允许访问的目录",
-                example: "D:/Desktop/MyProject",
-                required: true,
-              },
-            ],
-            requires: "node",
-          },
-        ],
-      });
-    }
-    if (url.includes("/api/mcp/registry")) {
+    if (
+      url.includes("/api/mcp/claude-marketplace") &&
+      !url.includes("/servers")
+    ) {
       const params = new URL(url, "https://host.example").searchParams;
       calls.push({
         service: "mcp-marketplace",
-        method: "search",
-        args: [{ q: params.get("q"), limit: Number(params.get("limit")) }],
+        method: "read",
+        args: [{ refresh: params.get("refresh") === "1" }],
       });
       if (scenario.marketplace?.registry === "fail")
         return Response.json(
-          { error: { message: "官方 MCP 注册表暂不可用" } },
+          { error: { code: "mcp_marketplace_failed", message: "读取失败" } },
           { status: 502 },
         );
       return Response.json({
+        marketplace: { name: "claude-plugins-official", owner: "Anthropic" },
+        state: "ready",
+        refreshing: false,
+        checked: 3,
+        total: 3,
+        unreadable: 0,
+        completedAt: 1_700_000_000_000,
+        message: null,
         servers: [
           {
-            name: "io.github.kfw/notion",
-            description: "Notion 数据库读写。",
-            version: "1.0.0",
-            kind: "http",
-            installable: true,
-            unsupportedReason: null,
-            suggestedCommand: null,
-            suggestedArgs: [],
-            suggestedUrl: "https://mcp.notion.com/mcp",
+            id: "notion:notion",
+            serverName: "notion",
             suggestedName: "notion",
+            plugin: "notion",
+            pluginTitle: "Notion",
+            description: "Notion 数据库读写。",
+            author: null,
+            category: "productivity",
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.notion.com/mcp",
+            inputs: [],
+            addable: true,
+            unsupportedReason: null,
           },
           {
-            name: "io.github.kfw/weird",
-            description: "只有 oci 包。",
-            version: "1.0.0",
-            kind: "stdio",
-            installable: false,
-            unsupportedReason: "暂不支持该包生态（oci），仅支持 npm / pypi",
-            suggestedCommand: null,
-            suggestedArgs: [],
-            suggestedUrl: null,
-            suggestedName: "weird",
+            id: "zoom:zoom-mcp",
+            serverName: "zoom-mcp",
+            suggestedName: "zoom-mcp",
+            plugin: "zoom-plugin",
+            pluginTitle: "Zoom",
+            description: "Zoom 会议服务。",
+            author: null,
+            category: null,
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.zoom.us/mcp/zoom/streamable",
+            inputs: [
+              {
+                name: "ZOOM_ACCESS_TOKEN",
+                label: "访问令牌",
+                description: "在 Zoom 应用里创建",
+                required: true,
+                secret: true,
+                default: null,
+              },
+            ],
+            addable: true,
+            unsupportedReason: null,
+          },
+          {
+            id: "slack:slack",
+            serverName: "slack",
+            suggestedName: "slack",
+            plugin: "slack",
+            pluginTitle: "Slack",
+            description: "Slack 消息。",
+            author: null,
+            category: null,
+            homepage: null,
+            kind: "http",
+            summary: "https://mcp.slack.com/mcp",
+            inputs: [],
+            addable: false,
+            unsupportedReason: "要登录授权才能连接",
           },
         ],
       });
     }
-    if (url.endsWith("/api/mcp/servers") && options?.method === "POST") {
+    if (
+      url.endsWith("/api/mcp/claude-marketplace/servers") &&
+      options?.method === "POST"
+    ) {
       const body = JSON.parse(String(options.body));
       calls.push({ service: "mcp-marketplace", method: "add", args: [body] });
       if (scenario.marketplace?.add === "duplicate")
@@ -236,7 +241,7 @@ async function openNativeMcpEditor(
         );
       if (scenario.marketplace?.add === "fail")
         return Response.json(
-          { error: { code: "mcp_server_create_failed", message: "添加失败" } },
+          { error: { code: "mcp_marketplace_failed", message: "添加失败" } },
           { status: 500 },
         );
       return Response.json({ server: { name: body.name } }, { status: 201 });
@@ -791,7 +796,7 @@ it("MCP 页头部出现添加下拉：宿主接通市场时有新建与从市场
   );
 });
 
-it("宿主未接通 MCP 市场时菜单只有新建", async () => {
+it("宿主未接通 MCP 市场时菜单只有新建，页头没有外部 Agent 导入入口", async () => {
   await openNativeMcpEditor({
     skipEdit: true,
     marketplace: { withoutCapability: true },
@@ -799,102 +804,68 @@ it("宿主未接通 MCP 市场时菜单只有新建", async () => {
   const menu = await openMcpAddMenu();
   expect(within(menu).getByTestId("mcp-add-create")).toBeTruthy();
   expect(within(menu).queryByTestId("mcp-add-marketplace")).toBeNull();
+  // 「从外部 Agent 导入 MCP 服务器」入口已撤掉
+  expect(screen.queryByText("从外部 Agent 导入 MCP 服务器")).toBeNull();
 });
 
-it("市场对话框空搜索词展示精选目录，缺必填参数时不能添加", async () => {
+it("市场对话框列出 Claude 市场的 MCP 服务，带插件名与不可添加原因", async () => {
   await openNativeMcpEditor({ skipEdit: true });
   await openMcpAddMenu();
   fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
-  await screen.findByText("网页抓取");
-  expect(screen.getByText("本地文件系统")).toBeTruthy();
-  // 不需要参数的条目可直接添加；需要目录参数的条目在填参前禁用
-  const items = screen.getAllByTestId("mcp-marketplace-item");
-  expect(items).toHaveLength(2);
-  const addItemButtons = screen.getAllByRole("button", { name: "添加" });
-  expect(addItemButtons).toHaveLength(2);
-  const dirRow = screen.getByText("本地文件系统").closest("li") as HTMLElement;
-  expect(
-    (dirRow.querySelector("button[disabled]") as HTMLButtonElement | null)
-      ?.textContent,
-  ).toContain("添加");
-  const fetchRow = screen.getByText("网页抓取").closest("li") as HTMLElement;
-  expect(fetchRow.querySelector("button[disabled]")).toBeNull();
+  await screen.findByText("notion");
+  expect(screen.getAllByTestId("mcp-marketplace-item")).toHaveLength(3);
+  expect(screen.getByText("Zoom")).toBeTruthy();
+  // 不可添加的条目只给原因，不给添加按钮
+  const slackRow = screen.getByText("slack").closest("li") as HTMLElement;
+  expect(slackRow.textContent).toContain("要登录授权才能连接");
+  expect(within(slackRow).queryByRole("button", { name: "添加" })).toBeNull();
 });
 
-it("填齐精选目录参数后一键添加，占位符替换为输入值", async () => {
+it("要填变量的条目在填齐前不能添加，填齐后按 id 与填写值添加", async () => {
   const { calls } = await openNativeMcpEditor({ skipEdit: true });
   await openMcpAddMenu();
   fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
-  await screen.findByText("本地文件系统");
-  fireEvent.change(screen.getByRole("textbox", { name: "允许访问的目录" }), {
-    target: { value: "D:/MyProject" },
-  });
-  const dirRow = screen.getByText("本地文件系统").closest("li") as HTMLElement;
-  fireEvent.click(within(dirRow).getByRole("button", { name: "添加" }));
+  await screen.findByText("zoom-mcp");
+  const zoomRow = screen.getByText("zoom-mcp").closest("li") as HTMLElement;
+  const addButton = within(zoomRow).getByRole("button", { name: "添加" });
+  expect((addButton as HTMLButtonElement).disabled).toBe(true);
+  // 密钥类变量是密码框：没有 textbox 角色，按 aria-label 定位
+  fireEvent.change(
+    zoomRow.querySelector('input[aria-label="访问令牌"]') as HTMLInputElement,
+    { target: { value: "zoom-token" } },
+  );
+  expect((addButton as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(addButton);
   await screen.findByTestId("mcp-marketplace-installed");
   expect(calls.filter((call) => call.service === "mcp-marketplace")).toEqual([
+    { service: "mcp-marketplace", method: "read", args: [{ refresh: false }] },
     {
       service: "mcp-marketplace",
       method: "add",
       args: [
         {
-          name: "filesystem",
-          kind: "stdio",
-          command: "npx",
-          args: [
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            "D:/MyProject",
-          ],
+          id: "zoom:zoom-mcp",
+          name: "zoom-mcp",
+          values: { ZOOM_ACCESS_TOKEN: "zoom-token" },
         },
       ],
     },
   ]);
 });
 
-it("关键词搜索走官方注册表：可装的一键添加，不可装的展示原因", async () => {
-  const { calls } = await openNativeMcpEditor({ skipEdit: true });
+it("输入关键词按服务名、插件名与说明筛选", async () => {
+  await openNativeMcpEditor({ skipEdit: true });
   await openMcpAddMenu();
   fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
-  await screen.findByText("网页抓取");
+  await screen.findByText("notion");
   fireEvent.change(screen.getByRole("searchbox"), {
-    target: { value: "notion" },
+    target: { value: "zoom" },
   });
-  await screen.findByText("io.github.kfw/notion");
-  expect(calls.filter((call) => call.service === "mcp-marketplace")).toEqual([
-    {
-      service: "mcp-marketplace",
-      method: "search",
-      args: [{ q: "notion", limit: 20 }],
-    },
-  ]);
-  // 不可安装的条目只给原因，不给添加按钮
-  const weirdRow = screen
-    .getByText("io.github.kfw/weird")
-    .closest("li") as HTMLElement;
-  expect(weirdRow.textContent).toContain("仅支持 npm / pypi");
-  expect(within(weirdRow).queryByRole("button", { name: "添加" })).toBeNull();
-  // http 类型直接带远程端点添加
-  const notionRow = screen
-    .getByText("io.github.kfw/notion")
-    .closest("li") as HTMLElement;
-  fireEvent.click(within(notionRow).getByRole("button", { name: "添加" }));
   await waitFor(() => {
-    expect(calls.filter((call) => call.method === "add")).toEqual([
-      {
-        service: "mcp-marketplace",
-        method: "add",
-        args: [
-          {
-            name: "notion",
-            kind: "http",
-            url: "https://mcp.notion.com/mcp",
-          },
-        ],
-      },
-    ]);
+    expect(screen.getAllByTestId("mcp-marketplace-item")).toHaveLength(1);
   });
-  await screen.findByTestId("mcp-marketplace-installed");
+  expect(screen.getByText("zoom-mcp")).toBeTruthy();
+  expect(screen.queryByText("notion")).toBeNull();
 });
 
 it("同名 server 已存在时市场条目显示已添加", async () => {
@@ -904,9 +875,9 @@ it("同名 server 已存在时市场条目显示已添加", async () => {
   });
   await openMcpAddMenu();
   fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
-  await screen.findByText("网页抓取");
-  const fetchRow = screen.getByText("网页抓取").closest("li") as HTMLElement;
-  fireEvent.click(within(fetchRow).getByRole("button", { name: "添加" }));
+  await screen.findByText("notion");
+  const notionRow = screen.getByText("notion").closest("li") as HTMLElement;
+  fireEvent.click(within(notionRow).getByRole("button", { name: "添加" }));
   await waitFor(() => {
     expect(screen.getAllByTestId("mcp-marketplace-installed")).toHaveLength(1);
   });
@@ -919,9 +890,23 @@ it("添加失败在条目上显示原因，不伪装成功", async () => {
   });
   await openMcpAddMenu();
   fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
-  await screen.findByText("网页抓取");
-  const fetchRow = screen.getByText("网页抓取").closest("li") as HTMLElement;
-  fireEvent.click(within(fetchRow).getByRole("button", { name: "添加" }));
+  await screen.findByText("notion");
+  const notionRow = screen.getByText("notion").closest("li") as HTMLElement;
+  fireEvent.click(within(notionRow).getByRole("button", { name: "添加" }));
   await screen.findByText("添加失败");
   expect(screen.queryByTestId("mcp-marketplace-installed")).toBeNull();
+});
+
+it("市场读取失败时给原因与重试，不显示空列表", async () => {
+  await openNativeMcpEditor({
+    skipEdit: true,
+    marketplace: { registry: "fail" },
+  });
+  await openMcpAddMenu();
+  fireEvent.click(screen.getByTestId("mcp-add-marketplace"));
+  await screen.findByText("MCP 市场暂不可用");
+  expect(
+    screen.getAllByRole("button", { name: "重试" }).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByTestId("mcp-marketplace-item")).toBeNull();
 });

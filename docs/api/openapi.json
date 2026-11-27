@@ -11806,6 +11806,120 @@
         }
       }
     },
+    "/api/mcp/claude-marketplace": {
+      "get": {
+        "operationId": "getMcpClaudeMarketplace",
+        "summary": "读取 Claude Code 市场的 MCP 服务",
+        "description": "官方市场 anthropics/claude-plugins-official 的 MCP 服务随插件分发。首次调用在后台开始读取（约十几秒），按 checked/total 轮询进度；state=loading 时 servers 是已读到的部分，读完整体替换并缓存，缓存过期先给旧结果再后台重读。未装配市场返回 503。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "传 1 强制重读（市场页刷新按钮）",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/claude-marketplace/servers": {
+      "post": {
+        "operationId": "postMcpClaudeMarketplaceServers",
+        "summary": "按市场定义添加 MCP 服务器",
+        "description": "按市场条目 id 取回服务定义，用 values 替换声明里的变量后落库并连接；同名已存在返回 409，定义不在当前结果或变量缺失返回 400 mcp_marketplace_failed。需已授权的本机接入。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/claudeMcpMarketplaceAddRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/claudeMcpMarketplaceAddResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mcp/servers/{id}": {
       "patch": {
         "operationId": "patchMcpServersById",
@@ -16651,6 +16765,11 @@
                   "skill_import_source_failed",
                   "skill_import_source_denied",
                   "skill_import_source_not_found",
+                  "mcp_server_exists",
+                  "mcp_server_not_found",
+                  "mcp_server_create_failed",
+                  "mcp_registry_unavailable",
+                  "mcp_marketplace_failed",
                   "skill_file_query_failed",
                   "marketplace_search_failed",
                   "marketplace_detail_failed",
@@ -18610,6 +18729,142 @@
         },
         "required": [
           "checkpoint"
+        ],
+        "additionalProperties": false
+      },
+      "claudeMcpMarketplaceAddRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "values": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "values"
+        ]
+      },
+      "claudeMcpMarketplaceAddResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "env",
+                  "managed",
+                  "plugin"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "error",
+                  "disabled"
+                ]
+              },
+              "kind": {
+                "default": "stdio",
+                "type": "string",
+                "enum": [
+                  "stdio",
+                  "http"
+                ]
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "envKeys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "headerKeys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "toolCount": {
+                "type": "number"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "source",
+              "enabled",
+              "status",
+              "kind",
+              "url",
+              "command",
+              "args",
+              "envKeys",
+              "headerKeys",
+              "toolCount",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "server"
         ],
         "additionalProperties": false
       },
@@ -22866,6 +23121,11 @@
                       "skill_import_source_failed",
                       "skill_import_source_denied",
                       "skill_import_source_not_found",
+                      "mcp_server_exists",
+                      "mcp_server_not_found",
+                      "mcp_server_create_failed",
+                      "mcp_registry_unavailable",
+                      "mcp_marketplace_failed",
                       "skill_file_query_failed",
                       "marketplace_search_failed",
                       "marketplace_detail_failed",
@@ -25881,6 +26141,30 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 10
+              },
+              "mcpMarketplaceFetchTimeoutMs": {
+                "default": 15000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
+              "mcpMarketplaceReadMaxBytes": {
+                "default": 2097152,
+                "type": "integer",
+                "minimum": 262144,
+                "maximum": 16777216
+              },
+              "mcpMarketplaceCacheTtlMs": {
+                "default": 21600000,
+                "type": "integer",
+                "minimum": 60000,
+                "maximum": 604800000
+              },
+              "mcpMarketplaceFetchConcurrency": {
+                "default": 12,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32
               }
             },
             "required": [
@@ -25982,7 +26266,11 @@
               "skillImportSourceMaxEntries",
               "skillImportStagingTtlMs",
               "skillImportStagedMaxSources",
-              "skillImportScanDepth"
+              "skillImportScanDepth",
+              "mcpMarketplaceFetchTimeoutMs",
+              "mcpMarketplaceReadMaxBytes",
+              "mcpMarketplaceCacheTtlMs",
+              "mcpMarketplaceFetchConcurrency"
             ],
             "additionalProperties": false
           }
@@ -26707,6 +26995,26 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10
+          },
+          "mcpMarketplaceFetchTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
+          },
+          "mcpMarketplaceReadMaxBytes": {
+            "type": "integer",
+            "minimum": 262144,
+            "maximum": 16777216
+          },
+          "mcpMarketplaceCacheTtlMs": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 604800000
+          },
+          "mcpMarketplaceFetchConcurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
           }
         }
       },

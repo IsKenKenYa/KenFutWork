@@ -881,6 +881,34 @@
       "status": "active",
       "note": "技能导入在 git 仓库或 zip 包里查找技能目录的层数上限"
     },
+    "KENFUTWORK_MCP_MARKETPLACE_FETCH_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "MCP 市场读取市场清单与插件定义文件时单个请求的等待预算（毫秒）"
+    },
+    "KENFUTWORK_MCP_MARKETPLACE_READ_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "MCP 市场单个文件（市场清单、.mcp.json、plugin.json）的字节上限"
+    },
+    "KENFUTWORK_MCP_MARKETPLACE_CACHE_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "MCP 市场读取结果视为新鲜的时长（毫秒），到期后先给旧结果再后台重读"
+    },
+    "KENFUTWORK_MCP_MARKETPLACE_FETCH_CONCURRENCY": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "MCP 市场同时读取的插件数上限"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

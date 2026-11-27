@@ -603,43 +603,51 @@ export interface HostSkillImportSource {
   label: string;
 }
 
-/** 官方 MCP 注册表里的一条 server（同一 server 的多个版本已按最新去重）。 */
-export interface HostMcpMarketplaceItem {
-  name: string;
-  description: string;
-  version: string;
-  /** stdio = 本地子进程；http = 远程端点。 */
-  kind: "stdio" | "http";
-  /** 能否一键添加。 */
-  installable: boolean;
-  /** 不能一键添加的原因，仅 installable=false 时有值，直接展示。 */
-  unsupportedReason: string | null;
-  /** stdio 的建议命令与参数（npm/pypi 包推导）。 */
-  suggestedCommand: string | null;
-  suggestedArgs: readonly string[];
-  /** http 的远程端点。 */
-  suggestedUrl: string | null;
-  /** 建议的 server 名（注册表规范名最后一段合法化），添加时用它。 */
+/** Claude Code 官方市场里的一个 MCP 服务（随插件分发）。 */
+export interface HostMcpMarketplaceServer {
+  /** `<插件名>:<服务名>`，添加时按它取回定义。 */
+  id: string;
+  serverName: string;
+  /** 添加时建议的名称（只留字母数字与 - _）。 */
   suggestedName: string;
+  plugin: string;
+  pluginTitle: string;
+  description: string;
+  author: string | null;
+  category: string | null;
+  homepage: string | null;
+  kind: "stdio" | "http";
+  /** 启动命令与参数，或远程地址。 */
+  summary: string;
+  /** 添加时要填的变量（`${VAR}`、`${VAR:-默认值}`、`user_config.*`）。 */
+  inputs: ReadonlyArray<{
+    name: string;
+    label: string;
+    description: string | null;
+    required: boolean;
+    /** 按密码框输入（插件标记 sensitive 或变量名像密钥）。 */
+    secret: boolean;
+    default: string | null;
+  }>;
+  /** 能否一键添加。 */
+  addable: boolean;
+  /** 不能添加的原因，仅 addable=false 时有值，直接展示。 */
+  unsupportedReason: string | null;
 }
 
-/** 内置精选目录里的一条 server：参数占位符需要用户补齐后再添加。 */
-export interface HostMcpCatalogItem {
-  id: string;
-  name: string;
-  title: string;
-  description: string;
-  command: string;
-  /** 可含 `{{key}}` 占位符，由 params 补齐。 */
-  argsTemplate: readonly string[];
-  params: ReadonlyArray<{
-    key: string;
-    label: string;
-    example: string;
-    required: boolean;
-  }>;
-  /** 本机运行前提，界面据此提示。 */
-  requires: "node" | "python";
+/** 市场读取快照：首次读取时逐条增长，读完整体替换并缓存。 */
+export interface HostMcpMarketplaceSnapshot {
+  marketplace: { name: string; owner: string } | null;
+  /** loading：首次读取进行中（servers 是已读到的部分）；ready：有完整结果；failed：读不到且无旧结果。 */
+  state: "loading" | "ready" | "failed";
+  /** 后台正在重读，此时 servers 是上一次的完整结果。 */
+  refreshing: boolean;
+  checked: number;
+  total: number;
+  unreadable: number;
+  completedAt: number | null;
+  servers: readonly HostMcpMarketplaceServer[];
+  message: string | null;
 }
 
 export interface IPlatformService {
@@ -699,16 +707,13 @@ export interface IPlatformService {
    * add 对同名 server 已存在时返回 alreadyInstalled，其余失败以异常形式返回。
    */
   mcpMarketplace?: {
-    search(input: { query: string; limit: number }): Promise<{
-      items: readonly HostMcpMarketplaceItem[];
-    }>;
-    catalog(): Promise<readonly HostMcpCatalogItem[]>;
+    /** 读取 Claude Code 官方市场的 MCP 服务快照；首次调用在后台开始读。 */
+    read(input?: { refresh?: boolean }): Promise<HostMcpMarketplaceSnapshot>;
+    /** 按市场条目添加：values 是变量名到填写值的映射。 */
     add(input: {
+      id: string;
       name: string;
-      kind: "stdio" | "http";
-      command?: string;
-      args?: readonly string[];
-      url?: string;
+      values: Record<string, string>;
     }): Promise<{ status: "added" | "alreadyInstalled" }>;
   };
   mcpSettingsCapabilities?: {
@@ -798,9 +803,7 @@ export interface IPlatformService {
   ): () => void;
 
   /** 检查目录是否已在其他窗口打开；如果是则激活该窗口并切到对应 tab */
-  activateOrSetWorkspace(
-    path: string,
-  ): Promise<{
+  activateOrSetWorkspace(path: string): Promise<{
     activated: boolean;
     workspacePath?: string;
     workspaceIdentity?: string;
